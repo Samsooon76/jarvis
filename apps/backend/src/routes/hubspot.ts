@@ -25,6 +25,15 @@ type HubSpotStatusQuery = {
   orgId?: string;
 };
 
+type HubSpotConfigStatus = {
+  apiPublicUrl: string | null;
+  appUrl: string;
+  hubspotRedirectUri: string;
+  hasHubSpotClientId: boolean;
+  hasHubSpotClientSecret: boolean;
+  hasHubSpotAppId: boolean;
+};
+
 type HubSpotSyncBody = {
   orgId?: string;
   contactNames?: string[];
@@ -43,6 +52,11 @@ type HubSpotDisconnectBody = {
 
 type HubSpotOwnersQuery = {
   orgId?: string;
+};
+
+type HubSpotLastUpdatesQuery = {
+  orgId?: string;
+  limit?: string;
 };
 
 type HubSpotOwnerProspectsQuery = {
@@ -168,6 +182,27 @@ type HubSpotOwnerProspectsPayload = {
   prospects: HubSpotOwnerProspect[];
 };
 
+type HubSpotLastUpdateItem = {
+  id: string;
+  orgId: string;
+  hubspotDealId: string;
+  dealName: string | null;
+  companyName: string | null;
+  amount: number | null;
+  dealStage: string | null;
+  status: "queued" | "running" | "completed" | "failed" | "skipped";
+  reason: string | null;
+  eventCount: number;
+  receivedAt: string;
+  scheduledFor: string;
+  processedAt: string | null;
+};
+
+type HubSpotLastUpdatesPayload = {
+  orgId: string;
+  updates: HubSpotLastUpdateItem[];
+};
+
 type HubSpotDealHistoryPayload = {
   orgId: string;
   dealId: string;
@@ -289,11 +324,49 @@ type HubSpotDealStageUpsertRow = {
   synced_at: string;
 };
 
+type HubSpotRealtimeAnalysisRunListRow = {
+  id: string;
+  org_id: string;
+  hubspot_deal_id: string;
+  status: "queued" | "running" | "completed" | "failed" | "skipped";
+  reason: string | null;
+  scheduled_for: string;
+  started_at: string | null;
+  finished_at: string | null;
+  trigger_event_ids: string[];
+  created_at: string;
+  updated_at: string;
+};
+
+type HubSpotDealSummaryRow = {
+  hubspot_deal_id: string;
+  primary_company_id: string | null;
+  deal_name: string | null;
+  amount: number | null;
+  deal_stage: string | null;
+  deal_stage_label?: string | null;
+};
+
+type HubSpotCompanySummaryRow = {
+  hubspot_company_id: string;
+  name: string | null;
+};
+
 const UUID_V4_LIKE_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const isValidOrgId = (value: string | undefined): value is string =>
   typeof value === "string" && UUID_V4_LIKE_PATTERN.test(value.trim());
+
+const parseLastUpdatesLimit = (value: string | undefined): number => {
+  const parsedValue = Number(value ?? 12);
+
+  if (!Number.isFinite(parsedValue)) {
+    return 12;
+  }
+
+  return Math.max(1, Math.min(50, Math.trunc(parsedValue)));
+};
 
 const normalizeUpstreamErrorMessage = (message: string): string => {
   if (
@@ -1186,6 +1259,20 @@ const disconnectHubSpotIntegration = async (
 };
 
 export const registerHubSpotRoutes = async (app: FastifyInstance): Promise<void> => {
+  app.get<{ Reply: ApiResponse<HubSpotConfigStatus> }>("/api/hubspot/config-status", async (_request, reply) =>
+    reply.send({
+      success: true,
+      data: {
+        apiPublicUrl: env.apiPublicUrl || null,
+        appUrl: env.appUrl,
+        hubspotRedirectUri: env.hubspotRedirectUri,
+        hasHubSpotClientId: Boolean(env.hubspotClientId),
+        hasHubSpotClientSecret: Boolean(env.hubspotClientSecret),
+        hasHubSpotAppId: Boolean(env.hubspotAppId),
+      },
+    }),
+  );
+
   app.get<{ Querystring: HubSpotStatusQuery; Reply: ApiResponse<HubSpotConnectionStatus> }>(
     "/api/hubspot/status",
     async (request, reply) => {
@@ -1503,6 +1590,132 @@ export const registerHubSpotRoutes = async (app: FastifyInstance): Promise<void>
         return reply.code(500).send({
           success: false,
           error: getPublicErrorMessage(error, "Erreur inconnue pendant la deconnexion HubSpot."),
+        });
+      }
+    },
+  );
+
+  app.get<{ Querystring: HubSpotLastUpdatesQuery; Reply: ApiResponse<HubSpotLastUpdatesPayload> }>(
+    "/api/hubspot/last-updates",
+    async (request, reply) => {
+      const orgId = request.query.orgId;
+
+      if (!orgId) {
+        return reply.code(400).send({
+          success: false,
+          error: "Le parametre orgId est obligatoire pour charger les dernieres updates HubSpot.",
+        });
+      }
+
+      if (!isValidOrgId(orgId)) {
+        return reply.code(400).send({
+          success: false,
+          error: "Le parametre orgId doit etre un UUID Jarvis valide.",
+        });
+      }
+
+      try {
+        const supabase = getSupabaseAdmin();
+        const limit = parseLastUpdatesLimit(request.query.limit);
+        const { data: runData, error: runError } = await supabase
+          .from("hubspot_realtime_analysis_runs")
+          .select(
+            "id, org_id, hubspot_deal_id, status, reason, scheduled_for, started_at, finished_at, trigger_event_ids, created_at, updated_at",
+          )
+          .eq("org_id", orgId)
+          .order("updated_at", { ascending: false })
+          .range(0, Math.max(limit * 4, limit) - 1);
+
+        if (runError) {
+          throw new Error(formatOperationError("Impossible de charger les updates realtime HubSpot", runError.message));
+        }
+
+        const uniqueRuns: HubSpotRealtimeAnalysisRunListRow[] = [];
+        const seenDealIds = new Set<string>();
+
+        for (const run of (runData ?? []) as HubSpotRealtimeAnalysisRunListRow[]) {
+          if (seenDealIds.has(run.hubspot_deal_id)) {
+            continue;
+          }
+
+          seenDealIds.add(run.hubspot_deal_id);
+          uniqueRuns.push(run);
+
+          if (uniqueRuns.length >= limit) {
+            break;
+          }
+        }
+
+        const dealIds = uniqueRuns.map((run) => run.hubspot_deal_id);
+        const { data: dealData, error: dealError } =
+          dealIds.length > 0
+            ? await supabase
+                .from("hubspot_deals")
+                .select("hubspot_deal_id, primary_company_id, deal_name, amount, deal_stage, deal_stage_label")
+                .eq("org_id", orgId)
+                .in("hubspot_deal_id", dealIds)
+            : { data: [], error: null };
+
+        if (dealError) {
+          throw new Error(formatOperationError("Impossible de charger les deals HubSpot", dealError.message));
+        }
+
+        const deals = (dealData ?? []) as HubSpotDealSummaryRow[];
+        const dealById = new Map(deals.map((deal) => [deal.hubspot_deal_id, deal]));
+        const companyIds = Array.from(
+          new Set(deals.map((deal) => deal.primary_company_id).filter((id): id is string => Boolean(id))),
+        );
+        const { data: companyData, error: companyError } =
+          companyIds.length > 0
+            ? await supabase
+                .from("hubspot_companies")
+                .select("hubspot_company_id, name")
+                .eq("org_id", orgId)
+                .in("hubspot_company_id", companyIds)
+            : { data: [], error: null };
+
+        if (companyError) {
+          throw new Error(formatOperationError("Impossible de charger les entreprises HubSpot", companyError.message));
+        }
+
+        const companyById = new Map(
+          ((companyData ?? []) as HubSpotCompanySummaryRow[]).map((company) => [company.hubspot_company_id, company]),
+        );
+        const updates: HubSpotLastUpdateItem[] = uniqueRuns.map((run) => {
+          const deal = dealById.get(run.hubspot_deal_id) ?? null;
+          const company = deal?.primary_company_id ? companyById.get(deal.primary_company_id) ?? null : null;
+
+          return {
+            id: run.id,
+            orgId: run.org_id,
+            hubspotDealId: run.hubspot_deal_id,
+            dealName: deal?.deal_name ?? null,
+            companyName: company?.name ?? null,
+            amount: deal?.amount ?? null,
+            dealStage: deal?.deal_stage_label ?? deal?.deal_stage ?? null,
+            status: run.status,
+            reason: run.reason,
+            eventCount: run.trigger_event_ids.length,
+            receivedAt: run.updated_at,
+            scheduledFor: run.scheduled_for,
+            processedAt: run.finished_at ?? run.started_at,
+          };
+        });
+
+        return reply.send({
+          success: true,
+          data: {
+            orgId,
+            updates,
+          },
+        });
+      } catch (error) {
+        request.log.error({ error, orgId }, "Impossible de charger les dernieres updates HubSpot.");
+
+        return reply.code(500).send({
+          success: false,
+          error:
+            getPublicErrorMessage(error, "Erreur inconnue pendant le chargement des dernieres updates HubSpot."),
         });
       }
     },
@@ -1939,6 +2152,15 @@ export const registerHubSpotRoutes = async (app: FastifyInstance): Promise<void>
           orgId,
           returnTo: request.query.returnTo ?? `${env.appUrl}/settings?hubspot=connected`,
         });
+
+        request.log.info(
+          {
+            orgId,
+            apiPublicUrl: env.apiPublicUrl || null,
+            hubspotRedirectUri: env.hubspotRedirectUri,
+          },
+          "Demarrage OAuth HubSpot.",
+        );
 
         return reply.redirect(authorizationUrl);
       } catch (error) {

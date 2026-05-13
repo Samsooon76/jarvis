@@ -18,6 +18,7 @@ export const QueueView = ({
   hubspotPortalId,
   isConnected = Boolean(hubspotPortalId),
   isRefreshing = false,
+  lastUpdates = [],
   orgId,
   onConnectHubSpot,
   onDisconnectHubSpot,
@@ -172,6 +173,7 @@ export const QueueView = ({
             hubspotDealCount={hubspotDealCount}
             orgId={orgId}
             isLoadingLiveDeals={dashboard.isLoadingLiveDeals}
+            lastUpdates={lastUpdates}
             onActiveBucketChange={dashboard.setActiveBucket}
             onActiveProspectChange={dashboard.setActiveProspectId}
             onCloseDateFromChange={dashboard.setCloseDateFrom}

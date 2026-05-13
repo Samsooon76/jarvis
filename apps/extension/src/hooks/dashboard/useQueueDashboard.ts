@@ -151,14 +151,16 @@ export const useQueueDashboard = ({
           counts.all += 1;
           return counts;
         },
-        { actNow: 0, thisWeek: 0, watch: 0, all: 0 },
+        { actNow: 0, thisWeek: 0, watch: 0, all: 0, lastUpdate: 0 },
       ),
     [baseFilteredProspects],
   );
 
   const filteredProspects = useMemo(
     () =>
-      baseFilteredProspects.filter((prospect) => activeBucket === "all" || getBucket(prospect) === activeBucket),
+      baseFilteredProspects.filter(
+        (prospect) => activeBucket === "all" || activeBucket === "lastUpdate" || getBucket(prospect) === activeBucket,
+      ),
     [activeBucket, baseFilteredProspects],
   );
 

@@ -30,6 +30,11 @@ export const buckets: BucketDefinition[] = [
     label: "All",
     description: "Toute la queue AE disponible.",
   },
+  {
+    id: "lastUpdate",
+    label: "Last update",
+    description: "Derniers deals ayant recu un event HubSpot webhook.",
+  },
 ];
 
 export const priorityLabels: Record<ProspectPriority, string> = {
@@ -112,6 +117,7 @@ export const bucketRank = {
   thisWeek: 1,
   watch: 2,
   all: 3,
+  lastUpdate: 4,
 } as const;
 
 export const stageFunnelColors = [

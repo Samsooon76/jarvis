@@ -147,6 +147,15 @@ export const registerHubSpotWebhookRoutes = async (app: FastifyInstance): Promis
           parsedBody: request.body,
         });
 
+        request.log.info(
+          {
+            accepted: result.accepted,
+            duplicate: result.duplicate,
+            requestUri: buildPublicRequestUri(request),
+          },
+          "Webhook HubSpot accepte.",
+        );
+
         return reply.send({
           success: true,
           data: result,

@@ -41,21 +41,25 @@ loadEnvFile(resolve(backendDirectoryPath, ".env"));
 loadEnvFile(resolve(process.cwd(), ".env"));
 loadEnvFile(resolve(process.cwd(), "apps/backend/.env"));
 
+const apiPublicUrl = process.env.API_PUBLIC_URL ?? process.env.BACKEND_PUBLIC_URL ?? "";
+const defaultHubSpotRedirectUri = apiPublicUrl
+  ? `${apiPublicUrl.replace(/\/+$/, "")}/api/auth/hubspot/callback`
+  : "http://localhost:4000/api/auth/hubspot/callback";
+
 export const env = {
   nodeEnv: process.env.NODE_ENV ?? "development",
   port: Number(process.env.PORT ?? 4000),
   supabaseUrl: process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? "",
   supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? "",
   appUrl: process.env.APP_URL ?? "http://localhost:5173",
-  apiPublicUrl: process.env.API_PUBLIC_URL ?? process.env.BACKEND_PUBLIC_URL ?? "",
+  apiPublicUrl,
   redisUrl: process.env.REDIS_URL ?? "",
   hubspotWebhookDebounceSeconds: Number(process.env.HUBSPOT_WEBHOOK_DEBOUNCE_SECONDS ?? 90),
   crmActivityRetentionDays: Number(process.env.CRM_ACTIVITY_RETENTION_DAYS ?? 180),
   hubspotAppId: process.env.HUBSPOT_APP_ID ?? "",
   hubspotClientId: process.env.HUBSPOT_CLIENT_ID ?? "",
   hubspotClientSecret: process.env.HUBSPOT_CLIENT_SECRET ?? "",
-  hubspotRedirectUri:
-    process.env.HUBSPOT_REDIRECT_URI ?? "http://localhost:4000/api/auth/hubspot/callback",
+  hubspotRedirectUri: process.env.HUBSPOT_REDIRECT_URI ?? defaultHubSpotRedirectUri,
   vertexAiApiKey: process.env.VERTEX_AI_API_KEY ?? "",
   vertexAiModel: process.env.VERTEX_AI_MODEL ?? "gemini-3.1-flash-lite-preview",
   llmProvider: process.env.LLM_PROVIDER ?? "deepseek",

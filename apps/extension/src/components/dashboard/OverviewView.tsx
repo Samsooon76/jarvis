@@ -4,6 +4,7 @@ import { QueueFilters } from "./queue/QueueFilters";
 import { ProspectDetail } from "./queue/ProspectDetail";
 import { ProspectTable } from "./queue/ProspectTable";
 import { MetricIcon } from "./MetricIcon";
+import type { HubSpotLastUpdateItem } from "../../services/api";
 import type {
   CloseDatePreset,
   DashboardFilters,
@@ -11,7 +12,68 @@ import type {
   QueueBucket,
   StageFilter,
 } from "./types";
-import { formatAmount } from "../../utils/dashboard/formatters";
+import { formatAmount, formatDateTime } from "../../utils/dashboard/formatters";
+
+const lastUpdateStatusLabels: Record<HubSpotLastUpdateItem["status"], string> = {
+  queued: "Queued",
+  running: "Running",
+  completed: "Done",
+  failed: "Failed",
+  skipped: "Skipped",
+};
+
+type LastUpdateTableProps = {
+  updates: HubSpotLastUpdateItem[];
+};
+
+const LastUpdateTable = ({ updates }: LastUpdateTableProps) => (
+  <section className="ae-last-update-panel" aria-label="Last update">
+    <div className="ae-panel-heading">
+      <span>Last update</span>
+      <strong>{updates.length} deal(s)</strong>
+    </div>
+    <div className="ae-last-update-table" role="region" aria-label="Derniers deals mis a jour par webhook">
+      <table>
+        <thead>
+          <tr>
+            <th>Deal</th>
+            <th>Event</th>
+            <th>Status</th>
+            <th>Received</th>
+            <th>Value</th>
+          </tr>
+        </thead>
+        <tbody>
+          {updates.map((update) => (
+            <tr key={update.id}>
+              <td>
+                <strong>{update.dealName ?? `Deal ${update.hubspotDealId}`}</strong>
+                <small>{update.companyName ?? update.hubspotDealId}</small>
+              </td>
+              <td>
+                <strong>{update.reason ?? "Webhook HubSpot"}</strong>
+                <small>
+                  {update.eventCount} event{update.eventCount > 1 ? "s" : ""} · {update.dealStage ?? "Stage inconnu"}
+                </small>
+              </td>
+              <td>
+                <span className={`ae-update-status ${update.status}`}>{lastUpdateStatusLabels[update.status]}</span>
+              </td>
+              <td>
+                <strong>{formatDateTime(update.receivedAt)}</strong>
+                <small>{update.processedAt ? `Traite ${formatDateTime(update.processedAt)}` : "En attente"}</small>
+              </td>
+              <td>
+                <strong>{update.amount === null ? "-" : formatAmount(update.amount)}</strong>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {updates.length === 0 ? <p className="ae-empty">Aucun event webhook HubSpot recu pour l'instant.</p> : null}
+    </div>
+  </section>
+);
 
 type OverviewViewProps = {
   activeBucket: QueueBucket;
@@ -22,6 +84,7 @@ type OverviewViewProps = {
   filters: DashboardFilters;
   hubspotDealCount?: number | null;
   isLoadingLiveDeals: boolean;
+  lastUpdates: HubSpotLastUpdateItem[];
   orgId: string;
   onActiveBucketChange: (bucket: QueueBucket) => void;
   onActiveProspectChange: (prospectId: string) => void;
@@ -45,6 +108,7 @@ export const OverviewView = ({
   filters,
   hubspotDealCount,
   isLoadingLiveDeals,
+  lastUpdates,
   orgId,
   onActiveBucketChange,
   onActiveProspectChange,
@@ -97,34 +161,42 @@ export const OverviewView = ({
           type="button"
         >
           <span>{bucket.label}</span>
-          <strong>{bucketCounts[bucket.id]}</strong>
+          <strong>{bucket.id === "lastUpdate" ? lastUpdates.length : bucketCounts[bucket.id]}</strong>
         </button>
       ))}
     </nav>
 
-    <section className="ae-content">
+    <section className={activeBucket === "lastUpdate" ? "ae-content last-update-active" : "ae-content"}>
       <div className="ae-queue-panel">
-        <QueueFilters
-          filteredCount={filteredProspects.length}
-          filters={filters}
-          onCloseDateFromChange={onCloseDateFromChange}
-          onCloseDatePresetChange={onCloseDatePresetChange}
-          onCloseDateToChange={onCloseDateToChange}
-          onSearchTermChange={onSearchTermChange}
-          onStageFilterChange={onStageFilterChange}
-          onStatusFilterChange={onStatusFilterChange}
-        />
+        {activeBucket === "lastUpdate" ? (
+          <LastUpdateTable updates={lastUpdates} />
+        ) : (
+          <>
+            <QueueFilters
+              filteredCount={filteredProspects.length}
+              filters={filters}
+              onCloseDateFromChange={onCloseDateFromChange}
+              onCloseDatePresetChange={onCloseDatePresetChange}
+              onCloseDateToChange={onCloseDateToChange}
+              onSearchTermChange={onSearchTermChange}
+              onStageFilterChange={onStageFilterChange}
+              onStatusFilterChange={onStatusFilterChange}
+            />
 
-        <ProspectTable
-          activeProspectId={activeProspect?.id ?? null}
-          filteredProspects={filteredProspects}
-          isLoadingLiveDeals={isLoadingLiveDeals}
-          onActiveProspectChange={onActiveProspectChange}
-          onOpenDealAnalysis={onOpenDealAnalysis}
-        />
+            <ProspectTable
+              activeProspectId={activeProspect?.id ?? null}
+              filteredProspects={filteredProspects}
+              isLoadingLiveDeals={isLoadingLiveDeals}
+              onActiveProspectChange={onActiveProspectChange}
+              onOpenDealAnalysis={onOpenDealAnalysis}
+            />
+          </>
+        )}
       </div>
 
-      <ProspectDetail activeProspect={activeProspect} orgId={orgId} onOpenDealAnalysis={() => onOpenDealAnalysis()} />
+      {activeBucket === "lastUpdate" ? null : (
+        <ProspectDetail activeProspect={activeProspect} orgId={orgId} onOpenDealAnalysis={() => onOpenDealAnalysis()} />
+      )}
     </section>
   </>
 );

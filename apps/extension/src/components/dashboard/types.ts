@@ -3,6 +3,7 @@ import type {
   AiProviderId,
   AiProviderOption,
   HubSpotDisconnectResult,
+  HubSpotLastUpdateItem,
   HubSpotOwnerOption,
   HubSpotSyncJobStatus,
   HubSpotSyncResult,
@@ -15,6 +16,7 @@ export type QueueViewProps = {
   orgId: string;
   isConnected?: boolean;
   isRefreshing?: boolean;
+  lastUpdates?: HubSpotLastUpdateItem[];
   onConnectHubSpot?: () => void;
   onDisconnectHubSpot?: () => Promise<HubSpotDisconnectResult>;
   onOwnerChange?: (ownerId: string) => void;
@@ -25,7 +27,7 @@ export type QueueViewProps = {
   prospects: QueueProspect[];
 };
 
-export type QueueBucket = "actNow" | "thisWeek" | "watch" | "all";
+export type QueueBucket = "actNow" | "thisWeek" | "watch" | "all" | "lastUpdate";
 export type DealStatus = "open" | "won" | "lost" | "other";
 export type DealStatusFilter = "open" | "all" | "won" | "lost";
 export type CloseDatePreset = "all" | "thisMonth" | "nextMonth" | "thisQuarter" | "overdue" | "noDate";

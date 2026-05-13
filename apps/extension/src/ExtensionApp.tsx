@@ -123,6 +123,7 @@ export const ExtensionApp = () => {
       hubspotPortalId={data?.hubspotPortalId}
       isConnected={Boolean(data?.hubspotPortalId)}
       isRefreshing={isRefreshing}
+      lastUpdates={data?.lastUpdates ?? []}
       onConnectHubSpot={handleConnectHubSpot}
       onDisconnectHubSpot={handleDisconnectHubSpot}
       onOwnerChange={setSelectedOwnerId}

@@ -86,11 +86,33 @@ type HubSpotOwnerProspectsPayload = {
   prospects: HubSpotOwnerProspect[];
 };
 
+export type HubSpotLastUpdateItem = {
+  id: string;
+  orgId: string;
+  hubspotDealId: string;
+  dealName: string | null;
+  companyName: string | null;
+  amount: number | null;
+  dealStage: string | null;
+  status: "queued" | "running" | "completed" | "failed" | "skipped";
+  reason: string | null;
+  eventCount: number;
+  receivedAt: string;
+  scheduledFor: string;
+  processedAt: string | null;
+};
+
+type HubSpotLastUpdatesPayload = {
+  orgId: string;
+  updates: HubSpotLastUpdateItem[];
+};
+
 export type HubSpotQueueData = QueueData & {
   hubspotPortalId: string | null;
   owner: HubSpotOwnerOption;
   owners: HubSpotOwnerOption[];
   hubspotDealCount: number | null;
+  lastUpdates: HubSpotLastUpdateItem[];
 };
 
 export type HubSpotSyncResult = {
@@ -863,12 +885,24 @@ export const fetchHubSpotStatus = async (orgId: string): Promise<HubSpotConnecti
 export const fetchHubSpotOwners = async (orgId: string): Promise<HubSpotOwnerOption[]> =>
   getJson<HubSpotOwnerOption[]>(`/api/hubspot/owners?orgId=${encodeURIComponent(orgId)}`);
 
+export const fetchHubSpotLastUpdates = async (orgId: string, limit = 12): Promise<HubSpotLastUpdateItem[]> => {
+  const payload = await getJson<HubSpotLastUpdatesPayload>(
+    `/api/hubspot/last-updates?orgId=${encodeURIComponent(orgId)}&limit=${encodeURIComponent(String(limit))}`,
+  );
+
+  return payload.updates;
+};
+
 export const fetchHubSpotQueue = async (
   orgId: string,
   preferredHubSpotOwnerId: string | null,
   live: boolean,
 ): Promise<HubSpotQueueData> => {
-  const [status, owners] = await Promise.all([fetchHubSpotStatus(orgId), fetchHubSpotOwners(orgId)]);
+  const [status, owners, lastUpdates] = await Promise.all([
+    fetchHubSpotStatus(orgId),
+    fetchHubSpotOwners(orgId),
+    fetchHubSpotLastUpdates(orgId),
+  ]);
 
   if (!status.connected) {
     throw new Error("HubSpot n'est pas connecte pour cette organisation.");
@@ -908,6 +942,7 @@ export const fetchHubSpotQueue = async (
     owner,
     owners,
     hubspotDealCount: ownerProspectsPayload.hubspotDealCount ?? owner.syncedDealCount,
+    lastUpdates,
   };
 };
 
