@@ -1095,9 +1095,10 @@ body,
 .ae-tabs {
   display: flex;
   align-items: flex-end;
-  gap: 28px;
+  gap: 18px;
   margin: 4px 0 20px;
   border-bottom: 1px solid #dde3df;
+  overflow-x: auto;
 }
 
 .ae-tabs button,
@@ -1116,8 +1117,9 @@ body,
   align-items: center;
   justify-content: center;
   gap: 7px;
+  flex: 0 0 auto;
   min-height: 42px;
-  padding: 0 0 12px;
+  padding: 0 2px 12px;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -1145,6 +1147,7 @@ body,
 .ae-tabs button strong {
   color: inherit;
   font-weight: 650;
+  white-space: nowrap;
 }
 
 .ae-toolbar,
@@ -1268,8 +1271,34 @@ body,
 
 .ae-last-update-table table {
   width: 100%;
-  min-width: 720px;
+  min-width: 1040px;
   border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.ae-last-update-table th:nth-child(1),
+.ae-last-update-table td:nth-child(1) {
+  width: 42%;
+}
+
+.ae-last-update-table th:nth-child(2),
+.ae-last-update-table td:nth-child(2) {
+  width: 30%;
+}
+
+.ae-last-update-table th:nth-child(3),
+.ae-last-update-table td:nth-child(3) {
+  width: 10%;
+}
+
+.ae-last-update-table th:nth-child(4),
+.ae-last-update-table td:nth-child(4) {
+  width: 12%;
+}
+
+.ae-last-update-table th:nth-child(5),
+.ae-last-update-table td:nth-child(5) {
+  width: 6%;
 }
 
 .ae-last-update-table th {
@@ -1294,6 +1323,10 @@ body,
 .ae-last-update-table strong,
 .ae-last-update-table small {
   display: block;
+  overflow: hidden;
+  max-width: 100%;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ae-last-update-table small {

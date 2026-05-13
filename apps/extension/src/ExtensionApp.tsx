@@ -4,7 +4,9 @@ import { useQueue } from "./hooks/useQueue";
 import {
   buildHubSpotConnectUrl,
   disconnectHubSpot,
+  fetchHubSpotLastUpdates,
   syncHubSpotToSupabase,
+  type HubSpotLastUpdateItem,
   type HubSpotDisconnectResult,
   type HubSpotSyncJobStatus,
   type HubSpotSyncResult,
@@ -16,9 +18,14 @@ const DEFAULT_ORG_ID = import.meta.env.VITE_DEFAULT_ORG_ID?.trim() || JARVIS_DEF
 export const ExtensionApp = () => {
   const [selectedOwnerId, setSelectedOwnerId] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [liveLastUpdates, setLiveLastUpdates] = useState<HubSpotLastUpdateItem[]>([]);
   const { data, isLoading, isRefreshing, error } = useQueue(DEFAULT_ORG_ID, selectedOwnerId, refreshKey);
 
   const refreshQueue = () => setRefreshKey((currentValue) => currentValue + 1);
+
+  useEffect(() => {
+    setLiveLastUpdates(data?.lastUpdates ?? []);
+  }, [data?.lastUpdates]);
 
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search);
@@ -42,6 +49,36 @@ export const ExtensionApp = () => {
 
     return () => window.removeEventListener("message", handleOAuthMessage);
   }, []);
+
+  useEffect(() => {
+    if (!data?.hubspotPortalId) {
+      return;
+    }
+
+    let isCancelled = false;
+
+    const refreshLastUpdates = async () => {
+      try {
+        const updates = await fetchHubSpotLastUpdates(DEFAULT_ORG_ID);
+
+        if (!isCancelled) {
+          setLiveLastUpdates(updates);
+        }
+      } catch {
+        // Keep the last successful snapshot; the full queue load still surfaces hard API errors.
+      }
+    };
+
+    void refreshLastUpdates();
+    const intervalId = window.setInterval(() => {
+      void refreshLastUpdates();
+    }, 10_000);
+
+    return () => {
+      isCancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [data?.hubspotPortalId]);
 
   const handleConnectHubSpot = () => {
     const connectUrl = buildHubSpotConnectUrl(DEFAULT_ORG_ID, window.location.origin);
@@ -123,7 +160,7 @@ export const ExtensionApp = () => {
       hubspotPortalId={data?.hubspotPortalId}
       isConnected={Boolean(data?.hubspotPortalId)}
       isRefreshing={isRefreshing}
-      lastUpdates={data?.lastUpdates ?? []}
+      lastUpdates={liveLastUpdates}
       onConnectHubSpot={handleConnectHubSpot}
       onDisconnectHubSpot={handleDisconnectHubSpot}
       onOwnerChange={setSelectedOwnerId}
