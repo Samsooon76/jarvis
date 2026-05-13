@@ -969,6 +969,13 @@ const wait = async (durationMs: number): Promise<void> =>
 const fetchHubSpotSyncJob = async (jobId: string): Promise<HubSpotSyncJobStatus> =>
   getJson<HubSpotSyncJobStatus>(`/api/sync/hubspot/jobs/${encodeURIComponent(jobId)}`);
 
+const runHubSpotSyncInline = async (orgId: string, hubspotOwnerIds: string[]): Promise<HubSpotSyncResult> =>
+  postJson<HubSpotSyncResult>("/api/sync/hubspot", {
+    orgId,
+    hubspotOwnerIds,
+    async: false,
+  });
+
 const startAndPollHubSpotSync = async (
   orgId: string,
   hubspotOwnerIds: string[],
@@ -985,7 +992,37 @@ const startAndPollHubSpotSync = async (
 
   while (currentJob.status !== "completed" && currentJob.status !== "failed") {
     await wait(1000);
-    currentJob = await fetchHubSpotSyncJob(startedJob.jobId);
+    try {
+      currentJob = await fetchHubSpotSyncJob(startedJob.jobId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+
+      if (!message.includes("Job de sync HubSpot introuvable")) {
+        throw error;
+      }
+
+      const result = await runHubSpotSyncInline(orgId, hubspotOwnerIds);
+      onProgress?.({
+        ...startedJob,
+        status: "completed",
+        progress: 100,
+        currentStep: "Sync terminee",
+        updatedAt: new Date().toISOString(),
+        finishedAt: new Date().toISOString(),
+        logs: [
+          ...startedJob.logs,
+          {
+            at: new Date().toISOString(),
+            level: "warning",
+            message: "Polling async indisponible sur le backend. Sync relancee en mode direct.",
+          },
+        ],
+        result,
+        error: null,
+      });
+
+      return result;
+    }
     onProgress?.(currentJob);
   }
 
