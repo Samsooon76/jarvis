@@ -340,6 +340,7 @@ type HubSpotRealtimeAnalysisRunListRow = {
 
 type HubSpotDealSummaryRow = {
   hubspot_deal_id: string;
+  hubspot_owner_id: string | null;
   primary_company_id: string | null;
   deal_name: string | null;
   amount: number | null;
@@ -350,6 +351,11 @@ type HubSpotDealSummaryRow = {
 type HubSpotCompanySummaryRow = {
   hubspot_company_id: string;
   name: string | null;
+};
+
+type SalesAeOwnerCacheEntry = {
+  expiresAt: number;
+  ownerIds: Set<string>;
 };
 
 const UUID_V4_LIKE_PATTERN =
@@ -517,14 +523,40 @@ const DEFAULT_TARGET_HUBSPOT_CONTACT_NAMES = [
 ];
 const hubspotStatusCache = new Map<string, HubSpotStatusCacheEntry>();
 const hubspotSyncJobs = new Map<string, SyncJobSnapshot>();
+const salesAeOwnerCache = new Map<string, SalesAeOwnerCacheEntry>();
 const HUBSPOT_SYNC_JOB_TTL_MS = 30 * 60 * 1000;
 const HUBSPOT_SYNC_JOB_LOG_LIMIT = 80;
+const SALES_AE_OWNER_CACHE_TTL_MS = 5 * 60 * 1000;
 
 const getDisplayTeamName = (teams: HubSpotOwnerTeam[] | undefined): string | null =>
   teams?.find((team) => team.primary)?.name ?? teams?.[0]?.name ?? null;
 
 const isSalesAeOwner = (teams: HubSpotOwnerTeam[] | undefined): boolean =>
   getDisplayTeamName(teams)?.trim().toLowerCase().includes(SALES_AE_TEAM_NAME) ?? false;
+
+const loadSalesAeOwnerIds = async (orgId: string): Promise<Set<string>> => {
+  const cachedOwners = salesAeOwnerCache.get(orgId);
+
+  if (cachedOwners && cachedOwners.expiresAt > Date.now()) {
+    return cachedOwners.ownerIds;
+  }
+
+  const accessToken = await getHubSpotAccessToken(orgId);
+  const hubspotOwners = await hubSpotService.fetchOwners(accessToken);
+  const ownerIds = new Set(
+    hubspotOwners
+      .filter((owner) => !owner.archived)
+      .filter((owner) => isSalesAeOwner(owner.teams))
+      .map((owner) => owner.id),
+  );
+
+  salesAeOwnerCache.set(orgId, {
+    expiresAt: Date.now() + SALES_AE_OWNER_CACHE_TTL_MS,
+    ownerIds,
+  });
+
+  return ownerIds;
+};
 
 const invalidateHubSpotStatusCache = (orgId: string): void => {
   hubspotStatusCache.delete(orgId);
@@ -1617,6 +1649,18 @@ export const registerHubSpotRoutes = async (app: FastifyInstance): Promise<void>
       try {
         const supabase = getSupabaseAdmin();
         const limit = parseLastUpdatesLimit(request.query.limit);
+        const salesAeOwnerIds = await loadSalesAeOwnerIds(orgId);
+
+        if (salesAeOwnerIds.size === 0) {
+          return reply.send({
+            success: true,
+            data: {
+              orgId,
+              updates: [],
+            },
+          });
+        }
+
         const { data: runData, error: runError } = await supabase
           .from("hubspot_realtime_analysis_runs")
           .select(
@@ -1624,13 +1668,13 @@ export const registerHubSpotRoutes = async (app: FastifyInstance): Promise<void>
           )
           .eq("org_id", orgId)
           .order("updated_at", { ascending: false })
-          .range(0, Math.max(limit * 4, limit) - 1);
+          .range(0, Math.max(limit * 12, limit) - 1);
 
         if (runError) {
           throw new Error(formatOperationError("Impossible de charger les updates realtime HubSpot", runError.message));
         }
 
-        const uniqueRuns: HubSpotRealtimeAnalysisRunListRow[] = [];
+        const candidateRuns: HubSpotRealtimeAnalysisRunListRow[] = [];
         const seenDealIds = new Set<string>();
 
         for (const run of (runData ?? []) as HubSpotRealtimeAnalysisRunListRow[]) {
@@ -1639,19 +1683,15 @@ export const registerHubSpotRoutes = async (app: FastifyInstance): Promise<void>
           }
 
           seenDealIds.add(run.hubspot_deal_id);
-          uniqueRuns.push(run);
-
-          if (uniqueRuns.length >= limit) {
-            break;
-          }
+          candidateRuns.push(run);
         }
 
-        const dealIds = uniqueRuns.map((run) => run.hubspot_deal_id);
+        const dealIds = candidateRuns.map((run) => run.hubspot_deal_id);
         const { data: dealData, error: dealError } =
           dealIds.length > 0
             ? await supabase
                 .from("hubspot_deals")
-                .select("hubspot_deal_id, primary_company_id, deal_name, amount, deal_stage, deal_stage_label")
+                .select("hubspot_deal_id, hubspot_owner_id, primary_company_id, deal_name, amount, deal_stage, deal_stage_label")
                 .eq("org_id", orgId)
                 .in("hubspot_deal_id", dealIds)
             : { data: [], error: null };
@@ -1662,8 +1702,19 @@ export const registerHubSpotRoutes = async (app: FastifyInstance): Promise<void>
 
         const deals = (dealData ?? []) as HubSpotDealSummaryRow[];
         const dealById = new Map(deals.map((deal) => [deal.hubspot_deal_id, deal]));
+        const uniqueRuns = candidateRuns
+          .filter((run) => {
+            const deal = dealById.get(run.hubspot_deal_id);
+
+            return Boolean(deal?.hubspot_owner_id && salesAeOwnerIds.has(deal.hubspot_owner_id));
+          })
+          .slice(0, limit);
         const companyIds = Array.from(
-          new Set(deals.map((deal) => deal.primary_company_id).filter((id): id is string => Boolean(id))),
+          new Set(
+            uniqueRuns
+              .map((run) => dealById.get(run.hubspot_deal_id)?.primary_company_id ?? null)
+              .filter((id): id is string => Boolean(id)),
+          ),
         );
         const { data: companyData, error: companyError } =
           companyIds.length > 0
