@@ -711,8 +711,19 @@ const loadDealHistoryForAnalysis = async (
   hubspotDealId: string,
 ) => {
   const localHistory = await loadLocalHubSpotDealHistory(orgId, hubspotDealId);
+  const localActivityCount = localHistory?.timeline.filter((item) => item.type !== "deal").length ?? 0;
 
-  return localHistory ?? hubSpotService.fetchDealHistory(accessToken, hubspotDealId);
+  if (localHistory && localActivityCount > 0) {
+    return localHistory;
+  }
+
+  return hubSpotService.fetchDealHistory(accessToken, hubspotDealId).catch((error: unknown) => {
+    if (localHistory) {
+      return localHistory;
+    }
+
+    throw error;
+  });
 };
 
 const resolveForecastLabel = (probability: number, health: DealIntelligenceAnalysis["dealHealth"]): DealAnalysisSnapshot["forecastLabel"] => {
