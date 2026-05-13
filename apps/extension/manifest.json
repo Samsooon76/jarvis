@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "Jarvis - Sales Copilot",
+  "version": "0.1.0",
+  "description": "AI-powered sales copilot that orchestrates your day",
+  "permissions": ["sidePanel", "storage", "tabs", "activeTab", "notifications"],
+  "host_permissions": ["https://*.hubspot.com/*", "http://localhost:4000/*"],
+  "side_panel": {
+    "default_path": "index.html"
+  },
+  "background": {
+    "service_worker": "src/background.ts",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://*.hubspot.com/*"],
+      "js": ["src/content-script.ts"]
+    }
+  ],
+  "action": {
+    "default_title": "Open Jarvis"
+  }
+}

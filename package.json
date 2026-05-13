@@ -1,0 +1,23 @@
+{
+  "name": "jarvis",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/backend",
+    "apps/extension",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "./scripts/dev-all.sh",
+    "build": "npm run build -w @jarvis/shared && npm run build -w @jarvis/api && npm run build -w @jarvis/extension",
+    "dev:api": "npm run dev -w @jarvis/api",
+    "dev:extension": "npm run dev -w @jarvis/extension",
+    "lint": "npm run lint --workspaces"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "devDependencies": {
+    "vite": "^6.4.2"
+  }
+}
