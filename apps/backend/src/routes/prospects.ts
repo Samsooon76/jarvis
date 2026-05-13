@@ -12,6 +12,8 @@ import {
   type DealIntelligenceResult,
   type DealQualificationResult,
 } from "../services/deal-intelligence.service.js";
+import { getHubSpotAccessToken } from "../services/hubspot-auth.service.js";
+import { hubSpotService, type HubSpotDealActivityDebug } from "../services/hubspot.service.js";
 import type { FollowUpTaskRecommendation } from "../services/llm/llm.provider.js";
 import {
   type FollowUpTaskDebugInfo,
@@ -59,6 +61,11 @@ type DealIntelligenceQuery = {
   refresh?: string;
 };
 
+type DealActivityDebugQuery = {
+  orgId?: string;
+  hubspotDealId?: string;
+};
+
 const parseOptionalNumber = (value: string | undefined): number | null => {
   if (!value) {
     return null;
@@ -81,6 +88,38 @@ type FollowUpTaskResult = {
 };
 
 export const registerProspectRoutes = async (app: FastifyInstance): Promise<void> => {
+  app.get<{ Querystring: DealActivityDebugQuery; Reply: ApiResponse<HubSpotDealActivityDebug> }>(
+    "/api/prospects/deal-activity-debug",
+    async (request, reply) => {
+      const orgId = request.query.orgId;
+      const hubspotDealId = request.query.hubspotDealId;
+
+      if (!orgId || !hubspotDealId) {
+        return reply.code(400).send({
+          success: false,
+          error: "Les parametres orgId et hubspotDealId sont obligatoires.",
+        });
+      }
+
+      try {
+        const accessToken = await getHubSpotAccessToken(orgId);
+        const debug = await hubSpotService.fetchDealActivityDebug(accessToken, hubspotDealId);
+
+        return reply.send({
+          success: true,
+          data: debug,
+        });
+      } catch (error) {
+        request.log.error({ error, orgId, hubspotDealId }, "Impossible de diagnostiquer les activites du deal.");
+
+        return reply.code(500).send({
+          success: false,
+          error: error instanceof Error ? error.message : "Erreur inconnue pendant le diagnostic activite HubSpot.",
+        });
+      }
+    },
+  );
+
   app.get<{ Params: FollowUpTaskParams; Querystring: DealIntelligenceQuery; Reply: ApiResponse<DealIntelligenceResult> }>(
     "/api/prospects/:id/deal-intelligence",
     async (request, reply) => {

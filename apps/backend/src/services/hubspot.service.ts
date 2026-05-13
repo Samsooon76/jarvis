@@ -226,7 +226,7 @@ export type DealLifecycleStatus = "pending" | "won" | "lost";
 
 export type HubSpotDealHistoryItem = {
   id: string;
-  type: "deal" | "note" | "call" | "meeting" | "email" | "sms";
+  type: "deal" | "note" | "call" | "meeting" | "email" | "sms" | "task";
   timestamp: string | null;
   title: string;
   body: string | null;
@@ -241,6 +241,16 @@ export type HubSpotDealHistory = {
   companyContext: string | null;
   contactNames: string[];
   timeline: HubSpotDealHistoryItem[];
+};
+
+export type HubSpotDealActivityDebug = {
+  dealId: string;
+  directAssociationCounts: Record<"notes" | "calls" | "meetings" | "emails" | "communications" | "tasks", number>;
+  contactAssociationCounts: Record<"notes" | "calls" | "meetings" | "emails" | "communications" | "tasks", number>;
+  companyAssociationCounts: Record<"notes" | "calls" | "meetings" | "emails" | "communications" | "tasks", number>;
+  totalUniqueActivityCounts: Record<"notes" | "calls" | "meetings" | "emails" | "communications" | "sms" | "tasks", number>;
+  timelineCount: number;
+  timelineTypes: Record<HubSpotDealHistoryItem["type"], number>;
 };
 
 export type CreateHubSpotTaskInput = {
@@ -369,6 +379,15 @@ const HUBSPOT_COMMUNICATION_PROPERTIES = [
   "hs_communication_channel_type",
   "hs_communication_logged_from",
   "hs_communication_body",
+  "hubspot_owner_id",
+];
+const HUBSPOT_TASK_PROPERTIES = [
+  "hs_timestamp",
+  "hs_task_subject",
+  "hs_task_body",
+  "hs_task_status",
+  "hs_task_priority",
+  "hs_task_type",
   "hubspot_owner_id",
 ];
 const HUBSPOT_TASK_ASSOCIATION_TYPE_IDS = {
@@ -830,6 +849,22 @@ const toHistoryItem = (
       body: readProperty(record.properties, "hs_communication_body"),
       metadata: {
         channel: readProperty(record.properties, "hs_communication_channel_type"),
+        ownerId: readProperty(record.properties, "hubspot_owner_id"),
+      },
+    };
+  }
+
+  if (type === "task") {
+    return {
+      id: record.id,
+      type,
+      timestamp: readProperty(record.properties, "hs_timestamp"),
+      title: readProperty(record.properties, "hs_task_subject") ?? `Task ${record.id}`,
+      body: readProperty(record.properties, "hs_task_body"),
+      metadata: {
+        status: readProperty(record.properties, "hs_task_status"),
+        priority: readProperty(record.properties, "hs_task_priority"),
+        taskType: readProperty(record.properties, "hs_task_type"),
         ownerId: readProperty(record.properties, "hubspot_owner_id"),
       },
     };
@@ -1906,12 +1941,13 @@ export const hubSpotService = {
       }
     }
 
-    const [dealNoteIds, dealCallIds, dealMeetingIds, dealEmailIds, dealCommunicationIds] = await Promise.all([
+    const [dealNoteIds, dealCallIds, dealMeetingIds, dealEmailIds, dealCommunicationIds, dealTaskIds] = await Promise.all([
       fetchAssociatedIds(accessToken, "deals", dealId, "notes"),
       fetchAssociatedIds(accessToken, "deals", dealId, "calls"),
       fetchAssociatedIds(accessToken, "deals", dealId, "meetings"),
       fetchAssociatedIds(accessToken, "deals", dealId, "emails"),
       fetchAssociatedIds(accessToken, "deals", dealId, "communications"),
+      fetchAssociatedIds(accessToken, "deals", dealId, "tasks"),
     ]);
     const [
       contactNoteIds,
@@ -1919,17 +1955,21 @@ export const hubSpotService = {
       contactMeetingIds,
       contactEmailIds,
       contactCommunicationIds,
+      contactTaskIds,
       companyNoteIds,
       companyCallIds,
       companyMeetingIds,
       companyEmailIds,
       companyCommunicationIds,
+      companyTaskIds,
     ] = await Promise.all([
       fetchAssociatedIdsForMany(accessToken, "contacts", contactIds, "notes"),
       fetchAssociatedIdsForMany(accessToken, "contacts", contactIds, "calls"),
       fetchAssociatedIdsForMany(accessToken, "contacts", contactIds, "meetings"),
       fetchAssociatedIdsForMany(accessToken, "contacts", contactIds, "emails"),
       fetchAssociatedIdsForMany(accessToken, "contacts", contactIds, "communications"),
+      fetchAssociatedIdsForMany(accessToken, "contacts", contactIds, "tasks"),
+      Promise.resolve<string[]>([]),
       Promise.resolve<string[]>([]),
       Promise.resolve<string[]>([]),
       Promise.resolve<string[]>([]),
@@ -1945,12 +1985,14 @@ export const hubSpotService = {
           scopedCompanyMeetingIds,
           scopedCompanyEmailIds,
           scopedCompanyCommunicationIds,
+          scopedCompanyTaskIds,
         ] = await Promise.all([
           fetchAssociatedIdsForMany(accessToken, "companies", companyIds, "notes"),
           fetchAssociatedIdsForMany(accessToken, "companies", companyIds, "calls"),
           fetchAssociatedIdsForMany(accessToken, "companies", companyIds, "meetings"),
           fetchAssociatedIdsForMany(accessToken, "companies", companyIds, "emails"),
           fetchAssociatedIdsForMany(accessToken, "companies", companyIds, "communications"),
+          fetchAssociatedIdsForMany(accessToken, "companies", companyIds, "tasks"),
         ]);
 
         companyNoteIds.push(...scopedCompanyNoteIds);
@@ -1958,6 +2000,7 @@ export const hubSpotService = {
         companyMeetingIds.push(...scopedCompanyMeetingIds);
         companyEmailIds.push(...scopedCompanyEmailIds);
         companyCommunicationIds.push(...scopedCompanyCommunicationIds);
+        companyTaskIds.push(...scopedCompanyTaskIds);
       } catch (error) {
         if (!isHubSpotCompanyScopeError(error)) {
           throw error;
@@ -1971,9 +2014,10 @@ export const hubSpotService = {
     const communicationIds = Array.from(
       new Set([...dealCommunicationIds, ...contactCommunicationIds, ...companyCommunicationIds]),
     );
+    const taskIds = Array.from(new Set([...dealTaskIds, ...contactTaskIds, ...companyTaskIds]));
     let companies: HubSpotCompany[] = [];
 
-    const [contacts, notes, calls, meetings, emails, communications] = await Promise.all([
+    const [contacts, notes, calls, meetings, emails, communications, tasks] = await Promise.all([
       fetchContactsByIds(accessToken, contactIds),
       fetchBatchObjects<HubSpotNote>(accessToken, "notes", noteIds, HUBSPOT_NOTE_PROPERTIES),
       fetchBatchObjects<HubSpotCall>(accessToken, "calls", callIds, HUBSPOT_CALL_PROPERTIES),
@@ -1985,6 +2029,7 @@ export const hubSpotService = {
         communicationIds,
         HUBSPOT_COMMUNICATION_PROPERTIES,
       ),
+      fetchBatchObjects<HubSpotTask>(accessToken, "tasks", taskIds, HUBSPOT_TASK_PROPERTIES),
     ]);
 
     if (companyIds.length > 0) {
@@ -2012,6 +2057,7 @@ export const hubSpotService = {
       ...meetings.map((item) => toHistoryItem("meeting", item)),
       ...emails.map((item) => toHistoryItem("email", item)),
       ...smsMessages.map((item) => toHistoryItem("sms", item)),
+      ...tasks.map((item) => toHistoryItem("task", item)),
     ].sort((left, right) => {
       const leftValue = left.timestamp ? new Date(left.timestamp).getTime() : 0;
       const rightValue = right.timestamp ? new Date(right.timestamp).getTime() : 0;
@@ -2029,6 +2075,101 @@ export const hubSpotService = {
       companyContext: buildCompanyContextSummary(primaryCompany),
       contactNames: contacts.map((contact) => buildContactDisplayName(contact)),
       timeline,
+    };
+  },
+
+  async fetchDealActivityDebug(accessToken: string, dealId: string): Promise<HubSpotDealActivityDebug> {
+    const contactIds = await fetchAssociatedIds(accessToken, "deals", dealId, "contacts");
+    const companyIds = await fetchAssociatedIds(accessToken, "deals", dealId, "companies").catch(() => []);
+    const [
+      dealNoteIds,
+      dealCallIds,
+      dealMeetingIds,
+      dealEmailIds,
+      dealCommunicationIds,
+      dealTaskIds,
+      contactNoteIds,
+      contactCallIds,
+      contactMeetingIds,
+      contactEmailIds,
+      contactCommunicationIds,
+      contactTaskIds,
+      companyNoteIds,
+      companyCallIds,
+      companyMeetingIds,
+      companyEmailIds,
+      companyCommunicationIds,
+      companyTaskIds,
+      history,
+    ] = await Promise.all([
+      fetchAssociatedIds(accessToken, "deals", dealId, "notes"),
+      fetchAssociatedIds(accessToken, "deals", dealId, "calls"),
+      fetchAssociatedIds(accessToken, "deals", dealId, "meetings"),
+      fetchAssociatedIds(accessToken, "deals", dealId, "emails"),
+      fetchAssociatedIds(accessToken, "deals", dealId, "communications"),
+      fetchAssociatedIds(accessToken, "deals", dealId, "tasks"),
+      fetchAssociatedIdsForMany(accessToken, "contacts", contactIds, "notes"),
+      fetchAssociatedIdsForMany(accessToken, "contacts", contactIds, "calls"),
+      fetchAssociatedIdsForMany(accessToken, "contacts", contactIds, "meetings"),
+      fetchAssociatedIdsForMany(accessToken, "contacts", contactIds, "emails"),
+      fetchAssociatedIdsForMany(accessToken, "contacts", contactIds, "communications"),
+      fetchAssociatedIdsForMany(accessToken, "contacts", contactIds, "tasks"),
+      fetchAssociatedIdsForMany(accessToken, "companies", companyIds, "notes").catch(() => []),
+      fetchAssociatedIdsForMany(accessToken, "companies", companyIds, "calls").catch(() => []),
+      fetchAssociatedIdsForMany(accessToken, "companies", companyIds, "meetings").catch(() => []),
+      fetchAssociatedIdsForMany(accessToken, "companies", companyIds, "emails").catch(() => []),
+      fetchAssociatedIdsForMany(accessToken, "companies", companyIds, "communications").catch(() => []),
+      fetchAssociatedIdsForMany(accessToken, "companies", companyIds, "tasks").catch(() => []),
+      this.fetchDealHistory(accessToken, dealId),
+    ]);
+    const countByType = history.timeline.reduce<Record<HubSpotDealHistoryItem["type"], number>>(
+      (counts, item) => {
+        counts[item.type] += 1;
+        return counts;
+      },
+      { deal: 0, note: 0, call: 0, meeting: 0, email: 0, sms: 0, task: 0 },
+    );
+    const uniqueCommunicationIds = Array.from(
+      new Set([...dealCommunicationIds, ...contactCommunicationIds, ...companyCommunicationIds]),
+    );
+
+    return {
+      dealId,
+      directAssociationCounts: {
+        notes: dealNoteIds.length,
+        calls: dealCallIds.length,
+        meetings: dealMeetingIds.length,
+        emails: dealEmailIds.length,
+        communications: dealCommunicationIds.length,
+        tasks: dealTaskIds.length,
+      },
+      contactAssociationCounts: {
+        notes: contactNoteIds.length,
+        calls: contactCallIds.length,
+        meetings: contactMeetingIds.length,
+        emails: contactEmailIds.length,
+        communications: contactCommunicationIds.length,
+        tasks: contactTaskIds.length,
+      },
+      companyAssociationCounts: {
+        notes: companyNoteIds.length,
+        calls: companyCallIds.length,
+        meetings: companyMeetingIds.length,
+        emails: companyEmailIds.length,
+        communications: companyCommunicationIds.length,
+        tasks: companyTaskIds.length,
+      },
+      totalUniqueActivityCounts: {
+        notes: new Set([...dealNoteIds, ...contactNoteIds, ...companyNoteIds]).size,
+        calls: new Set([...dealCallIds, ...contactCallIds, ...companyCallIds]).size,
+        meetings: new Set([...dealMeetingIds, ...contactMeetingIds, ...companyMeetingIds]).size,
+        emails: new Set([...dealEmailIds, ...contactEmailIds, ...companyEmailIds]).size,
+        communications: uniqueCommunicationIds.length,
+        sms: countByType.sms,
+        tasks: new Set([...dealTaskIds, ...contactTaskIds, ...companyTaskIds]).size,
+      },
+      timelineCount: history.timeline.length,
+      timelineTypes: countByType,
     };
   },
 

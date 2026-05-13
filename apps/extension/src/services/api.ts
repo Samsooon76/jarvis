@@ -349,16 +349,16 @@ export type DealQualificationResult = {
 
 export type DealRecentActivity = {
   id: string;
-  type: "note" | "call" | "meeting" | "email" | "sms" | "deal";
+  type: "note" | "call" | "meeting" | "email" | "sms" | "deal" | "task";
   occurredAt: string | null;
   title: string;
   body: string | null;
   actorName: string | null;
-  channel: "email" | "call" | "meeting" | "note" | "sms" | "deal";
+  channel: "email" | "call" | "meeting" | "note" | "sms" | "deal" | "task";
 };
 
 export type DealChannelEngagement = {
-  channel: "email" | "call" | "meeting" | "note" | "sms";
+  channel: "email" | "call" | "meeting" | "note" | "sms" | "task";
   label: string;
   count: number;
   responseRate: number | null;

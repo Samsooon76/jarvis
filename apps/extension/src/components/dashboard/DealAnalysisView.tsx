@@ -227,6 +227,7 @@ const activityChannelLabels: Record<DealRecentActivity["channel"], string> = {
   meeting: "Rendez-vous",
   note: "Note",
   sms: "SMS",
+  task: "Tache",
 };
 
 const compactText = (value: string | undefined, maxLength: number): string => {
@@ -329,6 +330,12 @@ const ActivityChannelIcon = ({ channel }: { channel: DealRecentActivity["channel
       <svg viewBox="0 0 24 24">
         <path d="M5 6h14v10H9l-4 3z" />
         <path d="M8 10h8M8 13h5" />
+      </svg>
+    ) : null}
+    {channel === "task" ? (
+      <svg viewBox="0 0 24 24">
+        <rect x="5" y="4" width="14" height="16" rx="2" />
+        <path d="M9 9h6M9 13h6M9 17h3" />
       </svg>
     ) : null}
     {channel === "deal" ? (

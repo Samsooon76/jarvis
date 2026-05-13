@@ -177,16 +177,16 @@ export type DealQualificationResult = {
 
 export type DealRecentActivity = {
   id: string;
-  type: "note" | "call" | "meeting" | "email" | "sms" | "deal";
+  type: "note" | "call" | "meeting" | "email" | "sms" | "deal" | "task";
   occurredAt: string | null;
   title: string;
   body: string | null;
   actorName: string | null;
-  channel: "email" | "call" | "meeting" | "note" | "sms" | "deal";
+  channel: "email" | "call" | "meeting" | "note" | "sms" | "deal" | "task";
 };
 
 export type DealChannelEngagement = {
-  channel: "email" | "call" | "meeting" | "note" | "sms";
+  channel: "email" | "call" | "meeting" | "note" | "sms" | "task";
   label: string;
   count: number;
   responseRate: number | null;
@@ -895,10 +895,13 @@ const activityChannelLabels: Record<DealChannelEngagement["channel"], string> = 
   meeting: "Reunions",
   note: "Notes",
   sms: "SMS",
+  task: "Taches",
 };
 
 const toActivityChannel = (type: HubSpotDealHistoryItem["type"]): DealRecentActivity["channel"] =>
-  type === "call" || type === "email" || type === "meeting" || type === "note" || type === "sms" ? type : "deal";
+  type === "call" || type === "email" || type === "meeting" || type === "note" || type === "sms" || type === "task"
+    ? type
+    : "deal";
 
 const buildRecentActivities = (
   timeline: HubSpotDealHistoryItem[],
@@ -924,7 +927,7 @@ const buildRecentActivities = (
     }));
 
 const buildChannelEngagement = (timeline: HubSpotDealHistoryItem[]): DealChannelEngagement[] => {
-  const channels: DealChannelEngagement["channel"][] = ["email", "call", "meeting", "note", "sms"];
+  const channels: DealChannelEngagement["channel"][] = ["email", "call", "meeting", "note", "task", "sms"];
 
   return channels.map((channel) => {
     const items = timeline.filter((item) => item.type === channel);

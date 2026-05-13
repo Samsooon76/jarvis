@@ -213,7 +213,7 @@ type HubSpotDealHistoryPayload = {
   contactNames: string[];
   timeline: Array<{
     id: string;
-    type: "deal" | "note" | "call" | "meeting" | "email" | "sms";
+    type: "deal" | "note" | "call" | "meeting" | "email" | "sms" | "task";
     timestamp: string | null;
     title: string;
     body: string | null;
