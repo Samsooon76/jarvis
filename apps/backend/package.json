@@ -6,6 +6,7 @@
   "scripts": {
     "build": "npm run build -w @jarvis/shared && tsc -p tsconfig.json",
     "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
     "lint": "tsc --noEmit -p tsconfig.json",
     "test": "node --import tsx --test \"src/**/*.test.ts\""
   },
