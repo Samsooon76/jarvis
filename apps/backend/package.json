@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "npm run build -w @jarvis/shared && tsc -p tsconfig.json",
     "dev": "tsx watch src/index.ts",
     "lint": "tsc --noEmit -p tsconfig.json",
     "test": "node --import tsx --test \"src/**/*.test.ts\""
