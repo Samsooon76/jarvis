@@ -1,6 +1,6 @@
 import type { ApiResponse, ProspectPriority, QueueData, QueueProspect } from "@jarvis/shared";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
+const API_BASE_URL = import.meta.env.VITE_API_URL ?? "https://jarvisapi-production-10cd.up.railway.app";
 
 export type AiProviderId = "deepseek" | "openai" | "vertex-gemini";
 

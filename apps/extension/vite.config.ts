@@ -20,7 +20,11 @@ export default defineConfig({
           manifest.background.service_worker = "background.js";
         }
 
-        manifest.host_permissions = ["https://*.hubspot.com/*", "http://localhost:4000/*"];
+        manifest.host_permissions = [
+          "https://*.hubspot.com/*",
+          "https://jarvisapi-production-10cd.up.railway.app/*",
+          "http://localhost:4000/*",
+        ];
 
         if (manifest.content_scripts) {
           manifest.content_scripts = manifest.content_scripts.map((contentScript) => ({
