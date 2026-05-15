@@ -6,6 +6,7 @@ import type {
   AnalyzeCloseLostPortfolioInput,
   AnalyzeDealIntelligenceInput,
   AnalyzeDealQualificationInput,
+  AnalyzeTaskInput,
   CloseLostDealAnalysis,
   CloseLostPortfolioAnalysis,
   DealActivityPlanAnalysis,
@@ -17,6 +18,7 @@ import type {
   FollowUpTaskRecommendation,
   LlmProvider,
   RecommendFollowUpTaskInput,
+  TaskAnalysis,
 } from "../llm.provider.js";
 import { buildDealActivityPlanPrompt, parseDealActivityPlan } from "../activity-plan.js";
 import {
@@ -26,6 +28,7 @@ import {
   parseCloseLostPortfolioAnalysis,
 } from "../close-lost.js";
 import { buildDealQualificationPrompt, parseDealQualification } from "../qualification.js";
+import { buildTaskAnalysisPrompt, parseTaskAnalysis } from "../task-analysis.js";
 
 type DeepSeekChatResponse = {
   choices?: Array<{
@@ -499,6 +502,10 @@ export class DeepSeekProvider implements LlmProvider {
 
   async recommendFollowUpTask(input: RecommendFollowUpTaskInput): Promise<FollowUpTaskRecommendation> {
     return parseFollowUpRecommendation(await this.completeJson(buildFollowUpPrompt(input), 1_800));
+  }
+
+  async analyzeTask(input: AnalyzeTaskInput): Promise<TaskAnalysis> {
+    return parseTaskAnalysis(await this.completeJson(buildTaskAnalysisPrompt(input), 1_800), "DeepSeek");
   }
 
   private async completeJson(prompt: string, maxTokens: number): Promise<string> {

@@ -1,7 +1,8 @@
 import { env } from "../config/env.js";
 import { getSupabaseAdmin } from "../db/client.js";
-import { buildDealAnalysisBundleForProspect } from "./deal-intelligence.service.js";
+import { analyzeDealActivityPlanForProspect } from "./deal-intelligence.service.js";
 import { getHubSpotAccessToken } from "./hubspot-auth.service.js";
+import { resolveLlmProviderPreference } from "./llm/provider-preference.service.js";
 import {
   hubSpotService,
   type HubSpotActivitySnapshot,
@@ -758,9 +759,13 @@ export const runHubSpotDealReanalysis = async (runId: string): Promise<void> => 
 
     const prospectId = (prospectData as { id: string } | null)?.id ?? `hubspot:${run.hubspot_deal_id}`;
 
-    await buildDealAnalysisBundleForProspect(prospectId, {
+    const llmPreference = await resolveLlmProviderPreference(run.org_id);
+
+    await analyzeDealActivityPlanForProspect(prospectId, {
       orgId: run.org_id,
       hubspotDealId: run.hubspot_deal_id,
+      llmProvider: llmPreference.provider,
+      llmModel: llmPreference.model,
       refresh: true,
     });
 

@@ -45,6 +45,17 @@ type HubSpotAssociationResponse = {
   };
 };
 
+type HubSpotBatchAssociationResponse = {
+  results?: Array<{
+    from?: {
+      id?: string | number;
+    };
+    to?: Array<{
+      toObjectId?: string | number;
+    }>;
+  }>;
+};
+
 type HubSpotContact = {
   id: string;
   properties: Record<string, string | null | undefined>;
@@ -60,6 +71,9 @@ type HubSpotDeal = {
   properties: Record<string, string | null | undefined>;
   associations?: {
     contacts?: {
+      results: Array<{ id: string }>;
+    };
+    companies?: {
       results: Array<{ id: string }>;
     };
   };
@@ -258,7 +272,7 @@ export type CreateHubSpotTaskInput = {
   body: string;
   dueAt: string;
   ownerHubSpotId?: string | null;
-  priority?: "low" | "medium" | "high";
+  priority?: HubSpotTaskPriority | null;
   associations: Array<{
     objectType: "contact" | "company" | "deal";
     objectId: string;
@@ -285,6 +299,29 @@ export type HubSpotTask = {
       results: Array<{ id: string }>;
     };
   };
+};
+
+export type HubSpotTaskPriority = "low" | "medium" | "high";
+
+export type HubSpotTaskStatus = "not_started" | "in_progress" | "waiting" | "completed" | "deferred" | "unknown";
+
+export type HubSpotTaskListItem = {
+  id: string;
+  title: string;
+  body: string | null;
+  status: HubSpotTaskStatus;
+  priority: HubSpotTaskPriority | null;
+  dueAt: string | null;
+  ownerHubSpotId: string | null;
+  taskType: string | null;
+  contactName: string | null;
+  contactEmail: string | null;
+  companyName: string | null;
+  dealName: string | null;
+  createdAt: string | null;
+  associatedContactIds: string[];
+  associatedCompanyIds: string[];
+  associatedDealIds: string[];
 };
 
 export type HubSpotActivitySnapshot = {
@@ -402,6 +439,12 @@ const HUBSPOT_TASK_PRIORITY_BY_LEVEL = {
   high: "HIGH",
 } as const;
 
+const HUBSPOT_TASK_LEVEL_BY_PRIORITY = {
+  LOW: "low",
+  MEDIUM: "medium",
+  HIGH: "high",
+} as const satisfies Record<string, HubSpotTaskPriority>;
+
 const isHubSpotCompanyScopeError = (error: unknown): boolean =>
   error instanceof Error &&
   error.message.includes("MISSING_SCOPES") &&
@@ -441,6 +484,11 @@ const parseBooleanValue = (value: string | null | undefined): boolean | null => 
 
 const readProperty = (properties: Record<string, string | null | undefined>, key: string): string | null =>
   properties[key] ?? null;
+
+const readAssociationIds = (
+  record: HubSpotTask,
+  objectType: "contacts" | "companies" | "deals",
+): string[] => record.associations?.[objectType]?.results.map((item) => item.id) ?? [];
 
 const toNullablePropertiesRecord = (
   properties: Record<string, string | null | undefined>,
@@ -513,6 +561,126 @@ const parsePercentage = (value: string | null | undefined): number => {
   const percentage = parsed >= 0 && parsed <= 1 ? parsed * 100 : parsed;
 
   return Math.max(0, Math.min(100, Math.round(percentage)));
+};
+
+const parseHubSpotTaskPriority = (value: string | null): HubSpotTaskPriority | null => {
+  const normalizedValue = value?.trim().toUpperCase();
+
+  if (
+    normalizedValue === "LOW" ||
+    normalizedValue === "MEDIUM" ||
+    normalizedValue === "HIGH"
+  ) {
+    return HUBSPOT_TASK_LEVEL_BY_PRIORITY[normalizedValue];
+  }
+
+  return null;
+};
+
+const parseHubSpotTaskStatus = (value: string | null): HubSpotTaskStatus => {
+  const normalizedValue = value?.trim().toUpperCase();
+
+  if (normalizedValue === "NOT_STARTED") {
+    return "not_started";
+  }
+
+  if (normalizedValue === "IN_PROGRESS") {
+    return "in_progress";
+  }
+
+  if (normalizedValue === "WAITING") {
+    return "waiting";
+  }
+
+  if (normalizedValue === "COMPLETED") {
+    return "completed";
+  }
+
+  if (normalizedValue === "DEFERRED") {
+    return "deferred";
+  }
+
+  return "unknown";
+};
+
+const parseHubSpotTaskTimestamp = (value: string | null): string | null => {
+  if (!value) {
+    return null;
+  }
+
+  const numericValue = Number(value);
+  const timestamp = Number.isFinite(numericValue) ? numericValue : new Date(value).getTime();
+
+  return Number.isNaN(timestamp) ? null : new Date(timestamp).toISOString();
+};
+
+const decodeHtmlEntities = (value: string): string =>
+  value
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, "\"")
+    .replace(/&#39;/gi, "'")
+    .replace(/&apos;/gi, "'");
+
+const cleanHubSpotTaskBody = (value: string | null): string | null => {
+  if (!value) {
+    return null;
+  }
+
+  const cleanedValue = decodeHtmlEntities(value)
+    .replace(/<br\s*\/?>/gi, " ")
+    .replace(/<\/p>/gi, " ")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\[[^\]]*hubfs[^\]]*\]/gi, " ")
+    .replace(/https?:\/\/\S+/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return cleanedValue || null;
+};
+
+const mapHubSpotTaskListItem = (
+  task: HubSpotTask,
+  associatedContactById: Map<string, HubSpotContact> = new Map(),
+  associatedCompanyById: Map<string, HubSpotCompany> = new Map(),
+  associatedDealById: Map<string, HubSpotDeal> = new Map(),
+): HubSpotTaskListItem => {
+  const associatedContactIds = readAssociationIds(task, "contacts");
+  const associatedCompanyIds = readAssociationIds(task, "companies");
+  const associatedDealIds = readAssociationIds(task, "deals");
+  const associatedDeals = associatedDealIds
+    .map((dealId) => associatedDealById.get(dealId) ?? null)
+    .filter((deal): deal is HubSpotDeal => Boolean(deal));
+  const dealContactIds = associatedDeals.flatMap((deal) => deal.associations?.contacts?.results.map((item) => item.id) ?? []);
+  const dealCompanyIds = associatedDeals.flatMap((deal) => deal.associations?.companies?.results.map((item) => item.id) ?? []);
+  const firstContact = [...associatedContactIds, ...dealContactIds]
+    .map((contactId) => associatedContactById.get(contactId) ?? null)
+    .find((contact): contact is HubSpotContact => Boolean(contact)) ?? null;
+  const firstCompany = [...associatedCompanyIds, ...dealCompanyIds]
+    .map((companyId) => associatedCompanyById.get(companyId) ?? null)
+    .find((company): company is HubSpotCompany => Boolean(company)) ?? null;
+  const firstDeal = associatedDeals[0] ?? null;
+
+  return {
+  id: task.id,
+  title: readProperty(task.properties, "hs_task_subject") ?? `Task ${task.id}`,
+  body: cleanHubSpotTaskBody(readProperty(task.properties, "hs_task_body")),
+  status: parseHubSpotTaskStatus(readProperty(task.properties, "hs_task_status")),
+  priority: parseHubSpotTaskPriority(readProperty(task.properties, "hs_task_priority")),
+  dueAt: parseHubSpotTaskTimestamp(readProperty(task.properties, "hs_timestamp")),
+  ownerHubSpotId: readProperty(task.properties, "hubspot_owner_id"),
+  taskType: readProperty(task.properties, "hs_task_type"),
+  contactName: firstContact ? buildContactName(firstContact.properties) : null,
+  contactEmail: readProperty(firstContact?.properties ?? {}, "email"),
+  companyName: firstCompany ? readProperty(firstCompany.properties, "name") : null,
+  dealName: readProperty(firstDeal?.properties ?? {}, "dealname"),
+  createdAt: parseHubSpotTaskTimestamp(readProperty(task.properties, "hs_createdate")),
+  associatedContactIds,
+  associatedCompanyIds,
+  associatedDealIds,
+  };
 };
 
 const buildContactName = (properties: Record<string, string | null | undefined>): string => {
@@ -1146,7 +1314,7 @@ const fetchDealDetailsByIds = async (accessToken: string, dealIds: string[]): Pr
     const batchDeals = await Promise.all(
       batch.map((dealId) =>
         hubSpotFetch<HubSpotDeal>(
-          `/crm/v3/objects/deals/${dealId}?properties=${HUBSPOT_DEAL_PROPERTIES.join(",")}&associations=contacts`,
+          `/crm/v3/objects/deals/${dealId}?properties=${HUBSPOT_DEAL_PROPERTIES.join(",")}&associations=contacts,companies`,
           {
             accessToken,
             maxRetries: HUBSPOT_DEFAULT_MAX_RETRIES,
@@ -1181,6 +1349,28 @@ const fetchContactsByIds = async (accessToken: string, contactIds: string[]): Pr
   }
 
   return contacts;
+};
+
+const fetchCompaniesByIds = async (accessToken: string, companyIds: string[]): Promise<HubSpotCompany[]> => {
+  const companies: HubSpotCompany[] = [];
+
+  for (const batch of createBatches(companyIds, HUBSPOT_BATCH_READ_LIMIT)) {
+    const payload = await hubSpotFetch<{ results: HubSpotCompany[] }>("/crm/v3/objects/companies/batch/read", {
+      method: "POST",
+      accessToken,
+      body: JSON.stringify({
+        inputs: batch.map((companyId) => ({
+          id: companyId,
+        })),
+        properties: HUBSPOT_COMPANY_PROPERTIES,
+      }),
+      maxRetries: HUBSPOT_DEFAULT_MAX_RETRIES,
+    });
+
+    companies.push(...payload.results);
+  }
+
+  return companies;
 };
 
 const fetchObjectById = async <T>(
@@ -1262,6 +1452,90 @@ const fetchAssociatedIdsForMany = async (
   );
 
   return Array.from(new Set(nestedIds.flat()));
+};
+
+const fetchAssociatedIdMapForMany = async (
+  accessToken: string,
+  fromObjectType: string,
+  objectIds: string[],
+  toObjectType: string,
+): Promise<Map<string, string[]>> => {
+  const associationIdsByObjectId = new Map(objectIds.map((objectId) => [objectId, [] as string[]]));
+
+  for (const batch of createBatches(objectIds, HUBSPOT_BATCH_READ_LIMIT)) {
+    const response = await hubSpotFetch<HubSpotBatchAssociationResponse>(
+      `/crm/v4/associations/${fromObjectType}/${toObjectType}/batch/read`,
+      {
+        method: "POST",
+        accessToken,
+        body: JSON.stringify({
+          inputs: batch.map((objectId) => ({
+            id: objectId,
+          })),
+        }),
+        maxRetries: HUBSPOT_DEFAULT_MAX_RETRIES,
+      },
+    );
+
+    for (const result of response.results ?? []) {
+      const fromId =
+        typeof result.from?.id === "number"
+          ? String(result.from.id)
+          : typeof result.from?.id === "string"
+            ? result.from.id
+            : null;
+
+      if (!fromId) {
+        continue;
+      }
+
+      associationIdsByObjectId.set(
+        fromId,
+        Array.from(
+          new Set(
+            (result.to ?? [])
+              .map((associatedObject) =>
+                typeof associatedObject.toObjectId === "number"
+                  ? String(associatedObject.toObjectId)
+                  : typeof associatedObject.toObjectId === "string"
+                    ? associatedObject.toObjectId
+                    : null,
+              )
+              .filter((value): value is string => Boolean(value)),
+          ),
+        ),
+      );
+    }
+  }
+
+  return associationIdsByObjectId;
+};
+
+const enrichTasksWithAssociations = async (
+  accessToken: string,
+  tasks: HubSpotTask[],
+): Promise<HubSpotTask[]> => {
+  const taskIds = tasks.map((task) => task.id);
+  const [contactIdsByTaskId, companyIdsByTaskId, dealIdsByTaskId] = await Promise.all([
+    fetchAssociatedIdMapForMany(accessToken, "tasks", taskIds, "contacts"),
+    fetchAssociatedIdMapForMany(accessToken, "tasks", taskIds, "companies"),
+    fetchAssociatedIdMapForMany(accessToken, "tasks", taskIds, "deals"),
+  ]);
+
+  return tasks.map((task) => ({
+    ...task,
+    associations: {
+      contacts: {
+        results: (contactIdsByTaskId.get(task.id) ?? []).map((id) => ({ id })),
+      },
+      companies: {
+        results: (companyIdsByTaskId.get(task.id) ?? []).map((id) => ({ id })),
+      },
+      deals: {
+        results: (dealIdsByTaskId.get(task.id) ?? []).map((id) => ({ id })),
+      },
+    },
+  }));
 };
 
 const fetchPrimaryAssociatedContactIdsByDealIds = async (
@@ -2279,10 +2553,10 @@ export const hubSpotService = {
             hs_task_subject: input.title,
             hs_task_body: input.body,
             hs_task_status: "NOT_STARTED",
-            hs_task_priority: HUBSPOT_TASK_PRIORITY_BY_LEVEL[input.priority ?? "medium"],
             hs_task_type: "TODO",
             hs_timestamp: String(dueAtDate.getTime()),
             ...(input.ownerHubSpotId ? { hubspot_owner_id: input.ownerHubSpotId } : {}),
+            ...(input.priority ? { hs_task_priority: HUBSPOT_TASK_PRIORITY_BY_LEVEL[input.priority] } : {}),
           },
           associations: input.associations.map((association) => ({
             to: {
@@ -2326,6 +2600,125 @@ export const hubSpotService = {
         maxRetries: HUBSPOT_DEFAULT_MAX_RETRIES,
       },
     );
+  },
+
+  async fetchTaskListItem(accessToken: string, taskId: string): Promise<HubSpotTaskListItem> {
+    const task = await this.fetchTask(accessToken, taskId);
+
+    return mapHubSpotTaskListItem(task);
+  },
+
+  async fetchTasksByOwner(
+    accessToken: string,
+    hubspotOwnerId: string,
+    limit = 500,
+  ): Promise<HubSpotTaskListItem[]> {
+    const maxResults = Math.max(1, Math.min(500, Math.trunc(limit)));
+    const tasks: HubSpotTask[] = [];
+    let after: string | undefined;
+
+    do {
+      const remaining = maxResults - tasks.length;
+      const payload = await hubSpotFetch<HubSpotSearchResponse<HubSpotTask>>("/crm/v3/objects/tasks/search", {
+        method: "POST",
+        accessToken,
+        body: JSON.stringify({
+          limit: Math.min(100, remaining),
+          after,
+          properties: [...HUBSPOT_TASK_PROPERTIES, "hs_createdate"],
+          associations: ["contacts", "companies", "deals"],
+          filterGroups: [
+            {
+              filters: [
+                {
+                  propertyName: "hubspot_owner_id",
+                  operator: "EQ",
+                  value: hubspotOwnerId,
+                },
+                {
+                  propertyName: "hs_task_status",
+                  operator: "NEQ",
+                  value: "COMPLETED",
+                },
+              ],
+            },
+          ],
+          sorts: [
+            {
+              propertyName: "hs_timestamp",
+              direction: "ASCENDING",
+            },
+          ],
+        }),
+        maxRetries: HUBSPOT_DEFAULT_MAX_RETRIES,
+      });
+
+      tasks.push(...payload.results);
+      after = payload.paging?.next?.after;
+    } while (after && tasks.length < maxResults);
+
+    const tasksWithAssociations = await enrichTasksWithAssociations(accessToken, tasks);
+    const dealIds = Array.from(new Set(tasksWithAssociations.flatMap((task) => readAssociationIds(task, "deals"))));
+    const deals = dealIds.length > 0 ? await fetchDealDetailsByIds(accessToken, dealIds) : [];
+    const contactIds = Array.from(
+      new Set([
+        ...tasksWithAssociations.flatMap((task) => readAssociationIds(task, "contacts")),
+        ...deals.flatMap((deal) => deal.associations?.contacts?.results.map((item) => item.id) ?? []),
+      ]),
+    );
+    const companyIds = Array.from(
+      new Set([
+        ...tasksWithAssociations.flatMap((task) => readAssociationIds(task, "companies")),
+        ...deals.flatMap((deal) => deal.associations?.companies?.results.map((item) => item.id) ?? []),
+      ]),
+    );
+    const [contacts, companies] = await Promise.all([
+      contactIds.length > 0 ? fetchContactsByIds(accessToken, contactIds) : [],
+      companyIds.length > 0 ? fetchCompaniesByIds(accessToken, companyIds) : [],
+    ]);
+    const contactById = new Map(contacts.map((contact) => [contact.id, contact]));
+    const companyById = new Map(companies.map((company) => [company.id, company]));
+    const dealById = new Map(deals.map((deal) => [deal.id, deal]));
+
+    return tasksWithAssociations.map((task) => mapHubSpotTaskListItem(task, contactById, companyById, dealById));
+  },
+
+  async updateTaskPriority(
+    accessToken: string,
+    taskId: string,
+    priority: HubSpotTaskPriority | null,
+  ): Promise<HubSpotTaskListItem> {
+    const updatedTask = await hubSpotFetch<HubSpotTask>(`/crm/v3/objects/tasks/${taskId}`, {
+      method: "PATCH",
+      accessToken,
+      body: JSON.stringify({
+        properties: {
+          hs_task_priority: priority ? HUBSPOT_TASK_PRIORITY_BY_LEVEL[priority] : "",
+        },
+      }),
+      maxRetries: HUBSPOT_DEFAULT_MAX_RETRIES,
+    });
+
+    return this.fetchTaskListItem(accessToken, updatedTask.id);
+  },
+
+  async markTaskCompleted(accessToken: string, taskId: string): Promise<void> {
+    await hubSpotFetch<HubSpotTask>(`/crm/v3/objects/tasks/${taskId}`, {
+      method: "PATCH",
+      accessToken,
+      body: JSON.stringify({
+        properties: {
+          hs_task_status: "COMPLETED",
+        },
+      }),
+      maxRetries: HUBSPOT_DEFAULT_MAX_RETRIES,
+    });
+  },
+
+  async completeTask(accessToken: string, taskId: string): Promise<HubSpotTaskListItem> {
+    await this.markTaskCompleted(accessToken, taskId);
+
+    return this.fetchTaskListItem(accessToken, taskId);
   },
 
   computePriorityScore,

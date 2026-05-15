@@ -34,6 +34,7 @@ export const QueueView = ({
     isRefreshing,
     onDisconnectHubSpot,
     onSyncHubSpot,
+    orgId,
     prospects,
   });
   const pageCopy = {
@@ -103,7 +104,15 @@ export const QueueView = ({
           />
         ) : null}
 
-        {dashboard.activeView === "tasks" ? <TasksView taskProspects={dashboard.taskProspects} /> : null}
+        {dashboard.activeView === "tasks" ? (
+          <TasksView
+            hubspotPortalId={hubspotPortalId}
+            lastUpdates={lastUpdates}
+            orgId={orgId}
+            prospects={prospects}
+            selectedOwnerId={selectedOwnerId}
+          />
+        ) : null}
 
         {dashboard.activeView === "settings" ? (
           <SettingsView

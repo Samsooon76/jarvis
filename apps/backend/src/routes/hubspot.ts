@@ -6,6 +6,8 @@ import {
   hubSpotService,
   type DealLifecycleStatus,
   type HubSpotCrmSyncSnapshot,
+  type HubSpotTaskListItem,
+  type HubSpotTaskPriority,
 } from "../services/hubspot.service.js";
 import { loadLocalHubSpotDealHistory } from "../services/hubspot-activity-history.service.js";
 import { getHubSpotAccessToken, upsertHubSpotIntegration } from "../services/hubspot-auth.service.js";
@@ -57,6 +59,40 @@ type HubSpotOwnersQuery = {
 type HubSpotLastUpdatesQuery = {
   orgId?: string;
   limit?: string;
+};
+
+type HubSpotTasksQuery = {
+  orgId?: string;
+  hubspotOwnerId?: string;
+  limit?: string;
+};
+
+type HubSpotCreateTaskBody = {
+  orgId?: string;
+  hubspotOwnerId?: string | null;
+  title?: string;
+  body?: string;
+  dueAt?: string;
+  priority?: string;
+  associations?: Array<{
+    objectType?: string;
+    objectId?: string;
+  }>;
+};
+
+type HubSpotTaskPriorityParams = {
+  taskId: string;
+};
+
+type HubSpotTaskPriorityBody = {
+  orgId?: string;
+  priority?: string;
+};
+
+type HubSpotTasksPayload = {
+  orgId: string;
+  hubspotOwnerId: string;
+  tasks: HubSpotTaskListItem[];
 };
 
 type HubSpotOwnerProspectsQuery = {
@@ -193,6 +229,15 @@ type HubSpotLastUpdateItem = {
   status: "queued" | "running" | "completed" | "failed" | "skipped";
   reason: string | null;
   eventCount: number;
+  nextAction: {
+    title: string;
+    rationale: string;
+    dueInDays: number;
+    priority: "low" | "medium" | "high";
+  } | null;
+  analysisProvider: string | null;
+  analysisModel: string | null;
+  errorMessage: string | null;
   receivedAt: string;
   scheduledFor: string;
   processedAt: string | null;
@@ -334,8 +379,17 @@ type HubSpotRealtimeAnalysisRunListRow = {
   started_at: string | null;
   finished_at: string | null;
   trigger_event_ids: string[];
+  error_message: string | null;
   created_at: string;
   updated_at: string;
+};
+
+type DealActivityPlanAnalysisRow = {
+  hubspot_deal_id: string;
+  provider: string;
+  model: string;
+  analysis: unknown;
+  generated_at: string;
 };
 
 type HubSpotDealSummaryRow = {
@@ -372,6 +426,95 @@ const parseLastUpdatesLimit = (value: string | undefined): number => {
   }
 
   return Math.max(1, Math.min(50, Math.trunc(parsedValue)));
+};
+
+const parseHubSpotTasksLimit = (value: string | undefined): number => {
+  const parsedValue = Number(value ?? 500);
+
+  if (!Number.isFinite(parsedValue)) {
+    return 500;
+  }
+
+  return Math.max(1, Math.min(500, Math.trunc(parsedValue)));
+};
+
+const isHubSpotTaskPriority = (value: unknown): value is HubSpotTaskPriority =>
+  value === "low" || value === "medium" || value === "high";
+
+const parseOptionalHubSpotTaskPriority = (value: unknown): HubSpotTaskPriority | null | undefined => {
+  if (value === null || value === "" || value === "none") {
+    return null;
+  }
+
+  return isHubSpotTaskPriority(value) ? value : undefined;
+};
+
+const parseHubSpotTaskAssociations = (
+  associations: HubSpotCreateTaskBody["associations"],
+): Array<{ objectType: "contact" | "company" | "deal"; objectId: string }> => {
+  if (!Array.isArray(associations)) {
+    return [];
+  }
+
+  return associations
+    .map((association) => {
+      const objectType = association.objectType;
+      const objectId = association.objectId?.trim();
+
+      if (
+        (objectType !== "contact" && objectType !== "company" && objectType !== "deal") ||
+        !objectId
+      ) {
+        return null;
+      }
+
+      return {
+        objectType,
+        objectId,
+      };
+    })
+    .filter((association): association is { objectType: "contact" | "company" | "deal"; objectId: string } =>
+      Boolean(association),
+    );
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === "object" && !Array.isArray(value);
+
+const isLastUpdatePriority = (value: unknown): value is "low" | "medium" | "high" =>
+  value === "low" || value === "medium" || value === "high";
+
+const parseLastUpdateNextAction = (
+  analysis: unknown,
+): HubSpotLastUpdateItem["nextAction"] => {
+  if (!isRecord(analysis)) {
+    return null;
+  }
+
+  const recommendation = analysis.recommendation;
+
+  if (!isRecord(recommendation)) {
+    return null;
+  }
+
+  const nextBestAction = recommendation.nextBestAction;
+
+  if (
+    !isRecord(nextBestAction) ||
+    typeof nextBestAction.title !== "string" ||
+    typeof nextBestAction.rationale !== "string" ||
+    typeof nextBestAction.dueInDays !== "number" ||
+    !Number.isFinite(nextBestAction.dueInDays)
+  ) {
+    return null;
+  }
+
+  return {
+    title: nextBestAction.title,
+    rationale: nextBestAction.rationale,
+    dueInDays: Math.max(0, Math.round(nextBestAction.dueInDays)),
+    priority: isLastUpdatePriority(recommendation.priority) ? recommendation.priority : "medium",
+  };
 };
 
 const normalizeUpstreamErrorMessage = (message: string): string => {
@@ -1664,7 +1807,7 @@ export const registerHubSpotRoutes = async (app: FastifyInstance): Promise<void>
         const { data: runData, error: runError } = await supabase
           .from("hubspot_realtime_analysis_runs")
           .select(
-            "id, org_id, hubspot_deal_id, status, reason, scheduled_for, started_at, finished_at, trigger_event_ids, created_at, updated_at",
+            "id, org_id, hubspot_deal_id, status, reason, scheduled_for, started_at, finished_at, trigger_event_ids, error_message, created_at, updated_at",
           )
           .eq("org_id", orgId)
           .order("updated_at", { ascending: false })
@@ -1732,9 +1875,33 @@ export const registerHubSpotRoutes = async (app: FastifyInstance): Promise<void>
         const companyById = new Map(
           ((companyData ?? []) as HubSpotCompanySummaryRow[]).map((company) => [company.hubspot_company_id, company]),
         );
+        const { data: activityPlanData, error: activityPlanError } =
+          dealIds.length > 0
+            ? await supabase
+                .from("deal_ai_analyses")
+                .select("hubspot_deal_id, provider, model, analysis, generated_at")
+                .eq("org_id", orgId)
+                .eq("analysis_type", "deal_activity_plan")
+                .in("hubspot_deal_id", dealIds)
+                .order("generated_at", { ascending: false })
+            : { data: [], error: null };
+
+        if (activityPlanError) {
+          throw new Error(formatOperationError("Impossible de charger les next actions IA", activityPlanError.message));
+        }
+
+        const activityPlanByDealId = new Map<string, DealActivityPlanAnalysisRow>();
+
+        for (const analysis of (activityPlanData ?? []) as DealActivityPlanAnalysisRow[]) {
+          if (!activityPlanByDealId.has(analysis.hubspot_deal_id)) {
+            activityPlanByDealId.set(analysis.hubspot_deal_id, analysis);
+          }
+        }
+
         const updates: HubSpotLastUpdateItem[] = uniqueRuns.map((run) => {
           const deal = dealById.get(run.hubspot_deal_id) ?? null;
           const company = deal?.primary_company_id ? companyById.get(deal.primary_company_id) ?? null : null;
+          const activityPlan = activityPlanByDealId.get(run.hubspot_deal_id) ?? null;
 
           return {
             id: run.id,
@@ -1747,6 +1914,10 @@ export const registerHubSpotRoutes = async (app: FastifyInstance): Promise<void>
             status: run.status,
             reason: run.reason,
             eventCount: run.trigger_event_ids.length,
+            nextAction: parseLastUpdateNextAction(activityPlan?.analysis ?? null),
+            analysisProvider: activityPlan?.provider ?? null,
+            analysisModel: activityPlan?.model ?? null,
+            errorMessage: run.error_message,
             receivedAt: run.updated_at,
             scheduledFor: run.scheduled_for,
             processedAt: run.finished_at ?? run.started_at,
@@ -1767,6 +1938,149 @@ export const registerHubSpotRoutes = async (app: FastifyInstance): Promise<void>
           success: false,
           error:
             getPublicErrorMessage(error, "Erreur inconnue pendant le chargement des dernieres updates HubSpot."),
+        });
+      }
+    },
+  );
+
+  app.get<{ Querystring: HubSpotTasksQuery; Reply: ApiResponse<HubSpotTasksPayload> }>(
+    "/api/hubspot/tasks",
+    async (request, reply) => {
+      const orgId = request.query.orgId;
+      const hubspotOwnerId = request.query.hubspotOwnerId;
+
+      if (!orgId || !hubspotOwnerId) {
+        return reply.code(400).send({
+          success: false,
+          error: "Les parametres orgId et hubspotOwnerId sont obligatoires pour charger les taches HubSpot.",
+        });
+      }
+
+      if (!isValidOrgId(orgId)) {
+        return reply.code(400).send({
+          success: false,
+          error: "Le parametre orgId doit etre un UUID Jarvis valide.",
+        });
+      }
+
+      try {
+        const accessToken = await getHubSpotAccessToken(orgId);
+        const tasks = await hubSpotService.fetchTasksByOwner(
+          accessToken,
+          hubspotOwnerId,
+          parseHubSpotTasksLimit(request.query.limit),
+        );
+
+        return reply.send({
+          success: true,
+          data: {
+            orgId,
+            hubspotOwnerId,
+            tasks,
+          },
+        });
+      } catch (error) {
+        request.log.error({ error, orgId, hubspotOwnerId }, "Impossible de charger les taches HubSpot.");
+
+        return reply.code(500).send({
+          success: false,
+          error: getPublicErrorMessage(error, "Erreur inconnue pendant le chargement des taches HubSpot."),
+        });
+      }
+    },
+  );
+
+  app.post<{ Body: HubSpotCreateTaskBody; Reply: ApiResponse<HubSpotTaskListItem> }>(
+    "/api/hubspot/tasks",
+    async (request, reply) => {
+      const orgId = request.body.orgId;
+      const title = request.body.title?.trim();
+      const body = request.body.body?.trim() ?? "";
+      const dueAt = request.body.dueAt?.trim();
+      const priority = parseOptionalHubSpotTaskPriority(request.body.priority);
+
+      if (!orgId || !title || !dueAt || priority === undefined) {
+        return reply.code(400).send({
+          success: false,
+          error: "Les champs orgId, title et dueAt sont obligatoires pour creer une tache HubSpot.",
+        });
+      }
+
+      if (!isValidOrgId(orgId)) {
+        return reply.code(400).send({
+          success: false,
+          error: "Le champ orgId doit etre un UUID Jarvis valide.",
+        });
+      }
+
+      try {
+        const accessToken = await getHubSpotAccessToken(orgId);
+        const createdTask = await hubSpotService.createTask(accessToken, {
+          title,
+          body,
+          dueAt,
+          priority,
+          ownerHubSpotId: request.body.hubspotOwnerId ?? null,
+          associations: parseHubSpotTaskAssociations(request.body.associations),
+        });
+        const task = await hubSpotService.fetchTaskListItem(accessToken, createdTask.taskId);
+
+        return reply.send({
+          success: true,
+          data: task,
+        });
+      } catch (error) {
+        request.log.error({ error, orgId }, "Impossible de creer la tache HubSpot.");
+
+        return reply.code(500).send({
+          success: false,
+          error: getPublicErrorMessage(error, "Erreur inconnue pendant la creation de la tache HubSpot."),
+        });
+      }
+    },
+  );
+
+  app.post<{
+    Params: HubSpotTaskPriorityParams;
+    Body: HubSpotTaskPriorityBody;
+    Reply: ApiResponse<HubSpotTaskListItem>;
+  }>(
+    "/api/hubspot/tasks/:taskId/priority",
+    async (request, reply) => {
+      const orgId = request.body.orgId;
+      const priority = parseOptionalHubSpotTaskPriority(request.body.priority);
+
+      if (!orgId || priority === undefined) {
+        return reply.code(400).send({
+          success: false,
+          error: "Les champs orgId et priority sont obligatoires pour prioriser une tache HubSpot.",
+        });
+      }
+
+      if (!isValidOrgId(orgId)) {
+        return reply.code(400).send({
+          success: false,
+          error: "Le champ orgId doit etre un UUID Jarvis valide.",
+        });
+      }
+
+      try {
+        const accessToken = await getHubSpotAccessToken(orgId);
+        const task = await hubSpotService.updateTaskPriority(accessToken, request.params.taskId, priority);
+
+        return reply.send({
+          success: true,
+          data: task,
+        });
+      } catch (error) {
+        request.log.error(
+          { error, orgId, taskId: request.params.taskId },
+          "Impossible de prioriser la tache HubSpot.",
+        );
+
+        return reply.code(500).send({
+          success: false,
+          error: getPublicErrorMessage(error, "Erreur inconnue pendant la priorisation de la tache HubSpot."),
         });
       }
     },

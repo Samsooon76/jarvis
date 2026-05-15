@@ -6,6 +6,7 @@ import type {
   AnalyzeCloseLostPortfolioInput,
   AnalyzeDealIntelligenceInput,
   AnalyzeDealQualificationInput,
+  AnalyzeTaskInput,
   CloseLostDealAnalysis,
   CloseLostPortfolioAnalysis,
   DealActivityPlanAnalysis,
@@ -17,6 +18,7 @@ import type {
   FollowUpTaskRecommendation,
   LlmProvider,
   RecommendFollowUpTaskInput,
+  TaskAnalysis,
 } from "../llm.provider.js";
 import { buildDealActivityPlanPrompt, parseDealActivityPlan } from "../activity-plan.js";
 import {
@@ -26,6 +28,7 @@ import {
   parseCloseLostPortfolioAnalysis,
 } from "../close-lost.js";
 import { buildDealQualificationPrompt, parseDealQualification } from "../qualification.js";
+import { buildTaskAnalysisPrompt, parseTaskAnalysis } from "../task-analysis.js";
 
 type OpenAiChatResponse = {
   choices?: Array<{
@@ -674,6 +677,10 @@ export class OpenAiProvider implements LlmProvider {
 
   async recommendFollowUpTask(input: RecommendFollowUpTaskInput): Promise<FollowUpTaskRecommendation> {
     return parseFollowUpRecommendation(await this.completeJson(buildFollowUpPrompt(input), 4_000));
+  }
+
+  async analyzeTask(input: AnalyzeTaskInput): Promise<TaskAnalysis> {
+    return parseTaskAnalysis(await this.completeJson(buildTaskAnalysisPrompt(input), 4_000), "OpenAI");
   }
 
   private async completeJson(prompt: string, maxTokens: number): Promise<string> {

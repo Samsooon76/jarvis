@@ -66,6 +66,25 @@ export type Database = {
           updated_at: string;
         };
       };
+      task_ai_analyses: {
+        Row: {
+          analysis: Json;
+          created_at: string;
+          expires_at: string;
+          generated_at: string;
+          hubspot_contact_id: string | null;
+          hubspot_deal_id: string | null;
+          hubspot_task_id: string;
+          id: string;
+          input_hash: string;
+          model: string;
+          org_id: string;
+          prospect_id: string | null;
+          provider: string;
+          task_snapshot: Json;
+          updated_at: string;
+        };
+      };
     };
   };
 };

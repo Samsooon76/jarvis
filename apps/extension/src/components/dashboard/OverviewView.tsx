@@ -14,12 +14,22 @@ import type {
 } from "./types";
 import { formatAmount, formatDateTime } from "../../utils/dashboard/formatters";
 
-const lastUpdateStatusLabels: Record<HubSpotLastUpdateItem["status"], string> = {
-  queued: "Queued",
-  running: "Running",
-  completed: "Done",
-  failed: "Failed",
-  skipped: "Skipped",
+const nextActionPriorityLabels: Record<NonNullable<HubSpotLastUpdateItem["nextAction"]>["priority"], string> = {
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+};
+
+const formatDueInDays = (dueInDays: number): string => {
+  if (dueInDays <= 0) {
+    return "Aujourd'hui";
+  }
+
+  if (dueInDays === 1) {
+    return "Demain";
+  }
+
+  return `Dans ${dueInDays} j`;
 };
 
 type LastUpdateTableProps = {
@@ -38,7 +48,7 @@ const LastUpdateTable = ({ updates }: LastUpdateTableProps) => (
           <tr>
             <th>Deal</th>
             <th>Event</th>
-            <th>Status</th>
+            <th>Next to do</th>
             <th>Received</th>
             <th>Value</th>
           </tr>
@@ -57,7 +67,20 @@ const LastUpdateTable = ({ updates }: LastUpdateTableProps) => (
                 </small>
               </td>
               <td>
-                <span className={`ae-update-status ${update.status}`}>{lastUpdateStatusLabels[update.status]}</span>
+                {update.nextAction ? (
+                  <>
+                    <strong>{update.nextAction.title}</strong>
+                    <small>
+                      {formatDueInDays(update.nextAction.dueInDays)} ·{" "}
+                      {nextActionPriorityLabels[update.nextAction.priority]}
+                    </small>
+                  </>
+                ) : (
+                  <>
+                    <strong>Next action en cours</strong>
+                    <small>{update.errorMessage ?? "Analyse du dernier event HubSpot en attente"}</small>
+                  </>
+                )}
               </td>
               <td>
                 <strong>{formatDateTime(update.receivedAt)}</strong>

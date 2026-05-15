@@ -14,9 +14,16 @@ import {
 
 const JARVIS_DEFAULT_ORG_ID = "11111111-1111-4111-8111-111111111111";
 const DEFAULT_ORG_ID = import.meta.env.VITE_DEFAULT_ORG_ID?.trim() || JARVIS_DEFAULT_ORG_ID;
+const HUBSPOT_OWNER_STORAGE_KEY = `jarvis.hubspotOwnerId:${DEFAULT_ORG_ID}`;
+
+const getStoredHubSpotOwnerId = (): string | null => {
+  const storedOwnerId = window.localStorage.getItem(HUBSPOT_OWNER_STORAGE_KEY)?.trim();
+
+  return storedOwnerId || null;
+};
 
 export const ExtensionApp = () => {
-  const [selectedOwnerId, setSelectedOwnerId] = useState<string | null>(null);
+  const [selectedOwnerId, setSelectedOwnerId] = useState<string | null>(getStoredHubSpotOwnerId);
   const [refreshKey, setRefreshKey] = useState(0);
   const [liveLastUpdates, setLiveLastUpdates] = useState<HubSpotLastUpdateItem[]>([]);
   const { data, isLoading, isRefreshing, error } = useQueue(DEFAULT_ORG_ID, selectedOwnerId, refreshKey);
@@ -26,6 +33,17 @@ export const ExtensionApp = () => {
   useEffect(() => {
     setLiveLastUpdates(data?.lastUpdates ?? []);
   }, [data?.lastUpdates]);
+
+  useEffect(() => {
+    const loadedOwnerId = data?.owner.ownerId;
+
+    if (!loadedOwnerId || selectedOwnerId) {
+      return;
+    }
+
+    setSelectedOwnerId(loadedOwnerId);
+    window.localStorage.setItem(HUBSPOT_OWNER_STORAGE_KEY, loadedOwnerId);
+  }, [data?.owner.ownerId, selectedOwnerId]);
 
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search);
@@ -113,9 +131,22 @@ export const ExtensionApp = () => {
     return result;
   };
 
+  const handleOwnerChange = (ownerId: string) => {
+    const nextOwnerId = ownerId.trim() || null;
+    setSelectedOwnerId(nextOwnerId);
+
+    if (nextOwnerId) {
+      window.localStorage.setItem(HUBSPOT_OWNER_STORAGE_KEY, nextOwnerId);
+      return;
+    }
+
+    window.localStorage.removeItem(HUBSPOT_OWNER_STORAGE_KEY);
+  };
+
   const handleDisconnectHubSpot = async (): Promise<HubSpotDisconnectResult> => {
     const result = await disconnectHubSpot(DEFAULT_ORG_ID);
     setSelectedOwnerId(null);
+    window.localStorage.removeItem(HUBSPOT_OWNER_STORAGE_KEY);
     refreshQueue();
 
     return result;
@@ -163,11 +194,11 @@ export const ExtensionApp = () => {
       lastUpdates={liveLastUpdates}
       onConnectHubSpot={handleConnectHubSpot}
       onDisconnectHubSpot={handleDisconnectHubSpot}
-      onOwnerChange={setSelectedOwnerId}
+      onOwnerChange={handleOwnerChange}
       onSyncHubSpot={handleSyncHubSpot}
       owners={data?.owners ?? []}
       ownerName={data?.owner.name}
-      selectedOwnerId={data?.owner.ownerId ?? selectedOwnerId ?? undefined}
+      selectedOwnerId={selectedOwnerId ?? data?.owner.ownerId}
       prospects={data?.prospects ?? []}
       />
     </>

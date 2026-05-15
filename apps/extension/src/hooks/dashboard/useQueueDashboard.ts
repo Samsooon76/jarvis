@@ -21,9 +21,15 @@ import {
   buildStageChart,
   getPriorityTasks,
 } from "../../utils/dashboard/viewModels";
-import { aiProviderOptions, type AiProviderId, type HubSpotSyncJobStatus } from "../../services/api";
+import {
+  aiProviderOptions,
+  saveLlmProviderPreference,
+  type AiProviderId,
+  type HubSpotSyncJobStatus,
+} from "../../services/api";
 
 const AI_PROVIDER_STORAGE_KEY = "jarvis.aiProvider";
+const ACTIVE_PROSPECT_STORAGE_KEY = "jarvis.activeProspectId";
 const hashRoutedViews = new Set<WorkspaceView>([...workspaceViews.map((view) => view.id), "dealAnalysis"]);
 
 const getViewFromHash = (): WorkspaceView => {
@@ -46,13 +52,24 @@ const getInitialAiProviderId = (): AiProviderId => {
   return "deepseek";
 };
 
+const getInitialActiveProspectId = (prospects: QueueViewProps["prospects"]): string | null => {
+  const storedProspectId = window.localStorage.getItem(ACTIVE_PROSPECT_STORAGE_KEY)?.trim();
+
+  if (storedProspectId && prospects.some((prospect) => prospect.id === storedProspectId)) {
+    return storedProspectId;
+  }
+
+  return prospects[0]?.id ?? null;
+};
+
 export const useQueueDashboard = ({
   isConnected,
   isRefreshing = false,
   onDisconnectHubSpot,
   onSyncHubSpot,
+  orgId,
   prospects,
-}: Pick<QueueViewProps, "isConnected" | "isRefreshing" | "onDisconnectHubSpot" | "onSyncHubSpot" | "prospects">) => {
+}: Pick<QueueViewProps, "isConnected" | "isRefreshing" | "onDisconnectHubSpot" | "onSyncHubSpot" | "orgId" | "prospects">) => {
   const [activeView, setActiveViewState] = useState<WorkspaceView>(getViewFromHash);
   const [activeBucket, setActiveBucket] = useState<QueueBucket>("all");
   const [searchTerm, setSearchTerm] = useState("");
@@ -61,7 +78,7 @@ export const useQueueDashboard = ({
   const [closeDateFrom, setCloseDateFrom] = useState("");
   const [closeDateTo, setCloseDateTo] = useState("");
   const [stageFilter, setStageFilter] = useState<StageFilter>("all");
-  const [activeProspectId, setActiveProspectId] = useState<string | null>(prospects[0]?.id ?? null);
+  const [activeProspectId, setActiveProspectIdState] = useState<string | null>(() => getInitialActiveProspectId(prospects));
   const [syncLoading, setSyncLoading] = useState(false);
   const [syncJob, setSyncJob] = useState<HubSpotSyncJobStatus | null>(null);
   const [disconnectLoading, setDisconnectLoading] = useState(false);
@@ -84,6 +101,25 @@ export const useQueueDashboard = ({
   const setSelectedAiProviderId = (providerId: AiProviderId) => {
     setSelectedAiProviderIdState(providerId);
     window.localStorage.setItem(AI_PROVIDER_STORAGE_KEY, providerId);
+
+    const provider = aiProviderOptions.find((option) => option.id === providerId);
+
+    if (provider) {
+      void saveLlmProviderPreference(orgId, provider).catch((error: unknown) => {
+        setAdminError(error instanceof Error ? error.message : "Impossible d'enregistrer le provider IA.");
+      });
+    }
+  };
+
+  const setActiveProspectId = (prospectId: string | null) => {
+    setActiveProspectIdState(prospectId);
+
+    if (prospectId) {
+      window.localStorage.setItem(ACTIVE_PROSPECT_STORAGE_KEY, prospectId);
+      return;
+    }
+
+    window.localStorage.removeItem(ACTIVE_PROSPECT_STORAGE_KEY);
   };
 
   useEffect(() => {
@@ -103,12 +139,26 @@ export const useQueueDashboard = ({
   }, []);
 
   useEffect(() => {
-    setActiveProspectId((currentId) => {
+    setActiveProspectIdState((currentId) => {
       if (currentId && prospects.some((prospect) => prospect.id === currentId)) {
         return currentId;
       }
 
-      return prospects[0]?.id ?? null;
+      const storedProspectId = window.localStorage.getItem(ACTIVE_PROSPECT_STORAGE_KEY)?.trim();
+
+      if (storedProspectId && prospects.some((prospect) => prospect.id === storedProspectId)) {
+        return storedProspectId;
+      }
+
+      const fallbackProspectId = prospects[0]?.id ?? null;
+
+      if (fallbackProspectId) {
+        window.localStorage.setItem(ACTIVE_PROSPECT_STORAGE_KEY, fallbackProspectId);
+      } else {
+        window.localStorage.removeItem(ACTIVE_PROSPECT_STORAGE_KEY);
+      }
+
+      return fallbackProspectId;
     });
   }, [prospects]);
 

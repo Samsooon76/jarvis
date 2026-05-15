@@ -9,6 +9,7 @@ import { registerLlmRoutes } from "./routes/llm.js";
 import { registerProspectRoutes } from "./routes/prospects.js";
 import { registerQueueRoutes } from "./routes/queue.js";
 import { registerSalesTargetRoutes } from "./routes/sales-targets.js";
+import { registerTaskRoutes } from "./routes/tasks.js";
 
 const buildServer = async () => {
   const app = Fastify({
@@ -47,6 +48,7 @@ const buildServer = async () => {
   await registerProspectRoutes(app);
   await registerQueueRoutes(app);
   await registerSalesTargetRoutes(app);
+  await registerTaskRoutes(app);
 
   return app;
 };

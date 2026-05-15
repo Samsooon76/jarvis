@@ -97,14 +97,116 @@ export type HubSpotLastUpdateItem = {
   status: "queued" | "running" | "completed" | "failed" | "skipped";
   reason: string | null;
   eventCount: number;
+  nextAction: {
+    title: string;
+    rationale: string;
+    dueInDays: number;
+    priority: "low" | "medium" | "high";
+  } | null;
+  analysisProvider: string | null;
+  analysisModel: string | null;
+  errorMessage: string | null;
   receivedAt: string;
   scheduledFor: string;
   processedAt: string | null;
 };
 
+export type HubSpotTaskPriority = "low" | "medium" | "high";
+
+export type HubSpotTaskStatus = "not_started" | "in_progress" | "waiting" | "completed" | "deferred" | "unknown";
+
+export type HubSpotTaskListItem = {
+  id: string;
+  title: string;
+  body: string | null;
+  status: HubSpotTaskStatus;
+  priority: HubSpotTaskPriority | null;
+  dueAt: string | null;
+  ownerHubSpotId: string | null;
+  taskType: string | null;
+  contactName: string | null;
+  contactEmail: string | null;
+  companyName: string | null;
+  dealName: string | null;
+  createdAt: string | null;
+  associatedContactIds: string[];
+  associatedCompanyIds: string[];
+  associatedDealIds: string[];
+};
+
+export type TaskAnalysisType =
+  | "cold_call"
+  | "deal_follow_up"
+  | "post_meeting_follow_up"
+  | "no_show_recovery"
+  | "admin_crm"
+  | "renewal_or_upsell"
+  | "obsolete"
+  | "unknown";
+
+export type TaskAnalysisRecommendation = "do_now" | "reschedule" | "keep_planned" | "skip" | "merge" | "clarify";
+
+export type TaskAnalysis = {
+  taskType: TaskAnalysisType;
+  recommendation: TaskAnalysisRecommendation;
+  priority: HubSpotTaskPriority;
+  shouldReschedule: boolean;
+  suggestedDueInDays: number | null;
+  suggestedAction: string;
+  rationale: string;
+  outreachAngle: string | null;
+  evidence: string[];
+  missingData: string[];
+  confidence: "low" | "medium" | "high";
+};
+
+export type TaskAnalyzerResult = {
+  orgId: string;
+  hubspotTaskId: string;
+  hubspotDealId: string | null;
+  hubspotContactId: string | null;
+  prospectId: string | null;
+  cached: boolean;
+  provider: string;
+  model: string;
+  generatedAt: string;
+  expiresAt: string;
+  analysis: TaskAnalysis;
+  task: HubSpotTaskListItem;
+};
+
+export type TaskAnalyzerApplyResult = {
+  orgId: string;
+  hubspotTaskId: string;
+  action: "completed" | "rescheduled" | "not_applicable";
+  completedTask: HubSpotTaskListItem | null;
+  createdTask: HubSpotTaskListItem | null;
+  analysis: TaskAnalysis;
+  message: string;
+};
+
 type HubSpotLastUpdatesPayload = {
   orgId: string;
   updates: HubSpotLastUpdateItem[];
+};
+
+type HubSpotTasksPayload = {
+  orgId: string;
+  hubspotOwnerId: string;
+  tasks: HubSpotTaskListItem[];
+};
+
+export type CreateHubSpotTaskInput = {
+  orgId: string;
+  hubspotOwnerId: string | null;
+  title: string;
+  body: string;
+  dueAt: string;
+  priority: HubSpotTaskPriority | null;
+  associations: Array<{
+    objectType: "contact" | "company" | "deal";
+    objectId: string;
+  }>;
 };
 
 export type HubSpotQueueData = QueueData & {
@@ -156,6 +258,21 @@ export type HubSpotDisconnectResult = {
   disconnected: true;
   purgedProspectCount: number;
 };
+
+export type LlmProviderPreference = {
+  provider: AiProviderId;
+  model: string;
+};
+
+export const saveLlmProviderPreference = async (
+  orgId: string,
+  aiProvider: AiProviderOption,
+): Promise<LlmProviderPreference> =>
+  postJson<LlmProviderPreference>("/api/llm/provider-preference", {
+    orgId,
+    provider: aiProvider.id,
+    model: aiProvider.model,
+  });
 
 export type DealIntelligenceNextStep = {
   title: string;
@@ -772,7 +889,7 @@ const getJson = async <T>(path: string): Promise<T> => {
   return payload.data;
 };
 
-const postJson = async <T>(path: string, body: Record<string, unknown>): Promise<T> => {
+const postJson = async <T>(path: string, body: unknown): Promise<T> => {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: "POST",
     headers: {
@@ -892,6 +1009,56 @@ export const fetchHubSpotLastUpdates = async (orgId: string, limit = 12): Promis
 
   return payload.updates;
 };
+
+export const fetchHubSpotTasks = async (
+  orgId: string,
+  hubspotOwnerId: string,
+  limit = 100,
+): Promise<HubSpotTaskListItem[]> => {
+  const payload = await getJson<HubSpotTasksPayload>(
+    `/api/hubspot/tasks?orgId=${encodeURIComponent(orgId)}&hubspotOwnerId=${encodeURIComponent(hubspotOwnerId)}&limit=${encodeURIComponent(String(limit))}`,
+  );
+
+  return payload.tasks;
+};
+
+export const createHubSpotTask = async (input: CreateHubSpotTaskInput): Promise<HubSpotTaskListItem> =>
+  postJson<HubSpotTaskListItem>("/api/hubspot/tasks", input);
+
+export const updateHubSpotTaskPriority = async (
+  orgId: string,
+  taskId: string,
+  priority: HubSpotTaskPriority | null,
+): Promise<HubSpotTaskListItem> =>
+  postJson<HubSpotTaskListItem>(`/api/hubspot/tasks/${encodeURIComponent(taskId)}/priority`, {
+    orgId,
+    priority,
+  });
+
+export const analyzeHubSpotTask = async (
+  orgId: string,
+  taskId: string,
+  refresh = false,
+): Promise<TaskAnalyzerResult> =>
+  postJson<TaskAnalyzerResult>(`/api/tasks/${encodeURIComponent(taskId)}/analyze`, {
+    orgId,
+    refresh,
+  });
+
+export const applyHubSpotTaskAnalysis = async (orgId: string, taskId: string): Promise<TaskAnalyzerApplyResult> =>
+  postJson<TaskAnalyzerApplyResult>(`/api/tasks/${encodeURIComponent(taskId)}/apply-analysis`, {
+    orgId,
+  });
+
+export const analyzeAndApplyHubSpotTask = async (
+  orgId: string,
+  taskId: string,
+  refresh = false,
+): Promise<TaskAnalyzerApplyResult> =>
+  postJson<TaskAnalyzerApplyResult>(`/api/tasks/${encodeURIComponent(taskId)}/analyze-and-apply`, {
+    orgId,
+    refresh,
+  });
 
 export const fetchHubSpotQueue = async (
   orgId: string,

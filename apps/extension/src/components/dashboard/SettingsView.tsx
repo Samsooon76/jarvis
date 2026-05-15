@@ -252,8 +252,8 @@ export const SettingsView = ({
               {selectedProvider.label} · {selectedProvider.model}
             </span>
             <p>
-              Le choix est stocke dans ce navigateur. Les cles API restent cote backend dans le fichier .env et ne sont
-              jamais envoyees a l'extension.
+              Le choix est stocke pour l'organisation et utilise aussi par les analyses lancees automatiquement apres
+              webhook HubSpot. Les cles API restent cote backend et ne sont jamais envoyees a l'extension.
             </p>
           </div>
         </>

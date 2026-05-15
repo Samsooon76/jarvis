@@ -251,6 +251,53 @@ export type RecommendFollowUpTaskInput = {
   contactNames?: string[];
 };
 
+export type TaskAnalysisType =
+  | "cold_call"
+  | "deal_follow_up"
+  | "post_meeting_follow_up"
+  | "no_show_recovery"
+  | "admin_crm"
+  | "renewal_or_upsell"
+  | "obsolete"
+  | "unknown";
+
+export type TaskAnalysisRecommendation = "do_now" | "reschedule" | "keep_planned" | "skip" | "merge" | "clarify";
+
+export type TaskAnalysis = {
+  taskType: TaskAnalysisType;
+  recommendation: TaskAnalysisRecommendation;
+  priority: "low" | "medium" | "high";
+  shouldReschedule: boolean;
+  suggestedDueInDays: number | null;
+  suggestedAction: string;
+  rationale: string;
+  outreachAngle: string | null;
+  evidence: string[];
+  missingData: string[];
+  confidence: "low" | "medium" | "high";
+};
+
+export type AnalyzeTaskInput = {
+  taskTitle: string;
+  taskBody?: string | null;
+  taskStatus?: string | null;
+  taskPriority?: string | null;
+  taskType?: string | null;
+  dueAt?: string | null;
+  createdAt?: string | null;
+  today?: string | null;
+  contactName?: string | null;
+  contactEmail?: string | null;
+  companyName?: string | null;
+  dealName?: string | null;
+  dealStage?: string | null;
+  dealAmount?: number | null;
+  closeProbability?: number | null;
+  lastContactAt?: string | null;
+  nextAction?: string | null;
+  history?: string | null;
+};
+
 export type AnalyzeDealIntelligenceInput = RecommendFollowUpTaskInput & {
   currentCloseProbability?: number | null;
   dealAmount?: number | null;
@@ -302,4 +349,5 @@ export interface LlmProvider {
   analyzeCloseLostDeal(input: AnalyzeCloseLostDealInput): Promise<CloseLostDealAnalysis>;
   analyzeCloseLostPortfolio(input: AnalyzeCloseLostPortfolioInput): Promise<CloseLostPortfolioAnalysis>;
   recommendFollowUpTask(input: RecommendFollowUpTaskInput): Promise<FollowUpTaskRecommendation>;
+  analyzeTask(input: AnalyzeTaskInput): Promise<TaskAnalysis>;
 }
