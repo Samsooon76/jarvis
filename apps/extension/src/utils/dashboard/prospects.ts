@@ -13,7 +13,7 @@ import type {
   StageFilter,
 } from "../../components/dashboard/types";
 
-export const normalizeStageKey = (value: string): string =>
+const normalizeStageKey = (value: string): string =>
   value
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -74,7 +74,7 @@ export const getDateOnly = (value: string): Date | null => {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 };
 
-export const getDateInputDate = (value: string): Date | null => {
+const getDateInputDate = (value: string): Date | null => {
   if (!value) {
     return null;
   }

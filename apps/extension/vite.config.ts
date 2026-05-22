@@ -13,7 +13,7 @@ export default defineConfig({
         const distDir = resolve(__dirname, "dist");
         const manifest = JSON.parse(readFileSync(manifestPath, "utf-8")) as {
           background?: { service_worker?: string; type?: string };
-          content_scripts?: Array<{ js?: string[] }>;
+          host_permissions?: string[];
         };
 
         if (manifest.background) {
@@ -21,18 +21,9 @@ export default defineConfig({
         }
 
         manifest.host_permissions = [
-          "https://*.hubspot.com/*",
           "https://jarvisapi-production-10cd.up.railway.app/*",
           "http://localhost:4000/*",
         ];
-
-        if (manifest.content_scripts) {
-          manifest.content_scripts = manifest.content_scripts.map((contentScript) => ({
-            ...contentScript,
-            matches: ["https://*.hubspot.com/*"],
-            js: ["content-script.js"],
-          }));
-        }
 
         mkdirSync(distDir, { recursive: true });
         writeFileSync(resolve(distDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
@@ -49,11 +40,10 @@ export default defineConfig({
       input: {
         sidepanel: resolve(__dirname, "index.html"),
         background: resolve(__dirname, "src/background.ts"),
-        "content-script": resolve(__dirname, "src/content-script.ts"),
       },
       output: {
         entryFileNames: (chunkInfo) => {
-          if (chunkInfo.name === "background" || chunkInfo.name === "content-script") {
+          if (chunkInfo.name === "background") {
             return "[name].js";
           }
 

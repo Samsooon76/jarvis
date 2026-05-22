@@ -27,6 +27,14 @@ export type QueueViewProps = {
   prospects: QueueProspect[];
 };
 
+export type PlannedProspectTask = {
+  id: string;
+  title: string;
+  dueAt: string | null;
+  priority: "low" | "medium" | "high" | null;
+  extraCount: number;
+};
+
 export type QueueBucket = "actNow" | "thisWeek" | "watch" | "all" | "lastUpdate";
 export type DealStatus = "open" | "won" | "lost" | "other";
 export type DealStatusFilter = "open" | "all" | "won" | "lost";

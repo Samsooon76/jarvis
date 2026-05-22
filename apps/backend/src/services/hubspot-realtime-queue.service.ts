@@ -33,6 +33,7 @@ let queue: Queue<HubSpotRealtimeJob> | null = null;
 let worker: Worker<HubSpotRealtimeJob> | null = null;
 let processor: HubSpotRealtimeProcessor | null = null;
 let redisConnection: Redis | null = null;
+let fallbackLogger: LoggerLike | null = null;
 
 const getRedisConnection = (): Redis | null => {
   if (!env.redisUrl) {
@@ -106,7 +107,14 @@ const enqueueInMemory = (job: HubSpotRealtimeJob, delayMs: number): void => {
   const timer = setTimeout(() => {
     inMemoryTimers.delete(key);
     void currentProcessor(job).catch((error: unknown) => {
-      console.error("HubSpot realtime in-memory job failed", error);
+      fallbackLogger?.error(
+        {
+          error,
+          job,
+          queue: QUEUE_NAME,
+        },
+        "Job HubSpot realtime en memoire en echec.",
+      );
     });
   }, Math.max(0, delayMs));
 
@@ -133,6 +141,7 @@ export const startHubSpotRealtimeWorker = (
   logger: LoggerLike,
 ): void => {
   processor = nextProcessor;
+  fallbackLogger = logger;
 
   const connection = getRedisConnection();
 

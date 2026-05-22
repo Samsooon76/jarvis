@@ -1,6 +1,40 @@
-import type { ApiResponse, ProspectPriority, QueueData, QueueProspect } from "@jarvis/shared";
+import type { ProspectPriority, QueueData, QueueProspect } from "@jarvis/shared";
+import { API_BASE_URL, apiPath, getJson, postJson, type ApiRequestOptions } from "./api/client";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "https://jarvisapi-production-10cd.up.railway.app";
+const ANALYTICS_OVERVIEW_CACHE_TTL_MS = 60_000;
+const ANALYTICS_DETAIL_CACHE_TTL_MS = 60_000;
+
+type CachedApiEntry<T> = {
+  expiresAt: number;
+  promise: Promise<T>;
+};
+
+const analyticsGetCache = new Map<string, CachedApiEntry<unknown>>();
+
+const getCachedJson = async <T>(cacheKey: string, path: string, ttlMs: number, forceRefresh = false): Promise<T> => {
+  const now = Date.now();
+  const cached = analyticsGetCache.get(cacheKey);
+
+  if (!forceRefresh && cached && cached.expiresAt > now) {
+    return cached.promise as Promise<T>;
+  }
+
+  const promise = getJson<T>(path).catch((error: unknown) => {
+    analyticsGetCache.delete(cacheKey);
+    throw error;
+  });
+
+  analyticsGetCache.set(cacheKey, {
+    expiresAt: now + ttlMs,
+    promise,
+  });
+
+  return promise;
+};
+
+const clearAnalyticsCache = (): void => {
+  analyticsGetCache.clear();
+};
 
 export type AiProviderId = "deepseek" | "openai" | "vertex-gemini";
 
@@ -15,14 +49,6 @@ export type AiProviderOption = {
 
 export const aiProviderOptions: AiProviderOption[] = [
   {
-    id: "deepseek",
-    label: "DeepSeek",
-    model: "deepseek-v4-flash",
-    description: "Rapide et peu couteux pour les analyses CRM structurees.",
-    requiredEnv: "DEEPSEEK_API_KEY",
-    docsUrl: "https://api-docs.deepseek.com/",
-  },
-  {
     id: "openai",
     label: "OpenAI",
     model: "gpt-5-nano",
@@ -30,16 +56,9 @@ export const aiProviderOptions: AiProviderOption[] = [
     requiredEnv: "OPENAI_API_KEY",
     docsUrl: "https://developers.openai.com/api/docs/models/gpt-5-nano",
   },
-  {
-    id: "vertex-gemini",
-    label: "Vertex Gemini",
-    model: "gemini-3.1-flash-lite-preview",
-    description: "Provider historique du projet, conserve comme option de fallback.",
-    requiredEnv: "VERTEX_AI_API_KEY",
-  },
 ];
 
-export type HubSpotConnectionStatus = {
+type HubSpotConnectionStatus = {
   orgId: string;
   connected: boolean;
   hubspotPortalId: string | null;
@@ -77,6 +96,9 @@ type HubSpotOwnerProspect = {
   lastContactAt: string | null;
   hubspotDealId: string | null;
   syncedAt: string;
+  nextAction: string;
+  reason: string;
+  priority: ProspectPriority;
 };
 
 type HubSpotOwnerProspectsPayload = {
@@ -84,6 +106,13 @@ type HubSpotOwnerProspectsPayload = {
   hubspotOwnerId: string;
   hubspotDealCount: number | null;
   prospects: HubSpotOwnerProspect[];
+};
+
+type HubSpotQueueDashboardPayload = HubSpotOwnerProspectsPayload & {
+  status: HubSpotConnectionStatus;
+  owner: HubSpotOwnerOption;
+  owners: HubSpotOwnerOption[];
+  lastUpdates: HubSpotLastUpdateItem[];
 };
 
 export type HubSpotLastUpdateItem = {
@@ -160,25 +189,10 @@ export type TaskAnalysis = {
   confidence: "low" | "medium" | "high";
 };
 
-export type TaskAnalyzerResult = {
-  orgId: string;
-  hubspotTaskId: string;
-  hubspotDealId: string | null;
-  hubspotContactId: string | null;
-  prospectId: string | null;
-  cached: boolean;
-  provider: string;
-  model: string;
-  generatedAt: string;
-  expiresAt: string;
-  analysis: TaskAnalysis;
-  task: HubSpotTaskListItem;
-};
-
 export type TaskAnalyzerApplyResult = {
   orgId: string;
   hubspotTaskId: string;
-  action: "completed" | "rescheduled" | "not_applicable";
+  action: "completed" | "rescheduled";
   completedTask: HubSpotTaskListItem | null;
   createdTask: HubSpotTaskListItem | null;
   analysis: TaskAnalysis;
@@ -194,19 +208,6 @@ type HubSpotTasksPayload = {
   orgId: string;
   hubspotOwnerId: string;
   tasks: HubSpotTaskListItem[];
-};
-
-export type CreateHubSpotTaskInput = {
-  orgId: string;
-  hubspotOwnerId: string | null;
-  title: string;
-  body: string;
-  dueAt: string;
-  priority: HubSpotTaskPriority | null;
-  associations: Array<{
-    objectType: "contact" | "company" | "deal";
-    objectId: string;
-  }>;
 };
 
 export type HubSpotQueueData = QueueData & {
@@ -381,6 +382,28 @@ export type DealAnalysisBundleResult = {
   activityPlan: DealActivityPlanResult;
 };
 
+export type DealAnalysisJobStatus = "queued" | "running" | "completed" | "failed";
+
+export type DealAnalysisJobSnapshot = {
+  jobId: string;
+  prospectId: string;
+  orgId: string | null;
+  hubspotDealId: string | null;
+  status: DealAnalysisJobStatus;
+  progress: number;
+  currentStep: string;
+  startedAt: string;
+  updatedAt: string;
+  finishedAt: string | null;
+  logs: Array<{
+    at: string;
+    level: "info" | "success" | "error";
+    message: string;
+  }>;
+  result: DealAnalysisBundleResult | null;
+  error: string | null;
+};
+
 export type DealQualificationStatus = "confirmed" | "partial" | "weak" | "missing";
 
 export type DealQualificationInfluence = "low" | "medium" | "high";
@@ -466,16 +489,16 @@ export type DealQualificationResult = {
 
 export type DealRecentActivity = {
   id: string;
-  type: "note" | "call" | "meeting" | "email" | "sms" | "deal" | "task";
+  type: "note" | "call" | "meeting" | "email" | "sms" | "communication" | "deal" | "task";
   occurredAt: string | null;
   title: string;
   body: string | null;
   actorName: string | null;
-  channel: "email" | "call" | "meeting" | "note" | "sms" | "deal" | "task";
+  channel: "email" | "call" | "meeting" | "note" | "sms" | "communication" | "deal" | "task";
 };
 
 export type DealChannelEngagement = {
-  channel: "email" | "call" | "meeting" | "note" | "sms" | "task";
+  channel: "email" | "call" | "meeting" | "note" | "sms" | "communication" | "task";
   label: string;
   count: number;
   responseRate: number | null;
@@ -878,105 +901,6 @@ export type FollowUpTaskResult = {
   localActionPersisted: boolean;
 };
 
-const getJson = async <T>(path: string): Promise<T> => {
-  const response = await fetch(`${API_BASE_URL}${path}`);
-  const payload = (await response.json()) as ApiResponse<T>;
-
-  if (!response.ok || !payload.success || !payload.data) {
-    throw new Error(payload.error ?? "La reponse API HubSpot est invalide.");
-  }
-
-  return payload.data;
-};
-
-const postJson = async <T>(path: string, body: unknown): Promise<T> => {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-  const payload = (await response.json()) as ApiResponse<T>;
-
-  if (!response.ok || !payload.success || !payload.data) {
-    throw new Error(payload.error ?? "La reponse API HubSpot est invalide.");
-  }
-
-  return payload.data;
-};
-
-const getPriority = (prospect: HubSpotOwnerProspect): ProspectPriority => {
-  const amount = prospect.dealAmount ?? 0;
-  const daysSinceContact = getDaysSince(prospect.lastContactAt ?? prospect.syncedAt);
-
-  if (prospect.closeProbability >= 70 || amount >= 20_000 || daysSinceContact >= 21) {
-    return "urgent";
-  }
-
-  if (prospect.closeProbability >= 40 || amount >= 8_000 || daysSinceContact >= 10) {
-    return "important";
-  }
-
-  return "routine";
-};
-
-const getDaysSince = (value: string): number => {
-  const timestamp = new Date(value).getTime();
-
-  if (Number.isNaN(timestamp)) {
-    return 0;
-  }
-
-  return Math.max(0, Math.floor((Date.now() - timestamp) / 86_400_000));
-};
-
-const getNextAction = (prospect: HubSpotOwnerProspect): string => {
-  const daysSinceContact = getDaysSince(prospect.lastContactAt ?? prospect.syncedAt);
-  const stage = `${prospect.dealStageLabel ?? ""} ${prospect.dealStage ?? ""}`.toLowerCase();
-
-  if (prospect.closeProbability >= 70) {
-    return "Faire avancer le deal vers la prochaine etape";
-  }
-
-  if (stage.includes("demo")) {
-    return "Confirmer les enjeux avant la demo";
-  }
-
-  if (stage.includes("contract") || stage.includes("negotiation")) {
-    return "Lever les derniers blocages contractuels";
-  }
-
-  if (daysSinceContact >= 14) {
-    return "Relancer le prospect avec un angle business clair";
-  }
-
-  return "Verifier le prochain pas HubSpot";
-};
-
-const getReason = (prospect: HubSpotOwnerProspect): string => {
-  const daysSinceContact = getDaysSince(prospect.lastContactAt ?? prospect.syncedAt);
-  const amount = prospect.dealAmount ?? 0;
-  const dealName = prospect.dealName ?? prospect.hubspotDealId ?? "deal HubSpot";
-
-  if (daysSinceContact >= 14 && amount > 0) {
-    return `${dealName}: aucun contact depuis ${daysSinceContact} jours sur une opportunite de ${formatAmount(amount)}.`;
-  }
-
-  if (prospect.closeProbability >= 70) {
-    return `${dealName}: probabilite HubSpot elevee (${prospect.closeProbability}%) et prochaine etape a securiser.`;
-  }
-
-  return `${dealName}: deal HubSpot synchronise, a qualifier avec les signaux disponibles dans le CRM.`;
-};
-
-const formatAmount = (amount: number): string =>
-  new Intl.NumberFormat("fr-FR", {
-    style: "currency",
-    currency: "EUR",
-    maximumFractionDigits: 0,
-  }).format(amount);
-
 const toQueueProspect = (prospect: HubSpotOwnerProspect): QueueProspect => ({
   id: prospect.id,
   name: prospect.contactName,
@@ -987,24 +911,23 @@ const toQueueProspect = (prospect: HubSpotOwnerProspect): QueueProspect => ({
   closeProbability: prospect.closeProbability,
   closeDate: prospect.closedAt,
   lastContactAt: prospect.lastContactAt ?? prospect.syncedAt,
-  nextAction: getNextAction(prospect),
-  reason: getReason(prospect),
-  priority: getPriority(prospect),
+  nextAction: prospect.nextAction,
+  reason: prospect.reason,
+  priority: prospect.priority,
   email: prospect.email,
   phone: null,
   dealName: prospect.dealName,
   hubspotDealId: prospect.hubspotDealId,
 });
 
-export const fetchHubSpotStatus = async (orgId: string): Promise<HubSpotConnectionStatus> =>
-  getJson<HubSpotConnectionStatus>(`/api/hubspot/status?orgId=${encodeURIComponent(orgId)}`);
-
-export const fetchHubSpotOwners = async (orgId: string): Promise<HubSpotOwnerOption[]> =>
-  getJson<HubSpotOwnerOption[]>(`/api/hubspot/owners?orgId=${encodeURIComponent(orgId)}`);
-
-export const fetchHubSpotLastUpdates = async (orgId: string, limit = 12): Promise<HubSpotLastUpdateItem[]> => {
+export const fetchHubSpotLastUpdates = async (
+  orgId: string,
+  limit = 12,
+  options: ApiRequestOptions = {},
+): Promise<HubSpotLastUpdateItem[]> => {
   const payload = await getJson<HubSpotLastUpdatesPayload>(
-    `/api/hubspot/last-updates?orgId=${encodeURIComponent(orgId)}&limit=${encodeURIComponent(String(limit))}`,
+    apiPath("/api/hubspot/last-updates", { orgId, limit }),
+    options,
   );
 
   return payload.updates;
@@ -1013,17 +936,16 @@ export const fetchHubSpotLastUpdates = async (orgId: string, limit = 12): Promis
 export const fetchHubSpotTasks = async (
   orgId: string,
   hubspotOwnerId: string,
-  limit = 100,
+  limit = 500,
+  options: ApiRequestOptions = {},
 ): Promise<HubSpotTaskListItem[]> => {
   const payload = await getJson<HubSpotTasksPayload>(
-    `/api/hubspot/tasks?orgId=${encodeURIComponent(orgId)}&hubspotOwnerId=${encodeURIComponent(hubspotOwnerId)}&limit=${encodeURIComponent(String(limit))}`,
+    apiPath("/api/hubspot/tasks", { orgId, hubspotOwnerId, limit, includeCompleted: false }),
+    options,
   );
 
   return payload.tasks;
 };
-
-export const createHubSpotTask = async (input: CreateHubSpotTaskInput): Promise<HubSpotTaskListItem> =>
-  postJson<HubSpotTaskListItem>("/api/hubspot/tasks", input);
 
 export const updateHubSpotTaskPriority = async (
   orgId: string,
@@ -1033,21 +955,6 @@ export const updateHubSpotTaskPriority = async (
   postJson<HubSpotTaskListItem>(`/api/hubspot/tasks/${encodeURIComponent(taskId)}/priority`, {
     orgId,
     priority,
-  });
-
-export const analyzeHubSpotTask = async (
-  orgId: string,
-  taskId: string,
-  refresh = false,
-): Promise<TaskAnalyzerResult> =>
-  postJson<TaskAnalyzerResult>(`/api/tasks/${encodeURIComponent(taskId)}/analyze`, {
-    orgId,
-    refresh,
-  });
-
-export const applyHubSpotTaskAnalysis = async (orgId: string, taskId: string): Promise<TaskAnalyzerApplyResult> =>
-  postJson<TaskAnalyzerApplyResult>(`/api/tasks/${encodeURIComponent(taskId)}/apply-analysis`, {
-    orgId,
   });
 
 export const analyzeAndApplyHubSpotTask = async (
@@ -1064,12 +971,18 @@ export const fetchHubSpotQueue = async (
   orgId: string,
   preferredHubSpotOwnerId: string | null,
   live: boolean,
+  options: ApiRequestOptions = {},
 ): Promise<HubSpotQueueData> => {
-  const [status, owners, lastUpdates] = await Promise.all([
-    fetchHubSpotStatus(orgId),
-    fetchHubSpotOwners(orgId),
-    fetchHubSpotLastUpdates(orgId),
-  ]);
+  const payload = await getJson<HubSpotQueueDashboardPayload>(
+    apiPath("/api/hubspot/queue-dashboard", {
+      orgId,
+      hubspotOwnerId: preferredHubSpotOwnerId,
+      live,
+      limit: 12,
+    }),
+    options,
+  );
+  const { status, owner, owners, lastUpdates } = payload;
 
   if (!status.connected) {
     throw new Error("HubSpot n'est pas connecte pour cette organisation.");
@@ -1078,28 +991,7 @@ export const fetchHubSpotQueue = async (
   if (owners.length === 0) {
     throw new Error("Aucun owner HubSpot disponible pour cette organisation.");
   }
-
-  const owner =
-    owners.find((candidate) => candidate.ownerId === preferredHubSpotOwnerId) ??
-    owners.find(
-      (candidate) =>
-        candidate.teamName?.toLowerCase().includes("sales ae") &&
-        (candidate.prospectCount > 0 || candidate.syncedDealCount > 0),
-    ) ??
-    owners.find((candidate) => candidate.prospectCount > 0 || candidate.syncedDealCount > 0) ??
-    owners.find((candidate) => candidate.teamName?.toLowerCase().includes("sales ae")) ??
-    owners[0];
-
-  if (!owner) {
-    throw new Error("Aucun owner HubSpot exploitable.");
-  }
-
-  const ownerProspectsPayload = await getJson<HubSpotOwnerProspectsPayload>(
-    `/api/hubspot/owner-prospects?orgId=${encodeURIComponent(orgId)}&hubspotOwnerId=${encodeURIComponent(owner.ownerId)}&live=${String(live)}`,
-  );
-  const prospects = ownerProspectsPayload.prospects
-    .map(toQueueProspect)
-    .sort((left, right) => right.dealAmount - left.dealAmount);
+  const prospects = payload.prospects.map(toQueueProspect);
 
   return {
     userId: owner.ownerId,
@@ -1108,7 +1000,7 @@ export const fetchHubSpotQueue = async (
     hubspotPortalId: status.hubspotPortalId,
     owner,
     owners,
-    hubspotDealCount: ownerProspectsPayload.hubspotDealCount ?? owner.syncedDealCount,
+    hubspotDealCount: payload.hubspotDealCount ?? owner.syncedDealCount,
     lastUpdates,
   };
 };
@@ -1148,6 +1040,7 @@ const startAndPollHubSpotSync = async (
   hubspotOwnerIds: string[],
   onProgress?: (status: HubSpotSyncJobStatus) => void,
 ): Promise<HubSpotSyncResult> => {
+  clearAnalyticsCache();
   const startedJob = await postJson<HubSpotSyncJobStatus>("/api/sync/hubspot", {
     orgId,
     hubspotOwnerIds,
@@ -1188,6 +1081,8 @@ const startAndPollHubSpotSync = async (
         error: null,
       });
 
+      clearAnalyticsCache();
+
       return result;
     }
     onProgress?.(currentJob);
@@ -1201,80 +1096,30 @@ const startAndPollHubSpotSync = async (
     throw new Error("La sync HubSpot est terminee mais aucun resultat n'a ete renvoye.");
   }
 
+  clearAnalyticsCache();
+
   return currentJob.result;
 };
 
 export const disconnectHubSpot = async (orgId: string): Promise<HubSpotDisconnectResult> =>
-  postJson<HubSpotDisconnectResult>("/api/hubspot/disconnect", { orgId, purgeData: true });
-
-export const fetchDealIntelligence = async (
-  prospect: QueueProspect,
-  orgId: string,
-  aiProvider: AiProviderOption,
-  refresh = false,
-): Promise<DealIntelligenceResult> => {
-  const searchParams = new URLSearchParams({
-    orgId,
-    llmProvider: aiProvider.id,
-    llmModel: aiProvider.model,
-    refresh: String(refresh),
-  });
-
-  if (prospect.hubspotDealId) {
-    searchParams.set("hubspotDealId", prospect.hubspotDealId);
-  }
-
-  searchParams.set("closeProbability", String(prospect.closeProbability));
-  searchParams.set("dealAmount", String(prospect.dealAmount));
-  searchParams.set("dealStage", prospect.dealStage);
-  searchParams.set("lastContactAt", prospect.lastContactAt);
-  searchParams.set("nextAction", prospect.nextAction);
-
-  return getJson<DealIntelligenceResult>(
-    `/api/prospects/${encodeURIComponent(prospect.id)}/deal-intelligence?${searchParams.toString()}`,
-  );
-};
+  postJson<HubSpotDisconnectResult>("/api/hubspot/disconnect", { orgId, purgeData: true }).finally(clearAnalyticsCache);
 
 const buildDealAnalysisSearchParams = (
   prospect: QueueProspect,
   orgId: string,
   aiProvider: AiProviderOption,
-  ownerName: string | undefined,
+  _ownerName: string | undefined,
   refresh = false,
 ): URLSearchParams => {
   const searchParams = new URLSearchParams({
     orgId,
     llmProvider: aiProvider.id,
     llmModel: aiProvider.model,
-    contactName: prospect.name,
-    contactTitle: prospect.title,
-    companyName: prospect.company,
-    dealStage: prospect.dealStage,
-    closeProbability: String(prospect.closeProbability),
-    dealAmount: String(prospect.dealAmount),
-    lastContactAt: prospect.lastContactAt,
-    nextAction: prospect.nextAction,
     refresh: String(refresh),
   });
 
   if (prospect.hubspotDealId) {
     searchParams.set("hubspotDealId", prospect.hubspotDealId);
-  }
-
-  if (prospect.closeDate) {
-    searchParams.set("closeDate", prospect.closeDate);
-  }
-
-  if (prospect.email) {
-    searchParams.set("contactEmail", prospect.email);
-  }
-
-  if (prospect.phone) {
-    searchParams.set("contactPhone", prospect.phone);
-  }
-
-  if (ownerName) {
-    searchParams.set("ownerName", ownerName);
   }
 
   return searchParams;
@@ -1292,6 +1137,54 @@ export const fetchDealAnalysisBundle = async (
   return getJson<DealAnalysisBundleResult>(
     `/api/prospects/${encodeURIComponent(prospect.id)}/deal-analysis-bundle?${searchParams.toString()}`,
   );
+};
+
+export const startDealAnalysisRun = async (
+  prospect: QueueProspect,
+  orgId: string,
+  aiProvider: AiProviderOption,
+  refresh = true,
+): Promise<DealAnalysisJobSnapshot> =>
+  postJson<DealAnalysisJobSnapshot>(`/api/prospects/${encodeURIComponent(prospect.id)}/deal-analysis-runs`, {
+    orgId,
+    hubspotDealId: prospect.hubspotDealId ?? null,
+    llmProvider: aiProvider.id,
+    llmModel: aiProvider.model,
+    refresh,
+  });
+
+export const fetchDealAnalysisRun = async (jobId: string): Promise<DealAnalysisJobSnapshot> =>
+  getJson<DealAnalysisJobSnapshot>(`/api/prospects/deal-analysis-runs/${encodeURIComponent(jobId)}`);
+
+export const startAndPollDealAnalysisRun = async (
+  prospect: QueueProspect,
+  orgId: string,
+  aiProvider: AiProviderOption,
+  refresh = true,
+  onProgress?: (status: DealAnalysisJobSnapshot) => void,
+): Promise<DealAnalysisBundleResult> => {
+  const startedJob = await startDealAnalysisRun(prospect, orgId, aiProvider, refresh);
+  onProgress?.(startedJob);
+
+  let currentJob = startedJob;
+
+  while (currentJob.status !== "completed" && currentJob.status !== "failed") {
+    await wait(1000);
+    currentJob = await fetchDealAnalysisRun(startedJob.jobId);
+    onProgress?.(currentJob);
+  }
+
+  if (currentJob.status === "failed") {
+    throw new Error(currentJob.error ?? "Erreur inconnue pendant l'analyse du deal.");
+  }
+
+  if (!currentJob.result) {
+    throw new Error("L'analyse du deal est terminee mais aucun resultat n'a ete renvoye.");
+  }
+
+  clearAnalyticsCache();
+
+  return currentJob.result;
 };
 
 export const fetchDealAnalysisPage = async (
@@ -1315,40 +1208,7 @@ export const fetchDealQualification = async (
   ownerName: string | undefined,
   refresh = false,
 ): Promise<DealQualificationResult> => {
-  const searchParams = new URLSearchParams({
-    orgId,
-    llmProvider: aiProvider.id,
-    llmModel: aiProvider.model,
-    contactName: prospect.name,
-    contactTitle: prospect.title,
-    companyName: prospect.company,
-    dealStage: prospect.dealStage,
-    closeProbability: String(prospect.closeProbability),
-    dealAmount: String(prospect.dealAmount),
-    lastContactAt: prospect.lastContactAt,
-    nextAction: prospect.nextAction,
-    refresh: String(refresh),
-  });
-
-  if (prospect.hubspotDealId) {
-    searchParams.set("hubspotDealId", prospect.hubspotDealId);
-  }
-
-  if (prospect.closeDate) {
-    searchParams.set("closeDate", prospect.closeDate);
-  }
-
-  if (prospect.email) {
-    searchParams.set("contactEmail", prospect.email);
-  }
-
-  if (prospect.phone) {
-    searchParams.set("contactPhone", prospect.phone);
-  }
-
-  if (ownerName) {
-    searchParams.set("ownerName", ownerName);
-  }
+  const searchParams = buildDealAnalysisSearchParams(prospect, orgId, aiProvider, ownerName, refresh);
 
   return getJson<DealQualificationResult>(
     `/api/prospects/${encodeURIComponent(prospect.id)}/deal-qualification?${searchParams.toString()}`,
@@ -1362,40 +1222,7 @@ export const fetchDealActivityPlan = async (
   ownerName: string | undefined,
   refresh = false,
 ): Promise<DealActivityPlanResult> => {
-  const searchParams = new URLSearchParams({
-    orgId,
-    llmProvider: aiProvider.id,
-    llmModel: aiProvider.model,
-    contactName: prospect.name,
-    contactTitle: prospect.title,
-    companyName: prospect.company,
-    dealStage: prospect.dealStage,
-    closeProbability: String(prospect.closeProbability),
-    dealAmount: String(prospect.dealAmount),
-    lastContactAt: prospect.lastContactAt,
-    nextAction: prospect.nextAction,
-    refresh: String(refresh),
-  });
-
-  if (prospect.hubspotDealId) {
-    searchParams.set("hubspotDealId", prospect.hubspotDealId);
-  }
-
-  if (prospect.closeDate) {
-    searchParams.set("closeDate", prospect.closeDate);
-  }
-
-  if (prospect.email) {
-    searchParams.set("contactEmail", prospect.email);
-  }
-
-  if (prospect.phone) {
-    searchParams.set("contactPhone", prospect.phone);
-  }
-
-  if (ownerName) {
-    searchParams.set("ownerName", ownerName);
-  }
+  const searchParams = buildDealAnalysisSearchParams(prospect, orgId, aiProvider, ownerName, refresh);
 
   return getJson<DealActivityPlanResult>(
     `/api/prospects/${encodeURIComponent(prospect.id)}/deal-activity-plan?${searchParams.toString()}`,
@@ -1421,6 +1248,7 @@ export const fetchCloseLostOverview = async ({
   dateFrom,
   dateTo,
   aiProvider,
+  forceRefresh = false,
 }: {
   orgId: string;
   scope: CloseLostScope;
@@ -1429,25 +1257,25 @@ export const fetchCloseLostOverview = async ({
   dateFrom: string;
   dateTo: string;
   aiProvider: AiProviderOption;
+  forceRefresh?: boolean;
 }): Promise<CloseLostOverviewResult> => {
-  const searchParams = new URLSearchParams({
+  const path = apiPath("/api/close-lost-analysis/overview", {
     orgId,
     scope,
     dateFrom,
     dateTo,
     llmProvider: aiProvider.id,
     llmModel: aiProvider.model,
+    hubspotOwnerId,
+    salesAeOwnerIds: salesAeOwnerIds.length > 0 ? salesAeOwnerIds.join(",") : null,
   });
 
-  if (hubspotOwnerId) {
-    searchParams.set("hubspotOwnerId", hubspotOwnerId);
-  }
-
-  if (salesAeOwnerIds.length > 0) {
-    searchParams.set("salesAeOwnerIds", salesAeOwnerIds.join(","));
-  }
-
-  return getJson<CloseLostOverviewResult>(`/api/close-lost-analysis/overview?${searchParams.toString()}`);
+  return getCachedJson<CloseLostOverviewResult>(
+    `close-lost-overview:${path}`,
+    path,
+    ANALYTICS_OVERVIEW_CACHE_TTL_MS,
+    forceRefresh,
+  );
 };
 
 export const startCloseLostAnalysisRun = async ({
@@ -1479,7 +1307,7 @@ export const startCloseLostAnalysisRun = async ({
     llmProvider: aiProvider.id,
     llmModel: aiProvider.model,
     refresh,
-  });
+  }).finally(clearAnalyticsCache);
 
 export const fetchCloseLostAnalysisRun = async (runId: string): Promise<CloseLostAnalysisRun> =>
   getJson<CloseLostAnalysisRun>(`/api/close-lost-analysis/runs/${encodeURIComponent(runId)}`);
@@ -1488,15 +1316,19 @@ export const fetchCloseLostDealDetail = async (
   orgId: string,
   hubspotDealId: string,
   aiProvider: AiProviderOption,
+  forceRefresh = false,
 ): Promise<CloseLostDealDetailResult> => {
-  const searchParams = new URLSearchParams({
+  const path = apiPath(`/api/close-lost-analysis/deals/${encodeURIComponent(hubspotDealId)}`, {
     orgId,
     llmProvider: aiProvider.id,
     llmModel: aiProvider.model,
   });
 
-  return getJson<CloseLostDealDetailResult>(
-    `/api/close-lost-analysis/deals/${encodeURIComponent(hubspotDealId)}?${searchParams.toString()}`,
+  return getCachedJson<CloseLostDealDetailResult>(
+    `close-lost-detail:${path}`,
+    path,
+    ANALYTICS_DETAIL_CACHE_TTL_MS,
+    forceRefresh,
   );
 };
 
@@ -1511,7 +1343,7 @@ export const analyzeCloseLostDeal = async (
     llmProvider: aiProvider.id,
     llmModel: aiProvider.model,
     refresh,
-  });
+  }).finally(clearAnalyticsCache);
 
 export const fetchForecastOverview = async ({
   orgId,
@@ -1520,6 +1352,7 @@ export const fetchForecastOverview = async ({
   dateFrom,
   dateTo,
   aiProvider,
+  forceRefresh = false,
 }: {
   orgId: string;
   scope: ForecastScope;
@@ -1527,56 +1360,25 @@ export const fetchForecastOverview = async ({
   dateFrom: string;
   dateTo: string;
   aiProvider: AiProviderOption;
+  forceRefresh?: boolean;
 }): Promise<ForecastOverviewResult> => {
-  const searchParams = new URLSearchParams({
+  const path = apiPath("/api/forecast/overview", {
     orgId,
     scope,
     dateFrom,
     dateTo,
     llmProvider: aiProvider.id,
     llmModel: aiProvider.model,
-  });
-
-  if (hubspotOwnerId) {
-    searchParams.set("hubspotOwnerId", hubspotOwnerId);
-  }
-
-  return getJson<ForecastOverviewResult>(`/api/forecast/overview?${searchParams.toString()}`);
-};
-
-export const analyzeForecastOpenDeals = async ({
-  orgId,
-  scope,
-  hubspotOwnerId,
-  dateFrom,
-  dateTo,
-  aiProvider,
-  refresh,
-  batchSize = 5,
-  retryFailedCount = 2,
-}: {
-  orgId: string;
-  scope: ForecastScope;
-  hubspotOwnerId: string | null;
-  dateFrom: string;
-  dateTo: string;
-  aiProvider: AiProviderOption;
-  refresh: boolean;
-  batchSize?: number;
-  retryFailedCount?: number;
-}): Promise<ForecastAnalyzeResult> =>
-  postJson<ForecastAnalyzeResult>("/api/forecast/analyze-open-deals", {
-    orgId,
-    scope,
     hubspotOwnerId,
-    dateFrom,
-    dateTo,
-    llmProvider: aiProvider.id,
-    llmModel: aiProvider.model,
-    refresh,
-    batchSize,
-    retryFailedCount,
   });
+
+  return getCachedJson<ForecastOverviewResult>(
+    `forecast-overview:${path}`,
+    path,
+    ANALYTICS_OVERVIEW_CACHE_TTL_MS,
+    forceRefresh,
+  );
+};
 
 const fetchForecastAnalyzeJob = async (jobId: string): Promise<ForecastAnalyzeJobStatus> =>
   getJson<ForecastAnalyzeJobStatus>(`/api/forecast/analyze-open-deals/jobs/${encodeURIComponent(jobId)}`);
@@ -1604,6 +1406,7 @@ export const startAndPollForecastOpenDealsAnalysis = async ({
   retryFailedCount?: number;
   onProgress?: (status: ForecastAnalyzeJobStatus) => void;
 }): Promise<ForecastAnalyzeResult> => {
+  clearAnalyticsCache();
   const startedJob = await postJson<ForecastAnalyzeJobStatus>("/api/forecast/analyze-open-deals", {
     orgId,
     scope,
@@ -1634,6 +1437,8 @@ export const startAndPollForecastOpenDealsAnalysis = async ({
   if (!currentJob.result) {
     throw new Error("L'analyse forecast est terminee mais aucun resultat n'a ete renvoye.");
   }
+
+  clearAnalyticsCache();
 
   return currentJob.result;
 };
@@ -1666,10 +1471,10 @@ export const analyzeForecastDeal = async ({
     llmProvider: aiProvider.id,
     llmModel: aiProvider.model,
     refresh,
-  });
+  }).finally(clearAnalyticsCache);
 
 export const fetchMonthlySalesTargets = async (orgId: string, year: number): Promise<MonthlySalesTarget[]> =>
-  getJson<MonthlySalesTarget[]>(`/api/forecast/targets?orgId=${encodeURIComponent(orgId)}&year=${encodeURIComponent(String(year))}`);
+  getJson<MonthlySalesTarget[]>(apiPath("/api/forecast/targets", { orgId, year }));
 
 export const saveMonthlySalesTargets = async (
   orgId: string,

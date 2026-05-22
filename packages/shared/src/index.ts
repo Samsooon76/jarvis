@@ -30,12 +30,3 @@ export type QueueData = {
   generatedAt: string;
   prospects: QueueProspect[];
 };
-
-export type HubSpotConnectionStatus = {
-  orgId: string;
-  connected: boolean;
-  hubspotPortalId: string | null;
-  prospectCount: number;
-  dealCount: number;
-  lastSyncedAt: string | null;
-};

@@ -1,10 +1,10 @@
 import { env } from "../../config/env.js";
 import type { LlmProvider } from "./llm.provider.js";
-import { DeepSeekProvider } from "./providers/deepseek.provider.js";
 import { OpenAiProvider } from "./providers/openai.provider.js";
-import { VertexGeminiProvider } from "./providers/vertex-gemini.provider.js";
 
 export type LlmProviderId = "deepseek" | "openai" | "vertex-gemini";
+export const DEFAULT_LLM_PROVIDER: LlmProviderId = "openai";
+export const DEFAULT_LLM_MODEL = "gpt-5-nano";
 
 export type CreateLlmProviderOptions = {
   provider?: string | null;
@@ -12,20 +12,11 @@ export type CreateLlmProviderOptions = {
 };
 
 export const createLlmProvider = (options: CreateLlmProviderOptions = {}): LlmProvider => {
-  const provider = (options.provider?.trim() || env.llmProvider) as LlmProviderId;
-  const model = options.model?.trim() || null;
+  const requestedProvider = options.provider?.trim() || env.llmProvider;
+  const requestedModel = options.model?.trim() || env.openaiModel;
+  const model = requestedProvider === DEFAULT_LLM_PROVIDER && requestedModel === DEFAULT_LLM_MODEL
+    ? requestedModel
+    : DEFAULT_LLM_MODEL;
 
-  if (provider === "vertex-gemini") {
-    return new VertexGeminiProvider(undefined, model ?? undefined);
-  }
-
-  if (provider === "deepseek") {
-    return new DeepSeekProvider(undefined, model ?? undefined);
-  }
-
-  if (provider === "openai") {
-    return new OpenAiProvider(undefined, model ?? undefined);
-  }
-
-  throw new Error(`Provider LLM non supporte: ${provider}`);
+  return new OpenAiProvider(undefined, model);
 };

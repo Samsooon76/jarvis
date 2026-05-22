@@ -1,16 +1,188 @@
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import type { QueueProspect } from "@jarvis/shared";
 import { AdminFeedback } from "./dashboard/AdminFeedback";
-import { CloseLostAnalysisView } from "./dashboard/CloseLostAnalysisView";
-import { DealAnalysisView } from "./dashboard/DealAnalysisView";
-import { ForecastView } from "./dashboard/ForecastView";
 import { HubSpotHeader } from "./dashboard/HubSpotHeader";
 import { OverviewView } from "./dashboard/OverviewView";
 import { Sidebar } from "./dashboard/Sidebar";
-import { SettingsView } from "./dashboard/SettingsView";
-import { StatsView } from "./dashboard/StatsView";
-import { TasksView } from "./dashboard/TasksView";
-import type { QueueViewProps } from "./dashboard/types";
+import type { PlannedProspectTask, QueueViewProps } from "./dashboard/types";
 import { useQueueDashboard } from "../hooks/dashboard/useQueueDashboard";
+import { fetchCloseLostOverview, fetchForecastOverview, fetchHubSpotTasks, type HubSpotTaskListItem } from "../services/api";
 import "./QueueView.css";
+
+const CloseLostAnalysisView = lazy(async () => {
+  const module = await import("./dashboard/CloseLostAnalysisView");
+
+  return { default: module.CloseLostAnalysisView };
+});
+const DealAnalysisView = lazy(async () => {
+  const module = await import("./dashboard/DealAnalysisView");
+
+  return { default: module.DealAnalysisView };
+});
+const ForecastView = lazy(async () => {
+  const module = await import("./dashboard/ForecastView");
+
+  return { default: module.ForecastView };
+});
+const SettingsView = lazy(async () => {
+  const module = await import("./dashboard/SettingsView");
+
+  return { default: module.SettingsView };
+});
+const StatsView = lazy(async () => {
+  const module = await import("./dashboard/StatsView");
+
+  return { default: module.StatsView };
+});
+const TasksView = lazy(async () => {
+  const module = await import("./dashboard/TasksView");
+
+  return { default: module.TasksView };
+});
+
+const WorkspaceFallback = () => (
+  <section className="ae-view-panel" aria-busy="true">
+    <p className="ae-empty">Chargement de la vue...</p>
+  </section>
+);
+
+const formatInputDate = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+};
+
+const getForecastMonthBounds = (): { dateFrom: string; dateTo: string } => {
+  const now = new Date();
+  const firstDay = new Date(Date.UTC(now.getFullYear(), now.getMonth(), 1));
+  const lastDay = new Date(Date.UTC(now.getFullYear(), now.getMonth() + 1, 0));
+
+  return {
+    dateFrom: firstDay.toISOString().slice(0, 10),
+    dateTo: lastDay.toISOString().slice(0, 10),
+  };
+};
+
+const getCloseLostDefaultDateRange = (): { dateFrom: string; dateTo: string } => {
+  const now = new Date();
+  const yearStart = new Date(now.getFullYear(), 0, 1);
+
+  return {
+    dateFrom: formatInputDate(yearStart),
+    dateTo: formatInputDate(now),
+  };
+};
+
+const workspaceCopy = {
+  closeLostAnalysis: {
+    eyebrow: "Revenue workspace",
+    title: "Close Lost Analysis",
+    subtitle: "Comprendre pourquoi les deals sont perdus et prioriser les leviers d'amelioration.",
+  },
+  dealAnalysis: {
+    eyebrow: "Deal workspace",
+    title: "Deal analysis",
+    subtitle: "Analyse approfondie d'un deal, separee de la queue operationnelle.",
+  },
+  forecast: {
+    eyebrow: "Revenue workspace",
+    title: "Forecast IA",
+    subtitle: "Analyser les deals ouverts HubSpot et anticiper l'atterrissage de fin de periode.",
+  },
+  overview: {
+    eyebrow: "AE workspace",
+    title: "Pipeline inbox",
+    subtitle: "La queue priorisee pour savoir qui relancer, pourquoi, et avec quel angle.",
+  },
+  settings: {
+    eyebrow: "Admin workspace",
+    title: "Parametres",
+    subtitle: "Configuration locale du copilot et des providers d'analyse.",
+  },
+  stats: {
+    eyebrow: "Manager workspace",
+    title: "Statistiques",
+    subtitle: "Lecture pipeline, forecast et repartition par stage.",
+  },
+  tasks: {
+    eyebrow: "AE workspace",
+    title: "Taches",
+    subtitle: "Actions prioritaires issues de la queue synchronisee.",
+  },
+} as const;
+
+const taskPriorityRank: Record<NonNullable<HubSpotTaskListItem["priority"]>, number> = {
+  high: 0,
+  medium: 1,
+  low: 2,
+};
+
+const getTaskSortTime = (task: HubSpotTaskListItem): number => {
+  if (!task.dueAt) {
+    return Number.MAX_SAFE_INTEGER;
+  }
+
+  const dueTimestamp = new Date(task.dueAt).getTime();
+
+  return Number.isNaN(dueTimestamp) ? Number.MAX_SAFE_INTEGER : dueTimestamp;
+};
+
+const sortPlannedTasks = (firstTask: HubSpotTaskListItem, secondTask: HubSpotTaskListItem): number =>
+  getTaskSortTime(firstTask) - getTaskSortTime(secondTask) ||
+  (taskPriorityRank[firstTask.priority ?? "low"] ?? 3) - (taskPriorityRank[secondTask.priority ?? "low"] ?? 3) ||
+  firstTask.title.localeCompare(secondTask.title);
+
+const normalizeTaskMatchValue = (value: string | null | undefined): string => value?.trim().toLowerCase() ?? "";
+
+const taskMatchesProspect = (task: HubSpotTaskListItem, prospect: QueueProspect): boolean => {
+  if (prospect.hubspotDealId && task.associatedDealIds.includes(prospect.hubspotDealId)) {
+    return true;
+  }
+
+  const prospectEmail = normalizeTaskMatchValue(prospect.email);
+
+  if (prospectEmail && normalizeTaskMatchValue(task.contactEmail) === prospectEmail) {
+    return true;
+  }
+
+  const prospectCompany = normalizeTaskMatchValue(prospect.company);
+
+  if (prospectCompany && normalizeTaskMatchValue(task.companyName) === prospectCompany) {
+    return true;
+  }
+
+  const prospectDealName = normalizeTaskMatchValue(prospect.dealName);
+
+  return Boolean(prospectDealName && normalizeTaskMatchValue(task.dealName) === prospectDealName);
+};
+
+const buildPlannedTasksByProspectId = (
+  prospects: QueueProspect[],
+  tasks: HubSpotTaskListItem[],
+): Map<string, PlannedProspectTask> => {
+  const plannedTasksByProspectId = new Map<string, PlannedProspectTask>();
+
+  for (const prospect of prospects) {
+    const matchingTasks = tasks.filter((task) => taskMatchesProspect(task, prospect)).sort(sortPlannedTasks);
+    const [nextTask] = matchingTasks;
+
+    if (!nextTask) {
+      continue;
+    }
+
+    plannedTasksByProspectId.set(prospect.id, {
+      id: nextTask.id,
+      title: nextTask.title,
+      dueAt: nextTask.dueAt,
+      priority: nextTask.priority,
+      extraCount: Math.max(0, matchingTasks.length - 1),
+    });
+  }
+
+  return plannedTasksByProspectId;
+};
 
 export const QueueView = ({
   generatedAt,
@@ -29,6 +201,7 @@ export const QueueView = ({
   selectedOwnerId,
   prospects,
 }: QueueViewProps) => {
+  const [hubspotTasks, setHubspotTasks] = useState<HubSpotTaskListItem[]>([]);
   const dashboard = useQueueDashboard({
     isConnected,
     isRefreshing,
@@ -37,139 +210,173 @@ export const QueueView = ({
     orgId,
     prospects,
   });
-  const pageCopy = {
-    closeLostAnalysis: {
-      eyebrow: "Revenue workspace",
-      title: "Close Lost Analysis",
-      subtitle: "Comprendre pourquoi les deals sont perdus et prioriser les leviers d'amelioration.",
-    },
-    dealAnalysis: {
-      eyebrow: "Deal workspace",
-      title: "Deal analysis",
-      subtitle: "Analyse approfondie d'un deal, separee de la queue operationnelle.",
-    },
-    forecast: {
-      eyebrow: "Revenue workspace",
-      title: "Forecast IA",
-      subtitle: "Analyser les deals ouverts HubSpot et anticiper l'atterrissage de fin de periode.",
-    },
-    overview: {
-      eyebrow: "AE workspace",
-      title: "Pipeline inbox",
-      subtitle: "La queue priorisee pour savoir qui relancer, pourquoi, et avec quel angle.",
-    },
-    settings: {
-      eyebrow: "Admin workspace",
-      title: "Parametres",
-      subtitle: "Configuration locale du copilot et des providers d'analyse.",
-    },
-    stats: {
-      eyebrow: "Manager workspace",
-      title: "Statistiques",
-      subtitle: "Lecture pipeline, forecast et repartition par stage.",
-    },
-    tasks: {
-      eyebrow: "AE workspace",
-      title: "Taches",
-      subtitle: "Actions prioritaires issues de la queue synchronisee.",
-    },
-  }[dashboard.activeView];
+  const pageCopy = workspaceCopy[dashboard.activeView];
+  const plannedTasksByProspectId = useMemo(
+    () => buildPlannedTasksByProspectId(prospects, hubspotTasks),
+    [hubspotTasks, prospects],
+  );
+
+  useEffect(() => {
+    void import("./dashboard/CloseLostAnalysisView");
+    void import("./dashboard/ForecastView");
+  }, []);
+
+  useEffect(() => {
+    if (!isConnected || !orgId) {
+      return;
+    }
+
+    const forecastDates = getForecastMonthBounds();
+    const forecastScope = selectedOwnerId ? "owner" : "all";
+    const closeLostDates = getCloseLostDefaultDateRange();
+    const salesAeOwners = owners.filter((owner) => owner.teamName?.toLowerCase().includes("sales ae"));
+    const closeLostOwnerIds = (salesAeOwners.length > 0 ? salesAeOwners : owners).map((owner) => owner.ownerId);
+
+    void fetchForecastOverview({
+      orgId,
+      scope: forecastScope,
+      hubspotOwnerId: selectedOwnerId ?? null,
+      dateFrom: forecastDates.dateFrom,
+      dateTo: forecastDates.dateTo,
+      aiProvider: dashboard.selectedAiProvider,
+    }).catch(() => undefined);
+
+    void fetchCloseLostOverview({
+      orgId,
+      scope: "sales_ae",
+      hubspotOwnerId: null,
+      salesAeOwnerIds: closeLostOwnerIds,
+      dateFrom: closeLostDates.dateFrom,
+      dateTo: closeLostDates.dateTo,
+      aiProvider: dashboard.selectedAiProvider,
+    }).catch(() => undefined);
+  }, [dashboard.selectedAiProvider, isConnected, orgId, owners, selectedOwnerId]);
+
+  useEffect(() => {
+    if (!isConnected || !orgId || !selectedOwnerId) {
+      setHubspotTasks([]);
+      return;
+    }
+
+    const abortController = new AbortController();
+
+    void fetchHubSpotTasks(orgId, selectedOwnerId, 500, { signal: abortController.signal })
+      .then(setHubspotTasks)
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
+
+        setHubspotTasks([]);
+      });
+
+    return () => abortController.abort();
+  }, [isConnected, orgId, selectedOwnerId]);
+
 
   return (
     <main className="ae-inbox">
       <Sidebar activeView={dashboard.activeView} onViewChange={dashboard.setActiveView} />
       <section className="ae-main-panel">
-        <HubSpotHeader
-          eyebrow={pageCopy.eyebrow}
-          generatedAt={generatedAt}
-          hubspotPortalId={hubspotPortalId}
-          integrationStatusClassName={dashboard.integrationStatusClassName}
-          integrationStatusLabel={dashboard.integrationStatusLabel}
-          isConnected={isConnected}
-          isRefreshing={isRefreshing}
-          subtitle={pageCopy.subtitle}
-          title={pageCopy.title}
-        />
+        {dashboard.activeView !== "tasks" ? (
+          <>
+            <HubSpotHeader
+              eyebrow={pageCopy.eyebrow}
+              generatedAt={generatedAt}
+              hubspotPortalId={hubspotPortalId}
+              integrationStatusClassName={dashboard.integrationStatusClassName}
+              integrationStatusLabel={dashboard.integrationStatusLabel}
+              isConnected={isConnected}
+              isRefreshing={isRefreshing}
+              subtitle={pageCopy.subtitle}
+              title={pageCopy.title}
+            />
 
-        <AdminFeedback error={dashboard.adminError} message={dashboard.adminMessage} />
-
-        {dashboard.activeView === "stats" ? (
-          <StatsView
-            forecastChart={dashboard.forecastChart}
-            hideClosedLostStage={dashboard.hideClosedLostStage}
-            metricCards={dashboard.metricCards}
-            onHideClosedLostStageChange={dashboard.setHideClosedLostStage}
-            overdueCloseProspects={dashboard.overdueCloseProspects}
-            stageChart={dashboard.stageChart}
-          />
+            <AdminFeedback error={dashboard.adminError} message={dashboard.adminMessage} />
+          </>
         ) : null}
 
-        {dashboard.activeView === "tasks" ? (
-          <TasksView
-            hubspotPortalId={hubspotPortalId}
-            lastUpdates={lastUpdates}
-            orgId={orgId}
-            prospects={prospects}
-            selectedOwnerId={selectedOwnerId}
-          />
-        ) : null}
+        <Suspense fallback={<WorkspaceFallback />}>
+          {dashboard.activeView === "stats" ? (
+            <StatsView
+              forecastChart={dashboard.forecastChart}
+              hideClosedLostStage={dashboard.hideClosedLostStage}
+              metricCards={dashboard.metricCards}
+              onHideClosedLostStageChange={dashboard.setHideClosedLostStage}
+              overdueCloseProspects={dashboard.overdueCloseProspects}
+              stageChart={dashboard.stageChart}
+            />
+          ) : null}
 
-        {dashboard.activeView === "settings" ? (
-          <SettingsView
-            hubSpot={{
-              disconnectLoading: dashboard.disconnectLoading,
-              generatedAt,
-              hubspotDealCount,
-              hubspotPortalId,
-              integrationStatusClassName: dashboard.integrationStatusClassName,
-              integrationStatusLabel: dashboard.integrationStatusLabel,
-              isConnected,
-              isRefreshing,
-              onConnectHubSpot,
-              onDisconnectHubSpot: dashboard.handleDisconnectHubSpot,
-              onOwnerChange,
-              onSyncHubSpot: dashboard.handleSyncHubSpot,
-              ownerName,
-              selectedOwnerId,
-              syncJob: dashboard.syncJob,
-              syncLoading: dashboard.syncLoading,
-            }}
-            onProviderChange={dashboard.setSelectedAiProviderId}
-            orgId={orgId}
-            owners={owners}
-            selectedProvider={dashboard.selectedAiProvider}
-            selectedProviderId={dashboard.selectedAiProviderId}
-          />
-        ) : null}
+          {dashboard.activeView === "tasks" ? (
+            <TasksView
+              hubspotPortalId={hubspotPortalId}
+              lastUpdates={lastUpdates}
+              onOwnerChange={onOwnerChange}
+              orgId={orgId}
+              owners={owners}
+              prospects={prospects}
+              selectedOwnerId={selectedOwnerId}
+            />
+          ) : null}
 
-        {dashboard.activeView === "dealAnalysis" ? (
-          <DealAnalysisView
-            activeProspect={dashboard.activeProspect}
-            hubspotPortalId={hubspotPortalId}
-            orgId={orgId}
-            onBack={() => dashboard.setActiveView("overview")}
-            ownerName={ownerName}
-            selectedAiProvider={dashboard.selectedAiProvider}
-          />
-        ) : null}
+          {dashboard.activeView === "settings" ? (
+            <SettingsView
+              hubSpot={{
+                disconnectLoading: dashboard.disconnectLoading,
+                generatedAt,
+                hubspotDealCount,
+                hubspotPortalId,
+                integrationStatusClassName: dashboard.integrationStatusClassName,
+                integrationStatusLabel: dashboard.integrationStatusLabel,
+                isConnected,
+                isRefreshing,
+                onConnectHubSpot,
+                onDisconnectHubSpot: dashboard.handleDisconnectHubSpot,
+                onOwnerChange,
+                onSyncHubSpot: dashboard.handleSyncHubSpot,
+                ownerName,
+                selectedOwnerId,
+                syncJob: dashboard.syncJob,
+                syncLoading: dashboard.syncLoading,
+              }}
+              onProviderChange={dashboard.setSelectedAiProviderId}
+              orgId={orgId}
+              owners={owners}
+              selectedProvider={dashboard.selectedAiProvider}
+              selectedProviderId={dashboard.selectedAiProviderId}
+            />
+          ) : null}
 
-        {dashboard.activeView === "closeLostAnalysis" ? (
-          <CloseLostAnalysisView
-            orgId={orgId}
-            owners={owners}
-            selectedAiProvider={dashboard.selectedAiProvider}
-            selectedOwnerId={selectedOwnerId}
-          />
-        ) : null}
+          {dashboard.activeView === "dealAnalysis" ? (
+            <DealAnalysisView
+              activeProspect={dashboard.activeProspect}
+              hubspotPortalId={hubspotPortalId}
+              orgId={orgId}
+              onBack={() => dashboard.setActiveView("overview")}
+              ownerName={ownerName}
+              selectedAiProvider={dashboard.selectedAiProvider}
+            />
+          ) : null}
 
-        {dashboard.activeView === "forecast" ? (
-          <ForecastView
-            orgId={orgId}
-            owners={owners}
-            selectedAiProvider={dashboard.selectedAiProvider}
-            selectedOwnerId={selectedOwnerId}
-          />
-        ) : null}
+          {dashboard.activeView === "closeLostAnalysis" ? (
+            <CloseLostAnalysisView
+              orgId={orgId}
+              owners={owners}
+              selectedAiProvider={dashboard.selectedAiProvider}
+              selectedOwnerId={selectedOwnerId}
+            />
+          ) : null}
+
+          {dashboard.activeView === "forecast" ? (
+            <ForecastView
+              orgId={orgId}
+              owners={owners}
+              selectedAiProvider={dashboard.selectedAiProvider}
+              selectedOwnerId={selectedOwnerId}
+            />
+          ) : null}
+        </Suspense>
 
         {dashboard.activeView === "overview" ? (
           <OverviewView
@@ -197,6 +404,7 @@ export const QueueView = ({
             onSearchTermChange={dashboard.setSearchTerm}
             onStageFilterChange={dashboard.setStageFilter}
             onStatusFilterChange={dashboard.setStatusFilter}
+            plannedTasksByProspectId={plannedTasksByProspectId}
             prospects={prospects}
             totalPipeline={dashboard.totalPipeline}
           />

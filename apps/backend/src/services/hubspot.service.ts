@@ -1,4 +1,5 @@
 import { env } from "../config/env.js";
+import { scoreProspect } from "./scoring.service.js";
 
 type HubSpotTokenResponse = {
   access_token: string;
@@ -6,6 +7,14 @@ type HubSpotTokenResponse = {
   expires_in?: number;
   hub_id?: number;
   token_type?: string;
+};
+
+type HubSpotTokenInfoResponse = {
+  hub_id?: number;
+  hub_domain?: string;
+  user_id?: number;
+  app_id?: number;
+  expires_in?: number;
 };
 
 type HubSpotErrorPayload = {
@@ -240,7 +249,7 @@ export type DealLifecycleStatus = "pending" | "won" | "lost";
 
 export type HubSpotDealHistoryItem = {
   id: string;
-  type: "deal" | "note" | "call" | "meeting" | "email" | "sms" | "task";
+  type: "deal" | "note" | "call" | "meeting" | "email" | "sms" | "communication" | "task";
   timestamp: string | null;
   title: string;
   body: string | null;
@@ -939,6 +948,36 @@ const createProspectSummary = (
 
 const buildContactDisplayName = (contact: HubSpotContact): string => buildContactName(contact.properties);
 
+const normalizeCommunicationChannel = (channel: string | null): string | null => {
+  if (!channel?.trim()) {
+    return null;
+  }
+
+  return channel.trim().toUpperCase();
+};
+
+const communicationTypeLabel = (channel: string | null): string => {
+  const normalizedChannel = normalizeCommunicationChannel(channel);
+
+  if (normalizedChannel === "SMS") {
+    return "SMS";
+  }
+
+  if (normalizedChannel === "WHATS_APP" || normalizedChannel === "WHATSAPP") {
+    return "WhatsApp";
+  }
+
+  if (normalizedChannel === "LINKEDIN_MESSAGE") {
+    return "LinkedIn";
+  }
+
+  if (normalizedChannel === "FACEBOOK_MESSENGER") {
+    return "Messenger";
+  }
+
+  return normalizedChannel ? normalizedChannel.replaceAll("_", " ") : "Message";
+};
+
 const toHistoryItem = (
   type: HubSpotDealHistoryItem["type"],
   record: { id: string; properties: Record<string, string | null | undefined> },
@@ -1008,15 +1047,17 @@ const toHistoryItem = (
     };
   }
 
-  if (type === "sms") {
+  if (type === "sms" || type === "communication") {
+    const channel = readProperty(record.properties, "hs_communication_channel_type");
+
     return {
       id: record.id,
       type,
       timestamp: readProperty(record.properties, "hs_timestamp"),
-      title: "SMS",
+      title: communicationTypeLabel(channel),
       body: readProperty(record.properties, "hs_communication_body"),
       metadata: {
-        channel: readProperty(record.properties, "hs_communication_channel_type"),
+        channel,
         ownerId: readProperty(record.properties, "hubspot_owner_id"),
       },
     };
@@ -1053,36 +1094,23 @@ const toHistoryItem = (
 };
 
 const computePriorityScore = (prospect: HubSpotProspectSyncItem): number => {
-  const daysSinceLastContact = prospect.lastContactAt
-    ? Math.max(
-        0,
-        Math.floor((Date.now() - new Date(prospect.lastContactAt).getTime()) / (1000 * 60 * 60 * 24)),
-      )
-    : 14;
-  const amountScore = (prospect.dealAmount ?? 0) / 1000;
-  const probabilityScore = prospect.closeProbability * 0.5;
   const companyEmployeeCount = parseNumericValue(prospect.rawData.company?.properties.numberofemployees);
   const companyRevenue = parseNumericValue(prospect.rawData.company?.properties.annualrevenue);
-  const companyLifecycleStage = prospect.rawData.company?.properties.lifecyclestage?.toLowerCase() ?? null;
-  const companyIndustry = prospect.rawData.company?.properties.industry?.trim() ?? null;
-  const companyDomain = prospect.rawData.company?.properties.domain?.trim() ?? null;
-  const employeeScore =
-    companyEmployeeCount === null ? 0 : Math.min(12, Math.round(companyEmployeeCount / 50));
-  const revenueScore =
-    companyRevenue === null ? 0 : Math.min(10, Math.round(companyRevenue / 1_000_000));
-  const lifecycleScore =
-    companyLifecycleStage === "opportunity"
-      ? 8
-      : companyLifecycleStage === "customer"
-        ? 5
-        : companyLifecycleStage === "salesqualifiedlead" || companyLifecycleStage === "marketingqualifiedlead"
-          ? 4
-          : 0;
-  const fitScore = (companyIndustry ? 2 : 0) + (companyDomain ? 2 : 0);
-  const companyScore = employeeScore + revenueScore + lifecycleScore + fitScore;
-  const score = daysSinceLastContact * 2 + amountScore + probabilityScore + companyScore;
 
-  return Math.round(score * 100) / 100;
+  return scoreProspect({
+    dealAmount: prospect.dealAmount,
+    closeProbability: prospect.closeProbability,
+    dealStage: prospect.dealStage,
+    dealStageLabel: prospect.dealStageLabel,
+    lastContactAt: prospect.lastContactAt,
+    closeDate: prospect.closedAt,
+    companyEmployeeCount,
+    companyRevenue,
+    companyLifecycleStage: prospect.rawData.company?.properties.lifecyclestage ?? null,
+    companyIndustry: prospect.rawData.company?.properties.industry?.trim() ?? null,
+    companyDomain: prospect.rawData.company?.properties.domain?.trim() ?? null,
+    dealName: prospect.rawData.dealName ?? prospect.hubspotDealId,
+  }).ai_priority_score;
 };
 
 const assertHubSpotConfigured = (): void => {
@@ -1665,9 +1693,19 @@ const readActivityAssociationIds = (
   key: keyof HubSpotActivityAssociations,
 ): string[] => associations?.[key]?.results.map((item) => item.id).filter(Boolean) ?? [];
 
-const activityTypeToHistoryType = (activityType: HubSpotActivityType): HubSpotDealHistoryItem["type"] => {
+const communicationRecordToHistoryType = (
+  record: { properties: Record<string, string | null | undefined> },
+): "sms" | "communication" =>
+  normalizeCommunicationChannel(readProperty(record.properties, "hs_communication_channel_type")) === "SMS"
+    ? "sms"
+    : "communication";
+
+const activityTypeToHistoryType = (
+  activityType: HubSpotActivityType,
+  record?: { properties: Record<string, string | null | undefined> },
+): HubSpotDealHistoryItem["type"] => {
   if (activityType === "communication") {
-    return "sms";
+    return record ? communicationRecordToHistoryType(record) : "communication";
   }
 
   return activityType;
@@ -1677,7 +1715,7 @@ const toActivitySnapshot = (
   activityType: HubSpotActivityType,
   record: HubSpotActivityRecord,
 ): HubSpotActivitySnapshot => {
-  const historyItem = toHistoryItem(activityTypeToHistoryType(activityType), record);
+  const historyItem = toHistoryItem(activityTypeToHistoryType(activityType, record), record);
   const channel =
     activityType === "communication"
       ? readProperty(record.properties, "hs_communication_channel_type")
@@ -1775,6 +1813,12 @@ export const hubSpotService = {
       method: "POST",
       body,
       maxRetries: 2,
+    });
+  },
+
+  async fetchTokenInfo(accessToken: string): Promise<HubSpotTokenInfoResponse> {
+    return hubSpotFetch<HubSpotTokenInfoResponse>(`/oauth/v1/access-tokens/${encodeURIComponent(accessToken)}`, {
+      maxRetries: 1,
     });
   },
 
@@ -2320,17 +2364,13 @@ export const hubSpotService = {
         }
       }
     }
-    const smsMessages = communications.filter(
-      (communication) => readProperty(communication.properties, "hs_communication_channel_type") === "SMS",
-    );
-
     const timeline: HubSpotDealHistoryItem[] = [
       toHistoryItem("deal", deal),
       ...notes.map((item) => toHistoryItem("note", item)),
       ...calls.map((item) => toHistoryItem("call", item)),
       ...meetings.map((item) => toHistoryItem("meeting", item)),
       ...emails.map((item) => toHistoryItem("email", item)),
-      ...smsMessages.map((item) => toHistoryItem("sms", item)),
+      ...communications.map((item) => toHistoryItem(communicationRecordToHistoryType(item), item)),
       ...tasks.map((item) => toHistoryItem("task", item)),
     ].sort((left, right) => {
       const leftValue = left.timestamp ? new Date(left.timestamp).getTime() : 0;
@@ -2401,7 +2441,7 @@ export const hubSpotService = {
         counts[item.type] += 1;
         return counts;
       },
-      { deal: 0, note: 0, call: 0, meeting: 0, email: 0, sms: 0, task: 0 },
+      { deal: 0, note: 0, call: 0, meeting: 0, email: 0, sms: 0, communication: 0, task: 0 },
     );
     const uniqueCommunicationIds = Array.from(
       new Set([...dealCommunicationIds, ...contactCommunicationIds, ...companyCommunicationIds]),
@@ -2612,50 +2652,69 @@ export const hubSpotService = {
     accessToken: string,
     hubspotOwnerId: string,
     limit = 500,
+    includeCompleted = false,
   ): Promise<HubSpotTaskListItem[]> {
     const maxResults = Math.max(1, Math.min(500, Math.trunc(limit)));
-    const tasks: HubSpotTask[] = [];
-    let after: string | undefined;
+    const fetchTasksByStatus = async (
+      statusOperator: "EQ" | "NEQ",
+      statusValue: "COMPLETED",
+      sortDirection: "ASCENDING" | "DESCENDING",
+    ): Promise<HubSpotTask[]> => {
+      const fetchedTasks: HubSpotTask[] = [];
+      let after: string | undefined;
 
-    do {
-      const remaining = maxResults - tasks.length;
-      const payload = await hubSpotFetch<HubSpotSearchResponse<HubSpotTask>>("/crm/v3/objects/tasks/search", {
-        method: "POST",
-        accessToken,
-        body: JSON.stringify({
-          limit: Math.min(100, remaining),
-          after,
-          properties: [...HUBSPOT_TASK_PROPERTIES, "hs_createdate"],
-          associations: ["contacts", "companies", "deals"],
-          filterGroups: [
-            {
-              filters: [
-                {
-                  propertyName: "hubspot_owner_id",
-                  operator: "EQ",
-                  value: hubspotOwnerId,
-                },
-                {
-                  propertyName: "hs_task_status",
-                  operator: "NEQ",
-                  value: "COMPLETED",
-                },
-              ],
-            },
-          ],
-          sorts: [
-            {
-              propertyName: "hs_timestamp",
-              direction: "ASCENDING",
-            },
-          ],
-        }),
-        maxRetries: HUBSPOT_DEFAULT_MAX_RETRIES,
-      });
+      do {
+        const remaining = maxResults - fetchedTasks.length;
+        const payload = await hubSpotFetch<HubSpotSearchResponse<HubSpotTask>>("/crm/v3/objects/tasks/search", {
+          method: "POST",
+          accessToken,
+          body: JSON.stringify({
+            limit: Math.min(100, remaining),
+            after,
+            properties: [...HUBSPOT_TASK_PROPERTIES, "hs_createdate"],
+            associations: ["contacts", "companies", "deals"],
+            filterGroups: [
+              {
+                filters: [
+                  {
+                    propertyName: "hubspot_owner_id",
+                    operator: "EQ",
+                    value: hubspotOwnerId,
+                  },
+                  {
+                    propertyName: "hs_task_status",
+                    operator: statusOperator,
+                    value: statusValue,
+                  },
+                ],
+              },
+            ],
+            sorts: [
+              {
+                propertyName: "hs_timestamp",
+                direction: sortDirection,
+              },
+            ],
+          }),
+          maxRetries: HUBSPOT_DEFAULT_MAX_RETRIES,
+        });
 
-      tasks.push(...payload.results);
-      after = payload.paging?.next?.after;
-    } while (after && tasks.length < maxResults);
+        fetchedTasks.push(...payload.results);
+        after = payload.paging?.next?.after;
+      } while (after && fetchedTasks.length < maxResults);
+
+      return fetchedTasks;
+    };
+
+    const openTasks = await fetchTasksByStatus("NEQ", "COMPLETED", "ASCENDING");
+    const completedTasks = includeCompleted ? await fetchTasksByStatus("EQ", "COMPLETED", "DESCENDING") : [];
+    const tasksById = new Map<string, HubSpotTask>();
+
+    for (const task of [...openTasks, ...completedTasks]) {
+      tasksById.set(task.id, task);
+    }
+
+    const tasks = Array.from(tasksById.values());
 
     const tasksWithAssociations = await enrichTasksWithAssociations(accessToken, tasks);
     const dealIds = Array.from(new Set(tasksWithAssociations.flatMap((task) => readAssociationIds(task, "deals"))));

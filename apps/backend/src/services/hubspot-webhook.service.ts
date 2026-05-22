@@ -261,7 +261,7 @@ const stableStringify = (value: unknown): string => {
   return JSON.stringify(value);
 };
 
-export const buildHubSpotWebhookEventFingerprint = (
+const buildHubSpotWebhookEventFingerprint = (
   event: Omit<NormalizedHubSpotWebhookEvent, "eventFingerprint">,
 ): string => {
   const fingerprintSource = {

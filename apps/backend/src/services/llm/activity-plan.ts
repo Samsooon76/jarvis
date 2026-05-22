@@ -91,8 +91,6 @@ const parseJsonObject = <T>(value: string, providerName: string): T => {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
-const isInteger = (value: unknown): value is number => typeof value === "number" && Number.isInteger(value);
-
 const isConfidence = (value: unknown): value is DealActivityPlanAnalysis["confidence"] =>
   value === "low" || value === "medium" || value === "high";
 
@@ -101,6 +99,22 @@ const isPriority = (value: unknown): value is ActivityPlanAction["priority"] =>
 
 const isActionStatus = (value: unknown): value is ActivityPlanAction["status"] =>
   value === "todo" || value === "in_progress" || value === "planned" || value === "done";
+
+const parseDueInDays = (value: unknown, providerName: string): number => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return clampInteger(value, 0, 30);
+  }
+
+  if (typeof value === "string") {
+    const trimmedValue = value.trim();
+
+    if (/^-?\d+(?:\.\d+)?$/.test(trimmedValue)) {
+      return clampInteger(Number(trimmedValue), 0, 30);
+    }
+  }
+
+  throw new Error(`${providerName} a renvoye une prochaine meilleure action avec une echeance non conforme.`);
+};
 
 const parseNullableText = (value: unknown, maxLength: number): string | null => {
   if (value === null || value === undefined) {
@@ -212,11 +226,12 @@ const parseRecommendation = (value: unknown, providerName: string): ActivityPlan
 
   if (
     typeof nextBestAction.title !== "string" ||
-    typeof nextBestAction.rationale !== "string" ||
-    !isInteger(nextBestAction.dueInDays)
+    typeof nextBestAction.rationale !== "string"
   ) {
     throw new Error(`${providerName} a renvoye une prochaine meilleure action non conforme.`);
   }
+
+  const dueInDays = parseDueInDays(nextBestAction.dueInDays, providerName);
 
   return {
     priority: recommendation.priority,
@@ -224,7 +239,7 @@ const parseRecommendation = (value: unknown, providerName: string): ActivityPlan
     nextBestAction: {
       title: compactText(nextBestAction.title, 100),
       rationale: compactText(nextBestAction.rationale, 180),
-      dueInDays: clampInteger(nextBestAction.dueInDays, 0, 30),
+      dueInDays,
     },
   };
 };

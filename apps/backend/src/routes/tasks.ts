@@ -7,6 +7,7 @@ import {
   type TaskAnalyzerApplyResult,
   type TaskAnalyzerResult,
 } from "../services/task-analyzer.service.js";
+import { invalidateHubSpotTasksCache } from "./hubspot.js";
 
 type TaskAnalyzeParams = {
   taskId: string;
@@ -86,6 +87,7 @@ export const registerTaskRoutes = async (app: FastifyInstance): Promise<void> =>
           refresh: request.body.refresh === true,
           includeHistory: request.body.includeHistory === true,
         });
+        invalidateHubSpotTasksCache(orgId);
 
         return reply.send({
           success: true,
@@ -126,6 +128,7 @@ export const registerTaskRoutes = async (app: FastifyInstance): Promise<void> =>
           orgId,
           hubspotTaskId: request.params.taskId,
         });
+        invalidateHubSpotTasksCache(orgId);
 
         return reply.send({
           success: true,

@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { DEFAULT_HUBSPOT_OWNER_ID, DEFAULT_ORG_ID, isAbortError } from "../config/runtime";
 import { fetchHubSpotQueue, type HubSpotQueueData } from "../services/api";
 
 type UseQueueState = {
@@ -7,10 +8,6 @@ type UseQueueState = {
   isRefreshing: boolean;
   error: string | null;
 };
-
-const JARVIS_DEFAULT_ORG_ID = "11111111-1111-4111-8111-111111111111";
-const DEFAULT_ORG_ID = import.meta.env.VITE_DEFAULT_ORG_ID?.trim() || JARVIS_DEFAULT_ORG_ID;
-const DEFAULT_HUBSPOT_OWNER_ID = import.meta.env.VITE_HUBSPOT_OWNER_ID?.trim() || null;
 
 export const useQueue = (
   orgId: string = DEFAULT_ORG_ID,
@@ -21,30 +18,43 @@ export const useQueue = (
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const hasLoadedOnceRef = useRef(false);
 
   useEffect(() => {
     let isCancelled = false;
+    const controller = new AbortController();
 
     const loadQueue = async () => {
       if (!orgId.trim()) {
         setData(null);
         setError("Aucune organisation Jarvis configuree pour charger HubSpot.");
         setIsLoading(false);
+        setIsRefreshing(false);
+        hasLoadedOnceRef.current = false;
         return;
       }
 
       try {
-        setIsLoading(true);
-        setIsRefreshing(false);
+        const isInitialLoad = !hasLoadedOnceRef.current;
+
+        setIsLoading(isInitialLoad);
+        setIsRefreshing(!isInitialLoad);
         setError(null);
 
-        const syncedQueue = await fetchHubSpotQueue(orgId, hubspotOwnerId, false);
+        const syncedQueue = await fetchHubSpotQueue(orgId, hubspotOwnerId, false, {
+          signal: controller.signal,
+        });
 
         if (!isCancelled) {
           setData(syncedQueue);
+          hasLoadedOnceRef.current = true;
           setIsLoading(false);
         }
       } catch (loadError) {
+        if (isAbortError(loadError)) {
+          return;
+        }
+
         if (!isCancelled) {
           const message =
             loadError instanceof Error ? loadError.message : "Erreur inconnue sur la queue HubSpot.";
@@ -63,6 +73,7 @@ export const useQueue = (
 
     return () => {
       isCancelled = true;
+      controller.abort();
     };
   }, [hubspotOwnerId, orgId, refreshKey]);
 

@@ -9,6 +9,7 @@ import type {
   CloseDatePreset,
   DashboardFilters,
   DealStatusFilter,
+  PlannedProspectTask,
   QueueBucket,
   StageFilter,
 } from "./types";
@@ -118,6 +119,7 @@ type OverviewViewProps = {
   onSearchTermChange: (searchTerm: string) => void;
   onStageFilterChange: (stageFilter: StageFilter) => void;
   onStatusFilterChange: (statusFilter: DealStatusFilter) => void;
+  plannedTasksByProspectId: Map<string, PlannedProspectTask>;
   prospects: QueueProspect[];
   totalPipeline: number;
 };
@@ -142,6 +144,7 @@ export const OverviewView = ({
   onSearchTermChange,
   onStageFilterChange,
   onStatusFilterChange,
+  plannedTasksByProspectId,
   prospects,
   totalPipeline,
 }: OverviewViewProps) => (
@@ -177,7 +180,7 @@ export const OverviewView = ({
       {buckets.map((bucket) => (
         <button
           aria-pressed={activeBucket === bucket.id}
-          className={activeBucket === bucket.id ? "active" : ""}
+          className={`ae-bucket-tab ${bucket.id}${activeBucket === bucket.id ? " active" : ""}`}
           key={bucket.id}
           onClick={() => onActiveBucketChange(bucket.id)}
           title={bucket.description}
@@ -212,6 +215,7 @@ export const OverviewView = ({
               isLoadingLiveDeals={isLoadingLiveDeals}
               onActiveProspectChange={onActiveProspectChange}
               onOpenDealAnalysis={onOpenDealAnalysis}
+              plannedTasksByProspectId={plannedTasksByProspectId}
             />
           </>
         )}

@@ -6,7 +6,6 @@ const configureSidePanel = async () => {
 
 chrome.runtime.onInstalled.addListener(() => {
   void configureSidePanel();
-  console.log("Jarvis extension installed");
 });
 
 chrome.runtime.onStartup.addListener(() => {

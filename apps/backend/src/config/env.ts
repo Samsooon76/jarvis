@@ -52,6 +52,11 @@ export const env = {
   supabaseUrl: process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? "",
   supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? "",
   appUrl: process.env.APP_URL ?? "http://localhost:5173",
+  allowedCorsOrigins: (process.env.ALLOWED_CORS_ORIGINS ?? process.env.APP_URL ?? "http://localhost:5173")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean),
+  requireApiAuth: (process.env.REQUIRE_API_AUTH ?? (process.env.NODE_ENV === "production" ? "true" : "false")) === "true",
   apiPublicUrl,
   redisUrl: process.env.REDIS_URL ?? "",
   hubspotWebhookDebounceSeconds: Number(process.env.HUBSPOT_WEBHOOK_DEBOUNCE_SECONDS ?? 90),
@@ -62,7 +67,7 @@ export const env = {
   hubspotRedirectUri: process.env.HUBSPOT_REDIRECT_URI ?? defaultHubSpotRedirectUri,
   vertexAiApiKey: process.env.VERTEX_AI_API_KEY ?? "",
   vertexAiModel: process.env.VERTEX_AI_MODEL ?? "gemini-3.1-flash-lite-preview",
-  llmProvider: process.env.LLM_PROVIDER ?? "deepseek",
+  llmProvider: process.env.LLM_PROVIDER ?? "openai",
   deepseekApiKey: process.env.DEEPSEEK_API_KEY ?? "",
   deepseekBaseUrl: process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com",
   deepseekModel: process.env.DEEPSEEK_MODEL ?? "deepseek-v4-flash",

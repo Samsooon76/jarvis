@@ -1,42 +1,45 @@
 # Jarvis
 
-Bootstrap initial du projet Jarvis, cree comme nouveau dossier isole dans le depot pour ne pas impacter l'application existante `wellcom/wellcom`.
-
-## Perimetre de cette premiere livraison
-
-- monorepo `npm` avec workspaces
-- extension Chrome `Manifest V3` en React/TypeScript
-- API `Fastify` en TypeScript
-- dashboard web `React + Vite`
-- package partage pour les types communs
-- dossier `supabase/` reserve aux migrations et a la configuration base de donnees
+Extension Chrome de sales copilot branchee sur une API Fastify, Supabase, HubSpot OAuth/sync et une couche optionnelle de providers LLM.
 
 ## Structure
 
 ```text
 jarvis/
 ├── apps/
-│   ├── api/
-│   ├── dashboard/
-│   └── extension/
+│   ├── backend/      # API Fastify, HubSpot, Supabase, services LLM
+│   └── extension/    # Side panel Manifest V3, dashboard React et queue
 ├── packages/
-│   └── shared/
-└── supabase/
-    └── migrations/
+│   └── shared/       # Types partages backend / extension
+├── supabase/
+│   └── migrations/   # Schema base, RLS, RPCs
+└── deploy/
 ```
 
-## Commandes prevues
+Il n'y a plus de workspace separe `apps/dashboard`. Le dashboard manager vit maintenant dans l'extension, sous `apps/extension/src/components/dashboard`.
+
+## Commandes
 
 ```sh
 npm install
 npm run dev
-npm run dev:dashboard
 npm run dev:api
+npm run dev:extension
+npm run lint
 npm run build
 ```
 
-## Suite logique
+## Spine Produit Actuelle
 
-1. brancher Supabase et poser la premiere migration
-2. implementer l'auth et le contexte multi-tenant cote API
-3. construire le module MVP "Morning Queue" dans l'extension
+- L'OAuth HubSpot est gere par le backend.
+- Les tokens HubSpot sont stockes via des RPC Supabase securisees.
+- La sync HubSpot initiale/manuelle ecrit les contacts et deals dans Supabase.
+- Le side panel de l'extension affiche la queue et les vues manager basees sur HubSpot.
+- Les appels LLM restent cote backend derriere une abstraction provider.
+
+## Regles D'engineering
+
+- TypeScript strict est active, y compris la detection des locals/parametres inutilises.
+- Les reponses API suivent `{ success: boolean, data?: T, error?: string }`.
+- Les secrets et tokens provider restent uniquement dans l'environnement/config backend.
+- Les donnees Supabase privees doivent passer par des RPC securisees plutot qu'un acces client direct.

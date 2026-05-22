@@ -49,7 +49,7 @@ const getInitialAiProviderId = (): AiProviderId => {
     return storedValue as AiProviderId;
   }
 
-  return "deepseek";
+  return "openai";
 };
 
 const getInitialActiveProspectId = (prospects: QueueViewProps["prospects"]): string | null => {
@@ -87,8 +87,10 @@ export const useQueueDashboard = ({
   const [hideClosedLostStage, setHideClosedLostStage] = useState(false);
   const [selectedAiProviderId, setSelectedAiProviderIdState] = useState<AiProviderId>(getInitialAiProviderId);
 
-  const selectedAiProvider =
-    aiProviderOptions.find((provider) => provider.id === selectedAiProviderId) ?? aiProviderOptions[0];
+  const selectedAiProvider = useMemo(
+    () => aiProviderOptions.find((provider) => provider.id === selectedAiProviderId) ?? aiProviderOptions[0],
+    [selectedAiProviderId],
+  );
 
   const setActiveView = (view: WorkspaceView) => {
     setActiveViewState(view);
@@ -162,14 +164,17 @@ export const useQueueDashboard = ({
     });
   }, [prospects]);
 
-  const filters = {
-    searchTerm,
-    statusFilter,
-    closeDatePreset,
-    closeDateFrom,
-    closeDateTo,
-    stageFilter,
-  };
+  const filters = useMemo(
+    () => ({
+      searchTerm,
+      statusFilter,
+      closeDatePreset,
+      closeDateFrom,
+      closeDateTo,
+      stageFilter,
+    }),
+    [closeDateFrom, closeDatePreset, closeDateTo, searchTerm, stageFilter, statusFilter],
+  );
 
   const baseFilteredProspects = useMemo(
     () => {
@@ -214,8 +219,10 @@ export const useQueueDashboard = ({
     [activeBucket, baseFilteredProspects],
   );
 
-  const activeProspect =
-    filteredProspects.find((prospect) => prospect.id === activeProspectId) ?? filteredProspects[0] ?? null;
+  const activeProspect = useMemo(
+    () => filteredProspects.find((prospect) => prospect.id === activeProspectId) ?? filteredProspects[0] ?? null,
+    [activeProspectId, filteredProspects],
+  );
   const isLoadingLiveDeals = isRefreshing && prospects.length === 0;
   const integrationStatusLabel = syncLoading
     ? "Sync en cours"
@@ -223,39 +230,103 @@ export const useQueueDashboard = ({
       ? "Verification"
       : isConnected
         ? "Live"
-        : "Non connecte";
+      : "Non connecte";
   const integrationStatusClassName = isConnected ? "live" : "offline";
-  const totalPipeline = filteredProspects.reduce((sum, prospect) => sum + prospect.dealAmount, 0);
-  const averageProbability =
-    filteredProspects.length > 0
-      ? Math.round(
-          filteredProspects.reduce((sum, prospect) => sum + prospect.closeProbability, 0) / filteredProspects.length,
-        )
-      : 0;
-  const openProspects = prospects.filter((prospect) => getDealStatus(prospect) === "open");
-  const wonProspects = prospects.filter((prospect) => getDealStatus(prospect) === "won");
-  const lostProspects = prospects.filter((prospect) => getDealStatus(prospect) === "lost");
-  const openPipeline = openProspects.reduce((sum, prospect) => sum + prospect.dealAmount, 0);
-  const wonPipeline = wonProspects.reduce((sum, prospect) => sum + prospect.dealAmount, 0);
-  const lostPipeline = lostProspects.reduce((sum, prospect) => sum + prospect.dealAmount, 0);
-  const closedCount = wonProspects.length + lostProspects.length;
-  const winRate = closedCount > 0 ? Math.round((wonProspects.length / closedCount) * 100) : 0;
-  const overdueCloseProspects = openProspects.filter((prospect) => matchesCloseDateFilter(prospect, "overdue", "", ""));
-  const weightedOpenPipeline = openProspects.reduce(
-    (sum, prospect) => sum + prospect.dealAmount * (prospect.closeProbability / 100),
-    0,
+
+  const filteredSummary = useMemo(
+    () => {
+      const totalPipeline = filteredProspects.reduce((sum, prospect) => sum + prospect.dealAmount, 0);
+      const averageProbability =
+        filteredProspects.length > 0
+          ? Math.round(
+              filteredProspects.reduce((sum, prospect) => sum + prospect.closeProbability, 0) /
+                filteredProspects.length,
+            )
+          : 0;
+
+      return {
+        averageProbability,
+        totalPipeline,
+      };
+    },
+    [filteredProspects],
   );
-  const taskProspects = getPriorityTasks(openProspects);
-  const forecastChart = buildForecastChart(prospects);
-  const stageChart = buildStageChart(prospects, hideClosedLostStage);
-  const metricCards = buildMetricCards({
-    lostPipeline,
-    openPipeline,
-    openProspectCount: openProspects.length,
-    weightedOpenPipeline,
-    winRate,
-    wonPipeline,
-  });
+
+  const pipelineSummary = useMemo(
+    () => {
+      const openProspects: QueueViewProps["prospects"] = [];
+      const overdueCloseProspects: QueueViewProps["prospects"] = [];
+      let lostPipeline = 0;
+      let openPipeline = 0;
+      let weightedOpenPipeline = 0;
+      let wonCount = 0;
+      let wonPipeline = 0;
+      let lostCount = 0;
+
+      for (const prospect of prospects) {
+        const dealStatus = getDealStatus(prospect);
+
+        if (dealStatus === "open") {
+          openProspects.push(prospect);
+          openPipeline += prospect.dealAmount;
+          weightedOpenPipeline += prospect.dealAmount * (prospect.closeProbability / 100);
+
+          if (matchesCloseDateFilter(prospect, "overdue", "", "")) {
+            overdueCloseProspects.push(prospect);
+          }
+
+          continue;
+        }
+
+        if (dealStatus === "won") {
+          wonCount += 1;
+          wonPipeline += prospect.dealAmount;
+          continue;
+        }
+
+        if (dealStatus === "lost") {
+          lostCount += 1;
+          lostPipeline += prospect.dealAmount;
+        }
+      }
+
+      const closedCount = wonCount + lostCount;
+      const winRate = closedCount > 0 ? Math.round((wonCount / closedCount) * 100) : 0;
+
+      return {
+        lostPipeline,
+        openPipeline,
+        openProspects,
+        overdueCloseProspects,
+        weightedOpenPipeline,
+        winRate,
+        wonPipeline,
+      };
+    },
+    [prospects],
+  );
+  const taskProspects = useMemo(() => getPriorityTasks(pipelineSummary.openProspects), [pipelineSummary.openProspects]);
+  const forecastChart = useMemo(() => buildForecastChart(prospects), [prospects]);
+  const stageChart = useMemo(() => buildStageChart(prospects, hideClosedLostStage), [hideClosedLostStage, prospects]);
+  const metricCards = useMemo(
+    () =>
+      buildMetricCards({
+        lostPipeline: pipelineSummary.lostPipeline,
+        openPipeline: pipelineSummary.openPipeline,
+        openProspectCount: pipelineSummary.openProspects.length,
+        weightedOpenPipeline: pipelineSummary.weightedOpenPipeline,
+        winRate: pipelineSummary.winRate,
+        wonPipeline: pipelineSummary.wonPipeline,
+      }),
+    [
+      pipelineSummary.lostPipeline,
+      pipelineSummary.openPipeline,
+      pipelineSummary.openProspects.length,
+      pipelineSummary.weightedOpenPipeline,
+      pipelineSummary.winRate,
+      pipelineSummary.wonPipeline,
+    ],
+  );
 
   const handleSyncHubSpot = async () => {
     if (!onSyncHubSpot) {
@@ -317,7 +388,7 @@ export const useQueueDashboard = ({
     activeView,
     adminError,
     adminMessage,
-    averageProbability,
+    averageProbability: filteredSummary.averageProbability,
     bucketCounts,
     disconnectLoading,
     filteredProspects,
@@ -330,7 +401,7 @@ export const useQueueDashboard = ({
     integrationStatusLabel,
     isLoadingLiveDeals,
     metricCards,
-    overdueCloseProspects,
+    overdueCloseProspects: pipelineSummary.overdueCloseProspects,
     selectedAiProvider,
     selectedAiProviderId,
     setActiveBucket,
@@ -348,6 +419,6 @@ export const useQueueDashboard = ({
     syncLoading,
     syncJob,
     taskProspects,
-    totalPipeline,
+    totalPipeline: filteredSummary.totalPipeline,
   };
 };

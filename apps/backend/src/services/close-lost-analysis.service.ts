@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { getSupabaseAdmin } from "../db/client.js";
+import { formatHubSpotTimelineForPrompt } from "./hubspot-history-formatting.service.js";
 import { hubSpotService, type HubSpotDealHistoryItem } from "./hubspot.service.js";
 import { getHubSpotAccessToken } from "./hubspot-auth.service.js";
 import { createLlmProvider } from "./llm/provider.factory.js";
@@ -295,46 +296,7 @@ const isLostDeal = (row: HubSpotDealRow): boolean => {
   return stage.includes("lost") || stage.includes("perdu");
 };
 
-const stripMarkup = (value: string | null | undefined): string | null => {
-  if (!value) {
-    return null;
-  }
-
-  const stripped = value
-    .replace(/<br\s*\/?>/gi, " ")
-    .replace(/<\/(?:p|div|li|h[1-6])>/gi, " ")
-    .replace(/<[^>]*>/g, " ")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&quot;/gi, "\"")
-    .replace(/&#39;/g, "'")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  return stripped || null;
-};
-
-const buildHistoryText = (timeline: HubSpotDealHistoryItem[]): string =>
-  timeline
-    .map((item) => {
-      const metadataSummary = Object.entries(item.metadata)
-        .filter(([, value]) => Boolean(value))
-        .map(([key, value]) => `${key}: ${value}`)
-        .join(", ");
-
-      return [
-        item.timestamp ?? "date inconnue",
-        `[${item.type}]`,
-        item.title,
-        stripMarkup(item.body) ?? "",
-        metadataSummary,
-      ]
-        .filter(Boolean)
-        .join(" | ");
-    })
-    .join("\n");
+const buildHistoryText = (timeline: HubSpotDealHistoryItem[]): string => formatHubSpotTimelineForPrompt(timeline);
 
 const normalizeLogs = (value: unknown): CloseLostRunLog[] =>
   Array.isArray(value)

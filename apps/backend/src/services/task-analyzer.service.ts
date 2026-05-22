@@ -2,7 +2,9 @@ import { createHash } from "node:crypto";
 import { env } from "../config/env.js";
 import { getSupabaseAdmin } from "../db/client.js";
 import { getHubSpotAccessToken } from "./hubspot-auth.service.js";
+import { formatHubSpotTimelineForPrompt } from "./hubspot-history-formatting.service.js";
 import { hubSpotService, type HubSpotDealHistoryItem, type HubSpotTaskListItem } from "./hubspot.service.js";
+import { buildBusinessDueAtFromDays } from "./business-days.js";
 import { createLlmProvider } from "./llm/provider.factory.js";
 import { resolveLlmProviderPreference } from "./llm/provider-preference.service.js";
 import type { AnalyzeTaskInput, TaskAnalysis } from "./llm/llm.provider.js";
@@ -73,7 +75,7 @@ export type TaskAnalyzerResult = {
 export type TaskAnalyzerApplyResult = {
   orgId: string;
   hubspotTaskId: string;
-  action: "completed" | "rescheduled" | "not_applicable";
+  action: "completed" | "rescheduled";
   completedTask: HubSpotTaskListItem | null;
   createdTask: HubSpotTaskListItem | null;
   analysis: TaskAnalysis;
@@ -97,6 +99,25 @@ const compactText = (value: string, maxLength: number): string => {
   return `${compacted.slice(0, maxLength - 1).trim()}…`;
 };
 
+const isOpenTask = (task: HubSpotTaskListItem): boolean => task.status !== "completed";
+
+const isTaskBeforeToday = (task: HubSpotTaskListItem, baseDate = new Date()): boolean => {
+  if (!task.dueAt) {
+    return false;
+  }
+
+  const dueAt = new Date(task.dueAt);
+
+  if (Number.isNaN(dueAt.getTime())) {
+    return false;
+  }
+
+  const todayStart = new Date(baseDate.getTime());
+  todayStart.setHours(0, 0, 0, 0);
+
+  return dueAt.getTime() < todayStart.getTime();
+};
+
 const getExpiresAt = (): string => {
   const expiresAt = new Date();
   expiresAt.setUTCHours(expiresAt.getUTCHours() + env.dealAiCacheTtlHours);
@@ -105,27 +126,7 @@ const getExpiresAt = (): string => {
 };
 
 const buildHistoryText = (timeline: HubSpotDealHistoryItem[]): string =>
-  timeline
-    .slice()
-    .sort((left, right) => {
-      const leftTime = left.timestamp ? new Date(left.timestamp).getTime() : Number.POSITIVE_INFINITY;
-      const rightTime = right.timestamp ? new Date(right.timestamp).getTime() : Number.POSITIVE_INFINITY;
-
-      return (Number.isNaN(leftTime) ? Number.POSITIVE_INFINITY : leftTime) -
-        (Number.isNaN(rightTime) ? Number.POSITIVE_INFINITY : rightTime);
-    })
-    .map((item) => {
-      const metadataSummary = Object.entries(item.metadata)
-        .filter(([, value]) => Boolean(value))
-        .map(([key, value]) => `${key}: ${value}`)
-        .join(", ");
-
-      return [item.timestamp ?? "date inconnue", `[${item.type}]`, item.title, item.body ?? "", metadataSummary]
-        .filter(Boolean)
-        .join(" | ");
-    })
-    .join("\n")
-    .slice(-10_000);
+  formatHubSpotTimelineForPrompt(timeline).slice(-10_000);
 
 const parseRawData = (value: unknown): ProspectRawData => {
   if (!value || typeof value !== "object") {
@@ -210,12 +211,106 @@ const normalizeOverdueRecommendation = (analysis: TaskAnalysis, input: AnalyzeTa
   return analysis;
 };
 
-const buildDueAtFromDays = (dueInDays: number): string => {
-  const dueAt = new Date();
-  dueAt.setUTCDate(dueAt.getUTCDate() + dueInDays);
-  dueAt.setUTCHours(9, 0, 0, 0);
+const inferTaskAnalysisType = (task: HubSpotTaskListItem): TaskAnalysis["taskType"] => {
+  const text = `${task.title} ${task.body ?? ""}`.toLowerCase();
 
-  return dueAt.toISOString();
+  if (/\b(call|appel|appeler|telephone)\b/.test(text)) {
+    return "cold_call";
+  }
+
+  if (/\b(email|mail|relance|relancer|rendez-vous|rdv|suivi)\b/.test(text)) {
+    return "deal_follow_up";
+  }
+
+  return "unknown";
+};
+
+const buildDeterministicOverdueAnalysis = (task: HubSpotTaskListItem): TaskAnalysis => {
+  const suggestedAction = compactText(task.title || "Traiter la tache en retard", 90);
+
+  return {
+    taskType: inferTaskAnalysisType(task),
+    recommendation: "reschedule",
+    priority: task.priority ?? "high",
+    shouldReschedule: true,
+    suggestedDueInDays: 0,
+    suggestedAction,
+    rationale:
+      "Tache en retard: Jarvis la replanifie aujourd'hui et cloture l'ancienne tache pour eviter qu'elle reste bloquee dans la liste en retard.",
+    outreachAngle: null,
+    evidence: task.dueAt ? [`Echeance initiale: ${task.dueAt}`] : [],
+    missingData: [],
+    confidence: "high",
+  };
+};
+
+const buildAlreadyCompletedAnalysis = (task: HubSpotTaskListItem): TaskAnalysis => ({
+  taskType: "obsolete",
+  recommendation: "skip",
+  priority: task.priority ?? "low",
+  shouldReschedule: false,
+  suggestedDueInDays: null,
+  suggestedAction: compactText(task.title || "Tache deja terminee", 90),
+  rationale: "Tache deja terminee dans HubSpot: Jarvis ne relance pas d'analyse et considere le traitement comme deja applique.",
+  outreachAngle: null,
+  evidence: [],
+  missingData: [],
+  confidence: "high",
+});
+
+const buildDeterministicOverdueResult = async ({
+  orgId,
+  hubspotTaskId,
+}: {
+  orgId: string;
+  hubspotTaskId: string;
+}): Promise<TaskAnalyzerResult | null> => {
+  if (!isValidUuid(orgId)) {
+    throw new Error("orgId doit etre un UUID Jarvis valide.");
+  }
+
+  const accessToken = await getHubSpotAccessToken(orgId);
+  const task = await hubSpotService.fetchTaskListItem(accessToken, hubspotTaskId);
+
+  if (!isOpenTask(task)) {
+    const generatedAt = new Date().toISOString();
+
+    return {
+      orgId,
+      hubspotTaskId,
+      hubspotDealId: task.associatedDealIds[0] ?? null,
+      hubspotContactId: task.associatedContactIds[0] ?? null,
+      prospectId: null,
+      cached: false,
+      provider: "jarvis-rules",
+      model: "already-completed-v1",
+      generatedAt,
+      expiresAt: generatedAt,
+      analysis: buildAlreadyCompletedAnalysis(task),
+      task,
+    };
+  }
+
+  if (!isTaskBeforeToday(task)) {
+    return null;
+  }
+
+  const generatedAt = new Date().toISOString();
+
+  return {
+    orgId,
+    hubspotTaskId,
+    hubspotDealId: task.associatedDealIds[0] ?? null,
+    hubspotContactId: task.associatedContactIds[0] ?? null,
+    prospectId: null,
+    cached: false,
+    provider: "jarvis-rules",
+    model: "overdue-reschedule-v1",
+    generatedAt,
+    expiresAt: generatedAt,
+    analysis: buildDeterministicOverdueAnalysis(task),
+    task,
+  };
 };
 
 const buildRescheduledTitle = (analysis: TaskAnalysis, task: HubSpotTaskListItem): string => {
@@ -232,6 +327,19 @@ const buildRescheduledBody = (analysis: TaskAnalysis, task: HubSpotTaskListItem)
   [
     analysis.rationale,
     analysis.outreachAngle ? `Angle recommande: ${analysis.outreachAngle}` : null,
+    task.body ? `Contexte ancienne tache: ${task.body}` : null,
+  ]
+    .filter((value): value is string => Boolean(value?.trim()))
+    .join("\n\n")
+    .slice(0, 2_500);
+
+const buildManualTaskBody = (analysis: TaskAnalysis, task: HubSpotTaskListItem): string =>
+  [
+    analysis.rationale,
+    `Action recommandee: ${analysis.suggestedAction}`,
+    analysis.outreachAngle ? `Angle recommande: ${analysis.outreachAngle}` : null,
+    analysis.evidence.length > 0 ? `Faits observes:\n- ${analysis.evidence.join("\n- ")}` : null,
+    analysis.missingData.length > 0 ? `Infos a clarifier:\n- ${analysis.missingData.join("\n- ")}` : null,
     task.body ? `Contexte ancienne tache: ${task.body}` : null,
   ]
     .filter((value): value is string => Boolean(value?.trim()))
@@ -281,11 +389,28 @@ const applyTaskAnalysisResult = async (result: TaskAnalyzerResult): Promise<Task
   const accessToken = await getHubSpotAccessToken(result.orgId);
   const analysis = result.analysis;
 
-  if (analysis.recommendation === "reschedule" || analysis.shouldReschedule) {
-    const dueInDays = analysis.suggestedDueInDays ?? 1;
-    const dueAt = buildDueAtFromDays(dueInDays);
+  if (analysis.recommendation === "skip" || analysis.taskType === "obsolete") {
+    await hubSpotService.markTaskCompleted(accessToken, result.hubspotTaskId);
+
+    return {
+      orgId: result.orgId,
+      hubspotTaskId: result.hubspotTaskId,
+      action: "completed",
+      completedTask: buildCompletedTaskSnapshot(result.task),
+      createdTask: null,
+      analysis,
+      message: "Tache marquee comme terminee dans HubSpot.",
+    };
+  }
+
+  {
+    const dueInDays = analysis.suggestedDueInDays ?? (analysis.recommendation === "reschedule" || analysis.shouldReschedule ? 1 : 0);
+    const dueAt = buildBusinessDueAtFromDays(dueInDays);
     const title = buildRescheduledTitle(analysis, result.task);
-    const body = buildRescheduledBody(analysis, result.task);
+    const body = analysis.recommendation === "reschedule" || analysis.shouldReschedule
+      ? buildRescheduledBody(analysis, result.task)
+      : buildManualTaskBody(analysis, result.task);
+    const actionSource = result.provider === "jarvis-rules" ? "regle Jarvis" : "recommandation IA";
     const created = await hubSpotService.createTask(accessToken, {
       title,
       body,
@@ -310,33 +435,11 @@ const applyTaskAnalysisResult = async (result: TaskAnalyzerResult): Promise<Task
         priority: analysis.priority,
       }),
       analysis,
-      message: `Ancienne tache terminee et nouvelle tache planifiee a J+${dueInDays}.`,
+      message: dueInDays === 0
+        ? `Ancienne tache terminee et nouvelle tache planifiee aujourd'hui avec la ${actionSource}.`
+        : `Ancienne tache terminee et nouvelle tache planifiee a J+${dueInDays}.`,
     };
   }
-
-  if (analysis.recommendation === "skip" || analysis.taskType === "obsolete") {
-    await hubSpotService.markTaskCompleted(accessToken, result.hubspotTaskId);
-
-    return {
-      orgId: result.orgId,
-      hubspotTaskId: result.hubspotTaskId,
-      action: "completed",
-      completedTask: buildCompletedTaskSnapshot(result.task),
-      createdTask: null,
-      analysis,
-      message: "Tache marquee comme terminee dans HubSpot.",
-    };
-  }
-
-  return {
-    orgId: result.orgId,
-    hubspotTaskId: result.hubspotTaskId,
-    action: "not_applicable",
-    completedTask: null,
-    createdTask: null,
-    analysis,
-    message: "Cette recommandation demande une action commerciale manuelle, donc Jarvis ne modifie pas HubSpot automatiquement.",
-  };
 };
 
 export const analyzeHubSpotTask = async ({
@@ -489,7 +592,8 @@ export const applyHubSpotTaskAnalysis = async ({
   orgId: string;
   hubspotTaskId: string;
 }): Promise<TaskAnalyzerApplyResult> => {
-  const result = await analyzeHubSpotTask({
+  const deterministicResult = await buildDeterministicOverdueResult({ orgId, hubspotTaskId });
+  const result = deterministicResult ?? await analyzeHubSpotTask({
     orgId,
     hubspotTaskId,
   });
@@ -498,7 +602,8 @@ export const applyHubSpotTaskAnalysis = async ({
 };
 
 export const analyzeAndApplyHubSpotTask = async (options: AnalyzeTaskOptions): Promise<TaskAnalyzerApplyResult> => {
-  const result = await analyzeHubSpotTask(options);
+  const deterministicResult = await buildDeterministicOverdueResult(options);
+  const result = deterministicResult ?? await analyzeHubSpotTask(options);
 
   return applyTaskAnalysisResult(result);
 };

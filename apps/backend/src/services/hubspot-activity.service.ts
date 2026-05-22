@@ -65,6 +65,7 @@ type ProspectLookupRow = {
 
 type HubSpotDealLookupRow = {
   hubspot_deal_id: string;
+  hubspot_owner_id?: string | null;
 };
 
 type HubSpotActivityLookupRow = {
@@ -97,8 +98,6 @@ const ACTIVITY_TYPE_BY_NAME: Record<string, HubSpotActivityType> = {
 };
 
 const DEAL_OBJECT_TYPE_IDS = new Set(["0-3", "deal", "deals"]);
-const CONTACT_OBJECT_TYPE_IDS = new Set(["0-1", "contact", "contacts"]);
-const COMPANY_OBJECT_TYPE_IDS = new Set(["0-2", "company", "companies"]);
 const ACTIVITY_REHYDRATE_DELAY_MS = 2 * 60 * 1000;
 
 const asRecord = (value: unknown): JsonRecord | null =>
@@ -291,6 +290,54 @@ const queryOpenDealsByArrayField = async (
   return results;
 };
 
+const loadSalesAeOwnerIds = async (orgId: string): Promise<Set<string>> => {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("users")
+    .select("hubspot_owner_id")
+    .eq("org_id", orgId)
+    .not("hubspot_owner_id", "is", null);
+
+  if (error) {
+    throw new Error(`Impossible de charger les owners Sales AE: ${error.message}`);
+  }
+
+  return new Set(
+    ((data ?? []) as Array<{ hubspot_owner_id: string | null }>)
+      .map((row) => row.hubspot_owner_id)
+      .filter((ownerId): ownerId is string => Boolean(ownerId)),
+  );
+};
+
+const filterEligibleRealtimeDealIds = async (orgId: string, dealIds: string[]): Promise<string[]> => {
+  const uniqueDealIds = Array.from(new Set(dealIds.filter(Boolean)));
+
+  if (uniqueDealIds.length === 0) {
+    return [];
+  }
+
+  const salesAeOwnerIds = await loadSalesAeOwnerIds(orgId);
+
+  if (salesAeOwnerIds.size === 0) {
+    return [];
+  }
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("hubspot_deals")
+    .select("hubspot_deal_id, hubspot_owner_id")
+    .eq("org_id", orgId)
+    .eq("deal_lifecycle_status", "pending")
+    .in("hubspot_deal_id", uniqueDealIds)
+    .in("hubspot_owner_id", Array.from(salesAeOwnerIds));
+
+  if (error) {
+    throw new Error(`Impossible de filtrer les deals realtime eligibles: ${error.message}`);
+  }
+
+  return ((data ?? []) as HubSpotDealLookupRow[]).map((row) => row.hubspot_deal_id);
+};
+
 const resolveImpactedDealIds = async (
   orgId: string,
   accessToken: string,
@@ -324,7 +371,7 @@ const resolveImpactedDealIds = async (
     }
   }
 
-  return Array.from(impactedDealIds);
+  return filterEligibleRealtimeDealIds(orgId, Array.from(impactedDealIds));
 };
 
 const upsertHubSpotActivity = async (
@@ -453,7 +500,7 @@ const upsertCallFromActivity = async (
   }
 };
 
-export const scheduleDealReanalysis = async (
+const scheduleDealReanalysis = async (
   orgId: string,
   hubspotDealId: string,
   triggerEventId: string | null,
@@ -548,6 +595,10 @@ const hydrateActivity = async (
   const activity = await hubSpotService.fetchActivity(accessToken, activityType, hubspotActivityId);
   const impactedDealIds = await resolveImpactedDealIds(orgId, accessToken, activity);
 
+  if (impactedDealIds.length === 0) {
+    return;
+  }
+
   await upsertHubSpotActivity(orgId, activity, impactedDealIds, event);
   await upsertCallFromActivity(orgId, activity, impactedDealIds);
   await Promise.all(
@@ -624,7 +675,7 @@ const purgePrivacyDeletedContact = async (orgId: string, hubspotContactId: strin
   }
 };
 
-export const processHubSpotWebhookEvent = async (eventId: string): Promise<void> => {
+const processHubSpotWebhookEvent = async (eventId: string): Promise<void> => {
   const event = await loadWebhookEvent(eventId);
 
   if (!event) {
@@ -674,7 +725,14 @@ export const processHubSpotWebhookEvent = async (eventId: string): Promise<void>
       legacyDealId;
 
     if (dealId && isInterestingDealProperty(event.property_name)) {
-      await scheduleDealReanalysis(event.org_id, dealId, event.id, "Changement HubSpot sur le deal");
+      const [eligibleDealId] = await filterEligibleRealtimeDealIds(event.org_id, [dealId]);
+
+      if (!eligibleDealId) {
+        await updateWebhookEventStatus(event.id, "ignored", "Deal hors scope realtime: ferme ou hors Sales AE.");
+        return;
+      }
+
+      await scheduleDealReanalysis(event.org_id, eligibleDealId, event.id, "Changement HubSpot sur le deal");
       await updateWebhookEventStatus(event.id, "completed");
       return;
     }
@@ -690,7 +748,7 @@ export const processHubSpotWebhookEvent = async (eventId: string): Promise<void>
   }
 };
 
-export const rehydrateHubSpotActivity = async (
+const rehydrateHubSpotActivity = async (
   orgId: string,
   activityType: HubSpotActivityType,
   hubspotActivityId: string,
@@ -698,7 +756,7 @@ export const rehydrateHubSpotActivity = async (
   await hydrateActivity(orgId, activityType, hubspotActivityId, null, false);
 };
 
-export const runHubSpotDealReanalysis = async (runId: string): Promise<void> => {
+const runHubSpotDealReanalysis = async (runId: string): Promise<void> => {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("hubspot_realtime_analysis_runs")

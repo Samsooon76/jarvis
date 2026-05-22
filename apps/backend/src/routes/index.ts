@@ -1,0 +1,26 @@
+import type { FastifyInstance } from "fastify";
+import { registerCloseLostAnalysisRoutes } from "./close-lost-analysis.js";
+import { registerDebugRoutes } from "./debug.js";
+import { registerForecastRoutes } from "./forecast.js";
+import { registerHubSpotRoutes } from "./hubspot.js";
+import { registerHubSpotWebhookRoutes } from "./webhooks.js";
+import { registerHealthRoute } from "./health.js";
+import { registerLlmRoutes } from "./llm.js";
+import { registerProspectRoutes } from "./prospects.js";
+import { registerQueueRoutes } from "./queue.js";
+import { registerSalesTargetRoutes } from "./sales-targets.js";
+import { registerTaskRoutes } from "./tasks.js";
+
+export const registerRoutes = async (app: FastifyInstance): Promise<void> => {
+  await registerHealthRoute(app);
+  await registerCloseLostAnalysisRoutes(app);
+  await registerDebugRoutes(app);
+  await registerForecastRoutes(app);
+  await registerHubSpotRoutes(app);
+  await registerHubSpotWebhookRoutes(app);
+  await registerLlmRoutes(app);
+  await registerProspectRoutes(app);
+  await registerQueueRoutes(app);
+  await registerSalesTargetRoutes(app);
+  await registerTaskRoutes(app);
+};

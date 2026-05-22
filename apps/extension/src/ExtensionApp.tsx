@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { QueueView } from "./components/QueueView";
+import { DEFAULT_ORG_ID, getHubSpotOwnerStorageKey, isAbortError } from "./config/runtime";
 import { useQueue } from "./hooks/useQueue";
 import {
   buildHubSpotConnectUrl,
@@ -12,9 +13,7 @@ import {
   type HubSpotSyncResult,
 } from "./services/api";
 
-const JARVIS_DEFAULT_ORG_ID = "11111111-1111-4111-8111-111111111111";
-const DEFAULT_ORG_ID = import.meta.env.VITE_DEFAULT_ORG_ID?.trim() || JARVIS_DEFAULT_ORG_ID;
-const HUBSPOT_OWNER_STORAGE_KEY = `jarvis.hubspotOwnerId:${DEFAULT_ORG_ID}`;
+const HUBSPOT_OWNER_STORAGE_KEY = getHubSpotOwnerStorageKey(DEFAULT_ORG_ID);
 
 const getStoredHubSpotOwnerId = (): string | null => {
   const storedOwnerId = window.localStorage.getItem(HUBSPOT_OWNER_STORAGE_KEY)?.trim();
@@ -74,16 +73,31 @@ export const ExtensionApp = () => {
     }
 
     let isCancelled = false;
+    let isRefreshInFlight = false;
+    const controller = new AbortController();
 
     const refreshLastUpdates = async () => {
+      if (isRefreshInFlight) {
+        return;
+      }
+
+      isRefreshInFlight = true;
+
       try {
-        const updates = await fetchHubSpotLastUpdates(DEFAULT_ORG_ID);
+        const updates = await fetchHubSpotLastUpdates(DEFAULT_ORG_ID, 12, {
+          signal: controller.signal,
+        });
 
         if (!isCancelled) {
           setLiveLastUpdates(updates);
         }
-      } catch {
+      } catch (refreshError) {
+        if (isAbortError(refreshError)) {
+          return;
+        }
         // Keep the last successful snapshot; the full queue load still surfaces hard API errors.
+      } finally {
+        isRefreshInFlight = false;
       }
     };
 
@@ -94,6 +108,7 @@ export const ExtensionApp = () => {
 
     return () => {
       isCancelled = true;
+      controller.abort();
       window.clearInterval(intervalId);
     };
   }, [data?.hubspotPortalId]);
@@ -154,7 +169,7 @@ export const ExtensionApp = () => {
 
   if (isLoading && !data) {
     return (
-      <main style={{ fontFamily: "ui-sans-serif, system-ui", minHeight: "100vh", padding: "1rem", width: "100vw" }}>
+      <main className="ae-loading-screen">
         <h1>Jarvis</h1>
         <p>Chargement des deals HubSpot...</p>
       </main>
@@ -164,42 +179,24 @@ export const ExtensionApp = () => {
   return (
     <>
       {error && !data ? (
-        <div
-          style={{
-            position: "fixed",
-            top: 12,
-            left: 12,
-            right: 12,
-            zIndex: 10,
-            border: "1px solid #efb1b1",
-            borderRadius: 8,
-            background: "#fff1f1",
-            color: "#8f2626",
-            fontFamily: "ui-sans-serif, system-ui",
-            fontSize: 13,
-            fontWeight: 700,
-            padding: "10px 12px",
-          }}
-        >
-          {error}
-        </div>
+        <div className="ae-app-error">{error}</div>
       ) : null}
       <QueueView
-      orgId={DEFAULT_ORG_ID}
-      generatedAt={data?.generatedAt}
-      hubspotDealCount={data?.hubspotDealCount}
-      hubspotPortalId={data?.hubspotPortalId}
-      isConnected={Boolean(data?.hubspotPortalId)}
-      isRefreshing={isRefreshing}
-      lastUpdates={liveLastUpdates}
-      onConnectHubSpot={handleConnectHubSpot}
-      onDisconnectHubSpot={handleDisconnectHubSpot}
-      onOwnerChange={handleOwnerChange}
-      onSyncHubSpot={handleSyncHubSpot}
-      owners={data?.owners ?? []}
-      ownerName={data?.owner.name}
-      selectedOwnerId={selectedOwnerId ?? data?.owner.ownerId}
-      prospects={data?.prospects ?? []}
+        orgId={DEFAULT_ORG_ID}
+        generatedAt={data?.generatedAt}
+        hubspotDealCount={data?.hubspotDealCount}
+        hubspotPortalId={data?.hubspotPortalId}
+        isConnected={Boolean(data?.hubspotPortalId)}
+        isRefreshing={isRefreshing}
+        lastUpdates={liveLastUpdates}
+        onConnectHubSpot={handleConnectHubSpot}
+        onDisconnectHubSpot={handleDisconnectHubSpot}
+        onOwnerChange={handleOwnerChange}
+        onSyncHubSpot={handleSyncHubSpot}
+        owners={data?.owners ?? []}
+        ownerName={data?.owner.name}
+        selectedOwnerId={selectedOwnerId ?? data?.owner.ownerId}
+        prospects={data?.prospects ?? []}
       />
     </>
   );

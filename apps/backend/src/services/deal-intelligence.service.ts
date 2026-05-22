@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { env } from "../config/env.js";
 import { getSupabaseAdmin } from "../db/client.js";
 import { loadLocalHubSpotDealHistory } from "./hubspot-activity-history.service.js";
+import { formatHubSpotTimelineForPrompt } from "./hubspot-history-formatting.service.js";
 import { hubSpotService, type HubSpotDealHistoryItem } from "./hubspot.service.js";
 import { getHubSpotAccessToken } from "./hubspot-auth.service.js";
 import { createLlmProvider } from "./llm/provider.factory.js";
@@ -177,16 +178,16 @@ export type DealQualificationResult = {
 
 export type DealRecentActivity = {
   id: string;
-  type: "note" | "call" | "meeting" | "email" | "sms" | "deal" | "task";
+  type: "note" | "call" | "meeting" | "email" | "sms" | "communication" | "deal" | "task";
   occurredAt: string | null;
   title: string;
   body: string | null;
   actorName: string | null;
-  channel: "email" | "call" | "meeting" | "note" | "sms" | "deal" | "task";
+  channel: "email" | "call" | "meeting" | "note" | "sms" | "communication" | "deal" | "task";
 };
 
 export type DealChannelEngagement = {
-  channel: "email" | "call" | "meeting" | "note" | "sms" | "task";
+  channel: "email" | "call" | "meeting" | "note" | "sms" | "communication" | "task";
   label: string;
   count: number;
   responseRate: number | null;
@@ -290,54 +291,7 @@ const resolveDealTarget = async (prospectId: string, context: DealIntelligenceCo
   };
 };
 
-const buildHistoryText = (timeline: HubSpotDealHistoryItem[]): string =>
-  timeline
-    .slice()
-    .sort((left, right) => {
-      const leftTime = left.timestamp ? new Date(left.timestamp).getTime() : Number.POSITIVE_INFINITY;
-      const rightTime = right.timestamp ? new Date(right.timestamp).getTime() : Number.POSITIVE_INFINITY;
-      const normalizedLeftTime = Number.isNaN(leftTime) ? Number.POSITIVE_INFINITY : leftTime;
-      const normalizedRightTime = Number.isNaN(rightTime) ? Number.POSITIVE_INFINITY : rightTime;
-
-      return normalizedLeftTime - normalizedRightTime;
-    })
-    .map((item) => {
-      const metadataSummary = Object.entries(item.metadata)
-        .filter(([, value]) => Boolean(value))
-        .map(([key, value]) => `${key}: ${value}`)
-        .join(", ");
-      const fullTimestamp = formatFullTimestampForPrompt(item.timestamp);
-
-      return [
-        fullTimestamp,
-        `[${item.type}]`,
-        item.title,
-        stripMarkup(item.body) ?? "",
-        metadataSummary,
-      ]
-        .filter(Boolean)
-        .join(" | ");
-    })
-    .join("\n");
-
-const formatFullTimestampForPrompt = (value: string | null): string => {
-  if (!value) {
-    return "date inconnue";
-  }
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  const fullDate = new Intl.DateTimeFormat("fr-FR", {
-    dateStyle: "full",
-    timeStyle: "short",
-  }).format(date);
-
-  return `${date.toISOString()} (${fullDate})`;
-};
+const buildHistoryText = (timeline: HubSpotDealHistoryItem[]): string => formatHubSpotTimelineForPrompt(timeline);
 
 const hashInput = (value: string): string => createHash("sha256").update(value).digest("hex");
 
@@ -710,19 +664,14 @@ const loadDealHistoryForAnalysis = async (
   accessToken: string,
   hubspotDealId: string,
 ) => {
-  const localHistory = await loadLocalHubSpotDealHistory(orgId, hubspotDealId);
-  const localActivityCount = localHistory?.timeline.filter((item) => item.type !== "deal").length ?? 0;
-
-  if (localHistory && localActivityCount > 0) {
-    return localHistory;
-  }
-
   return hubSpotService.fetchDealHistory(accessToken, hubspotDealId).catch((error: unknown) => {
-    if (localHistory) {
-      return localHistory;
-    }
+    return loadLocalHubSpotDealHistory(orgId, hubspotDealId).then((localHistory) => {
+      if (localHistory) {
+        return localHistory;
+      }
 
-    throw error;
+      throw error;
+    });
   });
 };
 
@@ -891,6 +840,7 @@ const buildPrimaryActions = (
 
 const activityChannelLabels: Record<DealChannelEngagement["channel"], string> = {
   call: "Appels",
+  communication: "Messages",
   email: "Emails",
   meeting: "Reunions",
   note: "Notes",
@@ -899,7 +849,13 @@ const activityChannelLabels: Record<DealChannelEngagement["channel"], string> = 
 };
 
 const toActivityChannel = (type: HubSpotDealHistoryItem["type"]): DealRecentActivity["channel"] =>
-  type === "call" || type === "email" || type === "meeting" || type === "note" || type === "sms" || type === "task"
+  type === "call" ||
+  type === "email" ||
+  type === "meeting" ||
+  type === "note" ||
+  type === "sms" ||
+  type === "communication" ||
+  type === "task"
     ? type
     : "deal";
 
@@ -915,7 +871,7 @@ const buildRecentActivities = (
       return rightValue - leftValue;
     })
     .filter((item) => item.type !== "deal" || timeline.length <= 1)
-    .slice(0, 8)
+    .slice(0, 80)
     .map((item) => ({
       id: item.id,
       type: item.type,
@@ -927,7 +883,15 @@ const buildRecentActivities = (
     }));
 
 const buildChannelEngagement = (timeline: HubSpotDealHistoryItem[]): DealChannelEngagement[] => {
-  const channels: DealChannelEngagement["channel"][] = ["email", "call", "meeting", "note", "task", "sms"];
+  const channels: DealChannelEngagement["channel"][] = [
+    "email",
+    "call",
+    "meeting",
+    "note",
+    "task",
+    "sms",
+    "communication",
+  ];
 
   return channels.map((channel) => {
     const items = timeline.filter((item) => item.type === channel);

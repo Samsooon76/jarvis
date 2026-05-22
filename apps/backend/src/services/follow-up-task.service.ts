@@ -1,6 +1,7 @@
 import { getSupabaseAdmin } from "../db/client.js";
 import { hubSpotService } from "./hubspot.service.js";
 import { getHubSpotAccessToken } from "./hubspot-auth.service.js";
+import { buildBusinessDueAtFromDays } from "./business-days.js";
 import { createLlmProvider } from "./llm/provider.factory.js";
 import type { FollowUpTaskRecommendation } from "./llm/llm.provider.js";
 
@@ -242,14 +243,6 @@ const buildHistoryText = (
         .join(" | ");
     })
     .join("\n");
-
-const buildDueAt = (dueInDays: number): string => {
-  const dueAt = new Date();
-  dueAt.setUTCDate(dueAt.getUTCDate() + dueInDays);
-  dueAt.setUTCHours(9, 0, 0, 0);
-
-  return dueAt.toISOString();
-};
 
 const getDaysSinceIsoDate = (value: string | null): number | null => {
   if (!value) {
@@ -636,7 +629,7 @@ const finalizeFollowUpTaskForProspect = async ({
     ownerHubSpotId = user?.hubspot_owner_id ?? null;
   }
 
-  const dueAt = buildDueAt(recommendation.dueInDays);
+  const dueAt = buildBusinessDueAtFromDays(recommendation.dueInDays);
 
   const createdTask = await hubSpotService.createTask(accessToken, {
     title: recommendation.title,

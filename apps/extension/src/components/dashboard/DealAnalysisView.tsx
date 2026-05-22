@@ -4,12 +4,11 @@ import { CircleHelp, Loader2 } from "lucide-react";
 import {
   createFollowUpTask,
   fetchDealActivityPlan,
-  fetchDealAnalysisBundle,
-  fetchDealAnalysisPage,
   fetchDealQualification,
+  startAndPollDealAnalysisRun,
   type ActivityPlanAction,
-  type ActivityPlanDeadline,
   type ActivityPlanInsight,
+  type ActivityPlanRecommendation,
   type AiProviderOption,
   type BuyingCommitteeMember,
   type DecisionProcess,
@@ -53,9 +52,6 @@ const pageCache = new Map<string, DealAnalysisPageResult>();
 const bundleCache = new Map<string, DealAnalysisBundleResult>();
 const qualificationCache = new Map<string, DealQualificationResult>();
 const activityPlanCache = new Map<string, DealActivityPlanResult>();
-const refreshRetryDelays = [0, 900, 1_800] as const;
-
-const wait = (delayMs: number): Promise<void> => new Promise((resolve) => window.setTimeout(resolve, delayMs));
 
 const qualificationLoadingSteps: LoadingStep[] = [
   {
@@ -222,12 +218,24 @@ const metricIcons: Record<DealAnalysisMetric["id"], "money" | "clock" | "trend">
 
 const activityChannelLabels: Record<DealRecentActivity["channel"], string> = {
   call: "Appel",
+  communication: "Message",
   deal: "Deal",
   email: "Email",
   meeting: "Rendez-vous",
   note: "Note",
   sms: "SMS",
   task: "Tache",
+};
+
+type ActivityNextStepSource = "action" | "deadline" | "recommendation";
+type ActivityIconType = DealRecentActivity["channel"] | ActivityNextStepSource;
+type ActivityTimelineFilter = "all" | "call" | "email" | "meeting";
+
+const activityIconLabels: Record<ActivityIconType, string> = {
+  ...activityChannelLabels,
+  action: "Action",
+  deadline: "Echeance",
+  recommendation: "Recommandation IA",
 };
 
 const compactText = (value: string | undefined, maxLength: number): string => {
@@ -296,12 +304,12 @@ const buildScoreExplanation = (analysis: DealAnalysisPageResult["analysis"]): st
   return Array.from(new Set(signals.map((signal) => signal.trim()).filter(Boolean))).slice(0, 5);
 };
 
-const ActivityChannelIcon = ({ channel }: { channel: DealRecentActivity["channel"] }) => (
+const ActivityChannelIcon = ({ channel }: { channel: ActivityIconType }) => (
   <span
     className="ae-activity-icon"
-    aria-label={activityChannelLabels[channel]}
+    aria-label={activityIconLabels[channel]}
     role="img"
-    title={activityChannelLabels[channel]}
+    title={activityIconLabels[channel]}
   >
     {channel === "email" ? (
       <svg viewBox="0 0 24 24">
@@ -332,10 +340,34 @@ const ActivityChannelIcon = ({ channel }: { channel: DealRecentActivity["channel
         <path d="M8 10h8M8 13h5" />
       </svg>
     ) : null}
+    {channel === "communication" ? (
+      <svg viewBox="0 0 24 24">
+        <path d="M5 6h14v9H9l-4 4z" />
+        <path d="M8 10h8M8 13h6" />
+      </svg>
+    ) : null}
     {channel === "task" ? (
       <svg viewBox="0 0 24 24">
         <rect x="5" y="4" width="14" height="16" rx="2" />
         <path d="M9 9h6M9 13h6M9 17h3" />
+      </svg>
+    ) : null}
+    {channel === "action" ? (
+      <svg viewBox="0 0 24 24">
+        <rect x="5" y="4" width="14" height="16" rx="2" />
+        <path d="M9 9h6M9 13h4M9 17l2 2 4-5" />
+      </svg>
+    ) : null}
+    {channel === "deadline" ? (
+      <svg viewBox="0 0 24 24">
+        <rect x="5" y="6" width="14" height="13" rx="2" />
+        <path d="M8 4v4M16 4v4M5 10h14" />
+        <path d="M12 14v3l2 1" />
+      </svg>
+    ) : null}
+    {channel === "recommendation" ? (
+      <svg viewBox="0 0 24 24">
+        <path d="M12 4 6 14h5l-1 6 8-11h-5z" />
       </svg>
     ) : null}
     {channel === "deal" ? (
@@ -347,24 +379,6 @@ const ActivityChannelIcon = ({ channel }: { channel: DealRecentActivity["channel
     ) : null}
   </span>
 );
-
-const formatShortDayMonth = (value: string | null | undefined): { day: string; month: string; year: string } => {
-  if (!value) {
-    return { day: "--", month: "", year: "" };
-  }
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return { day: "--", month: "", year: "" };
-  }
-
-  return {
-    day: new Intl.DateTimeFormat("fr-FR", { day: "2-digit" }).format(date),
-    month: new Intl.DateTimeFormat("fr-FR", { month: "short" }).format(date).replace(".", ""),
-    year: new Intl.DateTimeFormat("fr-FR", { year: "numeric" }).format(date),
-  };
-};
 
 const formatCloseDelta = (value: string | null): string => {
   if (!value) {
@@ -885,23 +899,144 @@ const QualificationSection = ({
   );
 };
 
-const RecentActivityPanel = ({ crmDealUrl, items }: { crmDealUrl: string | null; items: DealRecentActivity[] }) => (
-  <article className="ae-deal-panel ae-activity-recent">
+type ActivityTimelineNextStep = {
+  id: string;
+  source: ActivityNextStepSource;
+  title: string;
+  detail: string;
+  dateLabel: string;
+  ownerName: string | null;
+  status?: ActivityPlanAction["status"];
+  priority?: ActivityPlanAction["priority"] | ActivityPlanRecommendation["priority"];
+};
+
+const buildRecommendationDateLabel = (dueInDays: number): string => {
+  if (dueInDays <= 0) {
+    return "Aujourd'hui";
+  }
+
+  if (dueInDays === 1) {
+    return "Demain";
+  }
+
+  return `Sous ${dueInDays} jours`;
+};
+
+const buildTimelineNextSteps = (result: DealActivityPlanResult): ActivityTimelineNextStep[] => {
+  const actions = result.activityPlan.mutualActionPlan.map((action, index) => ({
+    id: `action:${action.title}:${action.dueDate ?? index}`,
+    source: "action" as const,
+    title: action.title,
+    detail: action.rationale,
+    dateLabel: formatOptionalDate(action.dueDate),
+    ownerName: action.ownerName,
+    status: action.status,
+    priority: action.priority,
+  }));
+  const deadlines = result.activityPlan.upcomingDeadlines.map((deadline, index) => ({
+    id: `deadline:${deadline.title}:${deadline.date ?? index}`,
+    source: "deadline" as const,
+    title: deadline.title,
+    detail: deadline.description,
+    dateLabel: formatOptionalDate(deadline.date),
+    ownerName: deadline.ownerName,
+  }));
+  const recommendation = result.activityPlan.recommendation;
+  const recommendedAction: ActivityTimelineNextStep = {
+    id: "recommendation:next-best-action",
+    source: "recommendation",
+    title: recommendation.nextBestAction.title,
+    detail: recommendation.nextBestAction.rationale,
+    dateLabel: buildRecommendationDateLabel(recommendation.nextBestAction.dueInDays),
+    ownerName: null,
+    priority: recommendation.priority,
+  };
+
+  return [recommendedAction, ...actions, ...deadlines].slice(0, 6);
+};
+
+const ActivityTimelinePanel = ({
+  crmDealUrl,
+  result,
+}: {
+  crmDealUrl: string | null;
+  result: DealActivityPlanResult;
+}) => {
+  const [activeFilter, setActiveFilter] = useState<ActivityTimelineFilter>("all");
+  const nextSteps = buildTimelineNextSteps(result);
+  const activities =
+    activeFilter === "all"
+      ? result.recentActivities
+      : result.recentActivities.filter((item) => item.channel === activeFilter);
+  const visibleNextSteps = activeFilter === "all" ? nextSteps : [];
+  const filters: Array<{ id: ActivityTimelineFilter; label: string }> = [
+    { id: "all", label: "Tout" },
+    { id: "call", label: "Appels" },
+    { id: "email", label: "Emails" },
+    { id: "meeting", label: "Reunions" },
+  ];
+
+  return (
+    <article className="ae-deal-panel ae-activity-timeline-panel">
     <div className="ae-deal-panel-heading">
-      <h3>Activite recente</h3>
+        <div>
+          <h3>Timeline du deal</h3>
+          <span>{nextSteps.length} next step{nextSteps.length > 1 ? "s" : ""} integre{nextSteps.length > 1 ? "s" : ""}</span>
+        </div>
       {crmDealUrl ? (
         <a href={crmDealUrl} rel="noreferrer" target="_blank">
-          Voir toute l'activite
+            Ouvrir HubSpot
         </a>
       ) : (
         <button disabled type="button">
-          Voir toute l'activite
+            Ouvrir HubSpot
         </button>
       )}
     </div>
-    {items.length > 0 ? (
+
+      <div className="ae-timeline-filters" aria-label="Filtres timeline">
+        {filters.map((filter) => (
+          <button
+            aria-pressed={activeFilter === filter.id}
+            className={activeFilter === filter.id ? "active" : undefined}
+            key={filter.id}
+            onClick={() => setActiveFilter(filter.id)}
+            type="button"
+          >
+            {filter.label}
+          </button>
+        ))}
+      </div>
+
       <div className="ae-activity-timeline">
-        {items.map((item) => (
+        {visibleNextSteps.length > 0 ? (
+          <div className="ae-timeline-section-label">
+            <span>Next steps</span>
+          </div>
+        ) : null}
+        {visibleNextSteps.map((step) => (
+          <div className={`ae-activity-event next-step ${step.source}`} key={step.id}>
+            <ActivityChannelIcon channel={step.source} />
+            <time>{step.dateLabel}</time>
+            <div>
+              <strong>{step.title}</strong>
+              {step.ownerName ? <small>{step.ownerName}</small> : null}
+              <p>{compactText(step.detail, 180)}</p>
+              <div className="ae-timeline-badges">
+                {step.priority ? <span>{activityPriorityLabels[step.priority]}</span> : null}
+                {step.status ? <span>{activityStatusLabels[step.status]}</span> : null}
+                <span>{step.source === "recommendation" ? "IA" : step.source === "deadline" ? "Echeance" : "Action"}</span>
+              </div>
+            </div>
+          </div>
+        ))}
+
+        {activities.length > 0 ? (
+          <div className="ae-timeline-section-label">
+            <span>Historique CRM</span>
+          </div>
+        ) : null}
+        {activities.map((item) => (
           <div className={`ae-activity-event ${item.channel}`} key={item.id}>
             <ActivityChannelIcon channel={item.channel} />
             <time>
@@ -915,76 +1050,16 @@ const RecentActivityPanel = ({ crmDealUrl, items }: { crmDealUrl: string | null;
             </div>
           </div>
         ))}
+        {activities.length === 0 && nextSteps.length === 0 ? (
+          <p className="ae-empty compact">Aucune activite HubSpot exploitable.</p>
+        ) : null}
+        {activities.length === 0 && visibleNextSteps.length === 0 && activeFilter !== "all" ? (
+          <p className="ae-empty compact">Aucune activite pour ce filtre.</p>
+        ) : null}
       </div>
-    ) : (
-      <p className="ae-empty compact">Aucune activite HubSpot exploitable.</p>
-    )}
   </article>
-);
-
-const ActivityPlanPanel = ({ actions }: { actions: ActivityPlanAction[] }) => (
-  <article className="ae-deal-panel ae-activity-plan">
-    <div className="ae-deal-panel-heading">
-      <h3>Plan d'action mutuel</h3>
-      <button type="button">Ajouter une action</button>
-    </div>
-    {actions.length > 0 ? (
-      <div className="ae-activity-plan-table">
-        <div className="ae-activity-plan-row header">
-          <span>Action</span>
-          <span>Proprietaire</span>
-          <span>Echeance</span>
-          <span>Statut</span>
-        </div>
-        {actions.map((action) => (
-          <div className="ae-activity-plan-row" key={`${action.title}:${action.dueDate ?? "no-date"}`}>
-            <span className="ae-action-check" aria-hidden="true" />
-            <div>
-              <strong>{action.title}</strong>
-              <small>{action.rationale}</small>
-            </div>
-            <span>{action.ownerName ?? "Non assigne"}</span>
-            <span>{formatOptionalDate(action.dueDate)}</span>
-            <strong className={`ae-activity-status ${action.status}`}>{activityStatusLabels[action.status]}</strong>
-          </div>
-        ))}
-      </div>
-    ) : (
-      <p className="ae-empty compact">Aucun plan d'action detecte dans le CRM.</p>
-    )}
-  </article>
-);
-
-const UpcomingDeadlinesPanel = ({ deadlines }: { deadlines: ActivityPlanDeadline[] }) => (
-  <article className="ae-deal-panel ae-activity-deadlines">
-    <h3>Prochaines echeances</h3>
-    {deadlines.length > 0 ? (
-      <div className="ae-deadline-list">
-        {deadlines.map((deadline) => {
-          const dateParts = formatShortDayMonth(deadline.date);
-
-          return (
-            <div className="ae-deadline-row" key={`${deadline.title}:${deadline.date ?? "no-date"}`}>
-              <time>
-                <strong>{dateParts.day}</strong>
-                <small>
-                  {dateParts.month} {dateParts.year}
-                </small>
-              </time>
-              <div>
-                <strong>{deadline.title}</strong>
-                <small>{deadline.ownerName ? `Avec ${deadline.ownerName}` : deadline.description}</small>
-              </div>
-              <span>{deadline.timeWindow ?? ""}</span>
-            </div>
-          );
-        })}
-      </div>
-    ) : (
-      <p className="ae-empty compact">Aucune echeance future detectee.</p>
-    )}
-  </article>
-);
+  );
+};
 
 const ChannelEngagementPanel = ({ channels }: { channels: DealChannelEngagement[] }) => (
   <article className="ae-deal-panel ae-channel-panel">
@@ -1102,12 +1177,14 @@ const ActivitySection = ({
         />
       ) : null}
       {error ? <p className="ae-detail-error">{error}</p> : null}
-      <RecentActivityPanel crmDealUrl={crmDealUrl} items={result.recentActivities} />
-      <ActivityPlanPanel actions={result.activityPlan.mutualActionPlan} />
-      <UpcomingDeadlinesPanel deadlines={result.activityPlan.upcomingDeadlines} />
-      <ChannelEngagementPanel channels={result.channelEngagement} />
-      <NotesInsightsPanel insights={result.activityPlan.notesAndInsights} />
-      <ActivityRecommendationPanel isLoading={isLoading} onRefresh={onRefresh} result={result} />
+      <div className="ae-activity-main-column">
+        <ActivityTimelinePanel crmDealUrl={crmDealUrl} result={result} />
+      </div>
+      <div className="ae-activity-side-column">
+        <ChannelEngagementPanel channels={result.channelEngagement} />
+        <NotesInsightsPanel insights={result.activityPlan.notesAndInsights} />
+        <ActivityRecommendationPanel isLoading={isLoading} onRefresh={onRefresh} result={result} />
+      </div>
     </section>
   );
 };
@@ -1134,6 +1211,7 @@ export const DealAnalysisView = ({
   const [taskResult, setTaskResult] = useState<FollowUpTaskResult | null>(null);
   const [refreshMessage, setRefreshMessage] = useState<string | null>(null);
   const [refreshAttempt, setRefreshAttempt] = useState<number | null>(null);
+  const [analysisJobStep, setAnalysisJobStep] = useState<string | null>(null);
 
   const loadQualification = async (refresh = false) => {
     if (!activeProspect) {
@@ -1210,38 +1288,18 @@ export const DealAnalysisView = ({
     setActivityPlanError(null);
   };
 
-  const refreshDealBundleWithRetry = async (cacheKey: string): Promise<DealAnalysisBundleResult> => {
+  const runDealAnalysisJob = async (refresh: boolean): Promise<DealAnalysisBundleResult> => {
     if (!activeProspect) {
       throw new Error("Aucun deal selectionne.");
     }
 
-    let lastError: unknown = null;
-
-    for (const [index, delayMs] of refreshRetryDelays.entries()) {
-      if (delayMs > 0) {
-        await wait(delayMs);
-      }
-
-      setRefreshAttempt(index + 1);
-
-      try {
-        const result = await fetchDealAnalysisBundle(activeProspect, orgId, selectedAiProvider, ownerName, true);
-
-        pageCache.delete(cacheKey);
-        bundleCache.delete(cacheKey);
-        qualificationCache.delete(cacheKey);
-        activityPlanCache.delete(cacheKey);
-
-        return result;
-      } catch (error) {
-        lastError = error;
-      }
-    }
-
-    throw lastError instanceof Error ? lastError : new Error("Erreur inconnue pendant le rafraichissement du deal.");
+    return startAndPollDealAnalysisRun(activeProspect, orgId, selectedAiProvider, refresh, (status) => {
+      setRefreshAttempt(status.progress);
+      setAnalysisJobStep(status.currentStep);
+    });
   };
 
-  const preheatDealSections = async (refresh = false) => {
+  const loadBundle = async (refresh = false) => {
     if (!activeProspect) {
       return;
     }
@@ -1260,10 +1318,12 @@ export const DealAnalysisView = ({
     try {
       setQualificationLoading(true);
       setActivityPlanLoading(true);
+      setRefreshAttempt(null);
+      setAnalysisJobStep(null);
       setQualificationError(null);
       setActivityPlanError(null);
 
-      const result = await fetchDealAnalysisBundle(activeProspect, orgId, selectedAiProvider, ownerName, refresh);
+      const result = await runDealAnalysisJob(refresh);
       applyBundle(result, cacheKey);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Analyse complete du deal indisponible.";
@@ -1271,8 +1331,11 @@ export const DealAnalysisView = ({
       setQualificationError(message);
       setActivityPlanError(message);
     } finally {
+      setIsAnalyzing(false);
       setQualificationLoading(false);
       setActivityPlanLoading(false);
+      setRefreshAttempt(null);
+      setAnalysisJobStep(null);
     }
   };
 
@@ -1289,23 +1352,34 @@ export const DealAnalysisView = ({
       if (cached) {
         setPage(cached);
         setAnalysisError(null);
-        void preheatDealSections(false);
+        void loadBundle(false);
         return;
       }
     }
 
     try {
       setIsAnalyzing(true);
+      setQualificationLoading(true);
+      setActivityPlanLoading(true);
+      setRefreshAttempt(null);
+      setAnalysisJobStep(null);
       setAnalysisError(null);
+      setQualificationError(null);
+      setActivityPlanError(null);
 
-      const result = await fetchDealAnalysisPage(activeProspect, orgId, selectedAiProvider, ownerName, refresh);
-      pageCache.set(cacheKey, result);
-      setPage(result);
-      void preheatDealSections(false);
+      const result = await runDealAnalysisJob(refresh);
+      applyBundle(result, cacheKey);
     } catch (error) {
-      setAnalysisError(error instanceof Error ? error.message : "Analyse deal indisponible.");
+      const message = error instanceof Error ? error.message : "Analyse deal indisponible.";
+      setAnalysisError(message);
+      setQualificationError(message);
+      setActivityPlanError(message);
     } finally {
       setIsAnalyzing(false);
+      setQualificationLoading(false);
+      setActivityPlanLoading(false);
+      setRefreshAttempt(null);
+      setAnalysisJobStep(null);
     }
   };
 
@@ -1314,6 +1388,7 @@ export const DealAnalysisView = ({
     setTaskResult(null);
     setRefreshMessage(null);
     setRefreshAttempt(null);
+    setAnalysisJobStep(null);
     setAnalysisError(null);
     setActiveSection("overview");
     setQualification(null);
@@ -1361,12 +1436,19 @@ export const DealAnalysisView = ({
         setQualificationLoading(true);
         setActivityPlanLoading(true);
         setRefreshMessage(null);
+        setAnalysisJobStep(null);
         setAnalysisError(null);
         setQualificationError(null);
         setActivityPlanError(null);
         setTaskResult(null);
 
-        const result = await refreshDealBundleWithRetry(cacheKey);
+        const result = await runDealAnalysisJob(true);
+
+        pageCache.delete(cacheKey);
+        bundleCache.delete(cacheKey);
+        qualificationCache.delete(cacheKey);
+        activityPlanCache.delete(cacheKey);
+
         applyBundle(result, cacheKey);
         setRefreshMessage(`Deal rafraichi avec l'analyse du ${formatOptionalDateTime(result.page.generatedAt)}.`);
       } catch (error) {
@@ -1377,6 +1459,7 @@ export const DealAnalysisView = ({
         setQualificationLoading(false);
         setActivityPlanLoading(false);
         setRefreshAttempt(null);
+        setAnalysisJobStep(null);
       }
     })();
   };
@@ -1428,7 +1511,7 @@ export const DealAnalysisView = ({
           {refreshLoading ? (
             <span className="ae-button-spinner" aria-label="Rafraichissement en cours" role="status">
               <Loader2 size={15} strokeWidth={2.4} />
-              <small>{refreshAttempt ? `Essai ${refreshAttempt}/3` : "Analyse..."}</small>
+              <small>{analysisJobStep ?? (refreshAttempt ? `Analyse ${refreshAttempt}%` : "Analyse...")}</small>
             </span>
           ) : (
             "Rafraichir le deal complet"

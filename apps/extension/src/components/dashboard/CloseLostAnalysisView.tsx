@@ -1032,7 +1032,7 @@ export const CloseLostAnalysisView = ({
     [overview?.deals],
   );
 
-  const loadOverview = useCallback(async (options: { silent?: boolean } = {}) => {
+  const loadOverview = useCallback(async (options: { forceRefresh?: boolean; silent?: boolean } = {}) => {
     try {
       if (!options.silent) {
         setOverviewLoading(true);
@@ -1046,9 +1046,16 @@ export const CloseLostAnalysisView = ({
         dateFrom,
         dateTo,
         aiProvider: selectedAiProvider,
+        forceRefresh: options.forceRefresh,
       });
       setOverview(result);
       setActiveDealId((current) => current ?? result.deals[0]?.hubspotDealId ?? null);
+
+      const firstDealId = result.deals[0]?.hubspotDealId;
+
+      if (firstDealId) {
+        void fetchCloseLostDealDetail(orgId, firstDealId, selectedAiProvider).catch(() => undefined);
+      }
     } catch (error) {
       setOverviewError(error instanceof Error ? error.message : "Close lost analysis indisponible.");
     } finally {
@@ -1133,7 +1140,7 @@ export const CloseLostAnalysisView = ({
 
         if (processedDealCount > lastProcessedDealCount) {
           lastProcessedDealCount = processedDealCount;
-          await loadOverview({ silent: true });
+          await loadOverview({ forceRefresh: true, silent: true });
         }
       }
 
@@ -1141,7 +1148,7 @@ export const CloseLostAnalysisView = ({
         throw new Error(currentRun.error ?? "Run close lost en erreur.");
       }
 
-      await loadOverview();
+      await loadOverview({ forceRefresh: true });
     } catch (error) {
       setOverviewError(error instanceof Error ? error.message : "Impossible de lancer l'analyse close lost.");
     } finally {
@@ -1159,7 +1166,7 @@ export const CloseLostAnalysisView = ({
       setDetailError(null);
       const result = await analyzeCloseLostDeal(orgId, activeDealId, selectedAiProvider, true);
       setDetail(result);
-      await loadOverview();
+      await loadOverview({ forceRefresh: true });
     } catch (error) {
       setDetailError(error instanceof Error ? error.message : "Impossible d'analyser ce deal close lost.");
     } finally {

@@ -1,4 +1,4 @@
-import { ArrowUp, Brain, RefreshCw, Search } from "lucide-react";
+import { ArrowUp, Brain, CheckCircle2, ChevronDown, CircleDot, RefreshCw, Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { QueueProspect } from "@jarvis/shared";
 import {
@@ -6,6 +6,7 @@ import {
   analyzeAndApplyHubSpotTask,
   updateHubSpotTaskPriority,
   type HubSpotLastUpdateItem,
+  type HubSpotOwnerOption,
   type HubSpotTaskListItem,
   type HubSpotTaskPriority,
   type TaskAnalysis,
@@ -18,7 +19,9 @@ import { formatDateTime } from "../../utils/dashboard/formatters";
 type TasksViewProps = {
   hubspotPortalId?: string | null;
   lastUpdates: HubSpotLastUpdateItem[];
+  onOwnerChange?: (ownerId: string) => void;
   orgId: string;
+  owners?: HubSpotOwnerOption[];
   prospects: QueueProspect[];
   selectedOwnerId?: string | null;
 };
@@ -29,12 +32,12 @@ type EnrichedTask = HubSpotTaskListItem & {
   sortScore: number;
 };
 
-type TaskDateBucket = "overdue" | "today" | "upcoming" | "noDueDate";
-type TaskDateFilter = "all" | TaskDateBucket;
-type TaskPriorityFilter = "all" | "none" | HubSpotTaskPriority;
+type TaskDateBucket = "overdue" | "today" | "upcoming" | "later" | "noDueDate";
+type TaskSectionId = TaskDateBucket;
+type TaskDateFilter = "all" | TaskSectionId;
 
 type TaskSection = {
-  id: TaskDateBucket;
+  id: TaskSectionId;
   label: string;
   caption: string;
   tasks: EnrichedTask[];
@@ -46,8 +49,30 @@ type BatchProgress = {
   failed: number;
 };
 
+type TaskFilterTab = {
+  id: TaskDateFilter;
+  label: string;
+};
+
+type OwnerWorkloadItem = {
+  id: string;
+  initials: string;
+  label: string;
+  overdueCount: number;
+  taskCount: number;
+};
+
+type SelectedTaskAnalysis = {
+  accountLabel: string | null;
+  analysis: TaskAnalysis;
+  taskId: string;
+  title: string;
+};
+
 const TASK_BATCH_SIZE = 5;
-const TASK_MAX_ATTEMPTS = 2;
+const TASK_MAX_ATTEMPTS = 3;
+const TASK_LOCAL_CACHE_TTL_MS = 5 * 60 * 1000;
+const TASK_LOCAL_CACHE_VERSION = 4;
 
 const priorityLabels: Record<HubSpotTaskPriority, string> = {
   low: "Low",
@@ -76,6 +101,13 @@ const recommendationLabels: Record<TaskAnalysisRecommendation, string> = {
 };
 
 const taskPriorityOptions = [null, "high", "medium", "low"] as const satisfies ReadonlyArray<HubSpotTaskPriority | null>;
+
+const taskFilterTabs: TaskFilterTab[] = [
+  { id: "all", label: "Toutes" },
+  { id: "today", label: "Aujourd'hui" },
+  { id: "upcoming", label: "Cette semaine" },
+  { id: "overdue", label: "En retard" },
+];
 
 const priorityScore: Record<HubSpotTaskPriority, number> = {
   high: 300,
@@ -128,6 +160,15 @@ const getStartOfTomorrow = (): Date => {
   return date;
 };
 
+const getEndOfWeek = (): Date => {
+  const date = getStartOfToday();
+  const day = date.getDay();
+  const daysUntilNextMonday = day === 0 ? 1 : 8 - day;
+  date.setDate(date.getDate() + daysUntilNextMonday);
+
+  return date;
+};
+
 const getTaskDateBucket = (dueAt: string | null): TaskDateBucket => {
   if (!dueAt) {
     return "noDueDate";
@@ -147,8 +188,14 @@ const getTaskDateBucket = (dueAt: string | null): TaskDateBucket => {
     return "today";
   }
 
-  return "upcoming";
+  if (dueTimestamp < getEndOfWeek().getTime()) {
+    return "upcoming";
+  }
+
+  return "later";
 };
+
+const getTaskSectionId = (task: HubSpotTaskListItem): TaskSectionId => getTaskDateBucket(task.dueAt);
 
 const getTaskDueLabel = (dueAt: string | null): string => {
   const bucket = getTaskDateBucket(dueAt);
@@ -167,6 +214,51 @@ const getTaskDueLabel = (dueAt: string | null): string => {
 
   return formatDateTime(dueAt);
 };
+
+const getTaskDueShortLabel = (dueAt: string | null): string => {
+  if (!dueAt) {
+    return "Sans echeance";
+  }
+
+  const dueDate = new Date(dueAt);
+
+  if (Number.isNaN(dueDate.getTime())) {
+    return "Sans echeance";
+  }
+
+  const timeLabel = new Intl.DateTimeFormat("fr-FR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(dueDate);
+  const yesterday = getStartOfToday();
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  if (dueDate >= getStartOfToday() && dueDate < getStartOfTomorrow()) {
+    return `Aujourd'hui, ${timeLabel}`;
+  }
+
+  if (dueDate >= yesterday && dueDate < getStartOfToday()) {
+    return `Hier, ${timeLabel}`;
+  }
+
+  const formatter = new Intl.DateTimeFormat("fr-FR", {
+    day: "numeric",
+    month: "short",
+    weekday: getTaskDateBucket(dueAt) === "upcoming" ? "long" : undefined,
+  });
+
+  return formatter.format(dueDate);
+};
+
+const taskUrgencyLabels: Record<TaskDateBucket, string> = {
+  overdue: "En retard",
+  today: "Aujourd'hui",
+  upcoming: "Cette semaine",
+  later: "Plus tard",
+  noDueDate: "Sans echeance",
+};
+
+const isOpenTask = (task: HubSpotTaskListItem): boolean => task.status !== "completed";
 
 const getTaskDealId = (task: HubSpotTaskListItem): string | null => task.associatedDealIds[0] ?? null;
 
@@ -191,18 +283,60 @@ const getTaskAccountLabel = (task: HubSpotTaskListItem): string | null => {
   return parts.length > 0 ? parts.join(" · ") : null;
 };
 
-const truncateTaskText = (value: string | null, maxLength = 220): string => {
+const getTaskInitials = (task: HubSpotTaskListItem): string => {
+  const label = task.contactName ?? task.companyName ?? task.title;
+  const words = label
+    .replace(/[^a-zA-ZÀ-ÿ0-9\s-]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+
+  if (words.length === 0) {
+    return "JV";
+  }
+
+  return words
+    .slice(0, 2)
+    .map((word) => word[0])
+    .join("")
+    .toUpperCase();
+};
+
+const getInitialsFromLabel = (label: string): string => {
+  const words = label
+    .replace(/[^a-zA-ZÀ-ÿ0-9\s-]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+
+  if (words.length === 0) {
+    return "HS";
+  }
+
+  return words
+    .slice(0, 2)
+    .map((word) => word[0])
+    .join("")
+    .toUpperCase();
+};
+
+const getOwnerInitials = (ownerHubSpotId: string | null, fallbackTask?: HubSpotTaskListItem): string => {
+  const normalizedOwnerId = ownerHubSpotId?.replace(/[^a-zA-Z0-9]/g, "") ?? "";
+  const ownerInitials = normalizedOwnerId.slice(-2).toUpperCase();
+
+  if (ownerInitials.length === 2) {
+    return ownerInitials;
+  }
+
+  return fallbackTask ? getTaskInitials(fallbackTask) : "HS";
+};
+
+const formatTaskText = (value: string | null): string => {
   const normalizedValue = value?.replace(/\s+/g, " ").trim();
 
   if (!normalizedValue) {
     return "Tache HubSpot sans deal associe";
   }
 
-  if (normalizedValue.length <= maxLength) {
-    return normalizedValue;
-  }
-
-  return `${normalizedValue.slice(0, maxLength).trim()}...`;
+  return normalizedValue;
 };
 
 const formatTasksError = (error: unknown): string => {
@@ -215,30 +349,122 @@ const formatTasksError = (error: unknown): string => {
   return message;
 };
 
+const isLegacyNoopApplyResult = (result: TaskAnalyzerApplyResult): boolean =>
+  (result as { action?: string }).action === "not_applicable" ||
+  result.message.includes("Cette recommandation demande une action commerciale manuelle") ||
+  result.message.includes("ne modifie pas HubSpot automatiquement");
+
+const getOverdueOpenTaskIds = (items: HubSpotTaskListItem[]): string[] =>
+  items
+    .filter((task) => isOpenTask(task) && getTaskDateBucket(task.dueAt) === "overdue")
+    .map((task) => task.id);
+
 const wait = (durationMs: number): Promise<void> =>
   new Promise((resolve) => {
     window.setTimeout(resolve, durationMs);
   });
 
-export const TasksView = ({ hubspotPortalId, lastUpdates, orgId, prospects, selectedOwnerId }: TasksViewProps) => {
+type CachedHubSpotTasks = {
+  cachedAt: number;
+  tasks: HubSpotTaskListItem[];
+};
+
+const getTaskCacheKey = (orgId: string, selectedOwnerId: string): string =>
+  `jarvis:hubspot-tasks:v${TASK_LOCAL_CACHE_VERSION}:${orgId}:${selectedOwnerId}`;
+
+const isHubSpotTaskListItem = (value: unknown): value is HubSpotTaskListItem => {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const candidate = value as Partial<HubSpotTaskListItem>;
+
+  return typeof candidate.id === "string" && typeof candidate.title === "string";
+};
+
+const readCachedTasks = (orgId: string, selectedOwnerId: string): HubSpotTaskListItem[] | null => {
+  try {
+    const rawCache = window.localStorage.getItem(getTaskCacheKey(orgId, selectedOwnerId));
+
+    if (!rawCache) {
+      return null;
+    }
+
+    const parsedCache = JSON.parse(rawCache) as Partial<CachedHubSpotTasks>;
+
+    if (
+      typeof parsedCache.cachedAt !== "number" ||
+      Date.now() - parsedCache.cachedAt > TASK_LOCAL_CACHE_TTL_MS ||
+      !Array.isArray(parsedCache.tasks) ||
+      !parsedCache.tasks.every(isHubSpotTaskListItem)
+    ) {
+      return null;
+    }
+
+    return parsedCache.tasks;
+  } catch {
+    return null;
+  }
+};
+
+const writeCachedTasks = (orgId: string, selectedOwnerId: string, tasks: HubSpotTaskListItem[]): void => {
+  try {
+    const cachePayload: CachedHubSpotTasks = {
+      cachedAt: Date.now(),
+      tasks,
+    };
+
+    window.localStorage.setItem(getTaskCacheKey(orgId, selectedOwnerId), JSON.stringify(cachePayload));
+  } catch {
+    // localStorage can be unavailable in restricted browser contexts; live API data still works.
+  }
+};
+
+export const TasksView = ({
+  hubspotPortalId,
+  lastUpdates,
+  onOwnerChange,
+  orgId,
+  owners = [],
+  prospects,
+  selectedOwnerId,
+}: TasksViewProps) => {
   const [tasks, setTasks] = useState<HubSpotTaskListItem[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [dateFilter, setDateFilter] = useState<TaskDateFilter>("all");
-  const [priorityFilter, setPriorityFilter] = useState<TaskPriorityFilter>("all");
   const [isLoading, setIsLoading] = useState(false);
   const [priorityUpdatingId, setPriorityUpdatingId] = useState<string | null>(null);
   const [analysisLoadingId, setAnalysisLoadingId] = useState<string | null>(null);
   const [analysisApplyingId, setAnalysisApplyingId] = useState<string | null>(null);
   const [processingTaskIds, setProcessingTaskIds] = useState<Record<string, boolean>>({});
   const [analysisByTaskId, setAnalysisByTaskId] = useState<Record<string, TaskAnalysis>>({});
+  const [selectedTaskAnalysis, setSelectedTaskAnalysis] = useState<SelectedTaskAnalysis | null>(null);
+  const [collapsedSections, setCollapsedSections] = useState<Partial<Record<TaskSectionId, boolean>>>({});
   const [batchProgress, setBatchProgress] = useState<BatchProgress | null>(null);
   const [taskActionMessage, setTaskActionMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const loadTasksInFlightRef = useRef(false);
+  const displayedOwnerIdRef = useRef<string | null>(null);
+  const tasksRef = useRef<HubSpotTaskListItem[]>([]);
+
+  const commitTasks = (nextTasks: HubSpotTaskListItem[]): void => {
+    tasksRef.current = nextTasks;
+    setTasks(nextTasks);
+  };
+
+  const fetchAndCommitTasks = async (ownerId: string): Promise<HubSpotTaskListItem[]> => {
+    const hubspotTasks = await fetchHubSpotTasks(orgId, ownerId);
+    commitTasks(hubspotTasks);
+    displayedOwnerIdRef.current = ownerId;
+    writeCachedTasks(orgId, ownerId, hubspotTasks);
+
+    return hubspotTasks;
+  };
 
   const loadTasks = async () => {
     if (!selectedOwnerId) {
-      setTasks([]);
+      commitTasks([]);
+      displayedOwnerIdRef.current = null;
       return;
     }
 
@@ -248,10 +474,18 @@ export const TasksView = ({ hubspotPortalId, lastUpdates, orgId, prospects, sele
 
     try {
       loadTasksInFlightRef.current = true;
-      setIsLoading(true);
+      const cachedTasks = readCachedTasks(orgId, selectedOwnerId);
+
+      if (cachedTasks && (tasks.length === 0 || displayedOwnerIdRef.current !== selectedOwnerId)) {
+        commitTasks(cachedTasks);
+        displayedOwnerIdRef.current = selectedOwnerId;
+      } else if (!cachedTasks && displayedOwnerIdRef.current && displayedOwnerIdRef.current !== selectedOwnerId) {
+        commitTasks([]);
+      }
+
+      setIsLoading(!cachedTasks);
       setError(null);
-      const hubspotTasks = await fetchHubSpotTasks(orgId, selectedOwnerId);
-      setTasks(hubspotTasks);
+      await fetchAndCommitTasks(selectedOwnerId);
     } catch (loadError) {
       setError(formatTasksError(loadError));
     } finally {
@@ -290,6 +524,21 @@ export const TasksView = ({ hubspotPortalId, lastUpdates, orgId, prospects, sele
     () => new Map(lastUpdates.map((update) => [update.hubspotDealId, update])),
     [lastUpdates],
   );
+  const ownerById = useMemo(() => new Map(owners.map((owner) => [owner.ownerId, owner])), [owners]);
+  const selectedOwnerName = selectedOwnerId ? ownerById.get(selectedOwnerId)?.name ?? "Owner actif" : "Tous les reps";
+  const getTaskOwnerInitials = (task: HubSpotTaskListItem): string => {
+    const ownerName = task.ownerHubSpotId ? ownerById.get(task.ownerHubSpotId)?.name : null;
+
+    if (ownerName) {
+      return getInitialsFromLabel(ownerName);
+    }
+
+    if (selectedOwnerId && task.ownerHubSpotId === selectedOwnerId) {
+      return getInitialsFromLabel(selectedOwnerName);
+    }
+
+    return getOwnerInitials(task.ownerHubSpotId, task);
+  };
 
   const enrichedTasks = useMemo<EnrichedTask[]>(
     () =>
@@ -317,7 +566,7 @@ export const TasksView = ({ hubspotPortalId, lastUpdates, orgId, prospects, sele
   );
 
   const overdueTasks = useMemo(
-    () => enrichedTasks.filter((task) => getTaskDateBucket(task.dueAt) === "overdue"),
+    () => enrichedTasks.filter((task) => isOpenTask(task) && getTaskDateBucket(task.dueAt) === "overdue"),
     [enrichedTasks],
   );
 
@@ -337,8 +586,14 @@ export const TasksView = ({ hubspotPortalId, lastUpdates, orgId, prospects, sele
       },
       {
         id: "upcoming",
-        label: "A venir",
-        caption: "Planifiees plus tard",
+        label: "Cette semaine",
+        caption: "Taches planifiees",
+        tasks: [],
+      },
+      {
+        id: "later",
+        label: "Plus tard",
+        caption: "Apres cette semaine",
         tasks: [],
       },
       {
@@ -352,11 +607,10 @@ export const TasksView = ({ hubspotPortalId, lastUpdates, orgId, prospects, sele
 
     const normalizedSearchTerm = searchTerm.trim().toLowerCase();
     const filteredTasks = enrichedTasks.filter((task) => {
-      const taskBucket = getTaskDateBucket(task.dueAt);
-      const matchesDate = dateFilter === "all" || taskBucket === dateFilter;
-      const matchesPriority =
-        priorityFilter === "all" ||
-        (priorityFilter === "none" ? task.priority === null : task.priority === priorityFilter);
+      const taskSectionId = getTaskSectionId(task);
+      const matchesDate =
+        dateFilter === "all" ||
+        taskSectionId === dateFilter;
       const matchesSearch =
         !normalizedSearchTerm ||
         [task.title, task.body, task.dealName]
@@ -364,24 +618,93 @@ export const TasksView = ({ hubspotPortalId, lastUpdates, orgId, prospects, sele
           .filter((value): value is string => Boolean(value))
           .some((value) => value.toLowerCase().includes(normalizedSearchTerm));
 
-      return matchesDate && matchesPriority && matchesSearch;
+      return matchesDate && matchesSearch;
     });
 
     for (const task of filteredTasks) {
-      sectionById.get(getTaskDateBucket(task.dueAt))?.tasks.push(task);
+      sectionById.get(getTaskSectionId(task))?.tasks.push(task);
     }
 
     return sections;
-  }, [dateFilter, enrichedTasks, priorityFilter, searchTerm]);
+  }, [dateFilter, enrichedTasks, searchTerm]);
 
   const filteredTaskCount = taskSections.reduce((count, section) => count + section.tasks.length, 0);
+  const openTasks = enrichedTasks.filter(isOpenTask);
+  const todayTaskCount = openTasks.filter((task) => getTaskDateBucket(task.dueAt) === "today").length;
+  const overdueTaskCount = overdueTasks.length;
+  const upcomingTaskCount = openTasks.filter((task) => getTaskDateBucket(task.dueAt) === "upcoming").length;
+  const laterTaskCount = openTasks.filter((task) => getTaskDateBucket(task.dueAt) === "later").length;
+  const batchIsRunning = batchProgress !== null && batchProgress.done + batchProgress.failed < batchProgress.total;
+  const analyzeButtonLabel = batchIsRunning
+    ? `${batchProgress.done + batchProgress.failed}/${batchProgress.total}`
+    : overdueTaskCount === 0
+      ? "A jour"
+      : "Analyser";
+  const urgentTask = overdueTasks[0] ?? taskSections.find((section) => section.id === "today")?.tasks[0] ?? null;
+  const nextTask = taskSections.find((section) => section.id === "today")?.tasks[1] ?? taskSections.find((section) => section.id === "upcoming")?.tasks[0] ?? null;
+
+  useEffect(() => {
+    if (overdueTaskCount !== 0 || batchProgress === null) {
+      return;
+    }
+
+    setBatchProgress(null);
+    setError(null);
+    setTaskActionMessage("Toutes les taches en retard sont traitees.");
+  }, [batchProgress, overdueTaskCount]);
+
+  const ownerWorkload = useMemo<OwnerWorkloadItem[]>(() => {
+    const workloadByOwner = new Map<string, OwnerWorkloadItem>();
+
+    for (const task of openTasks) {
+      const ownerId = task.ownerHubSpotId ?? "unassigned";
+      const existingItem = workloadByOwner.get(ownerId);
+
+      if (existingItem) {
+        existingItem.taskCount += 1;
+        existingItem.overdueCount += getTaskDateBucket(task.dueAt) === "overdue" ? 1 : 0;
+        continue;
+      }
+
+      const owner = ownerById.get(ownerId);
+      const initials = owner ? getInitialsFromLabel(owner.name) : getOwnerInitials(task.ownerHubSpotId, task);
+      const label =
+        owner?.name ??
+        (selectedOwnerId && ownerId === selectedOwnerId
+          ? selectedOwnerName
+          : ownerId === "unassigned"
+            ? "Non assigne"
+            : `Owner ${initials}`);
+
+      workloadByOwner.set(ownerId, {
+        id: ownerId,
+        initials,
+        label,
+        overdueCount: getTaskDateBucket(task.dueAt) === "overdue" ? 1 : 0,
+        taskCount: 1,
+      });
+    }
+
+    return Array.from(workloadByOwner.values())
+      .sort((left, right) => right.taskCount - left.taskCount)
+      .slice(0, 4);
+  }, [openTasks, ownerById, selectedOwnerId, selectedOwnerName]);
 
   const handlePriorityChange = async (taskId: string, priority: HubSpotTaskPriority | null) => {
     try {
       setPriorityUpdatingId(taskId);
       setError(null);
       const updatedTask = await updateHubSpotTaskPriority(orgId, taskId, priority);
-      setTasks((currentTasks) => currentTasks.map((task) => (task.id === taskId ? updatedTask : task)));
+      setTasks((currentTasks) => {
+        const nextTasks = currentTasks.map((task) => (task.id === taskId ? updatedTask : task));
+        tasksRef.current = nextTasks;
+
+        if (selectedOwnerId) {
+          writeCachedTasks(orgId, selectedOwnerId, nextTasks);
+        }
+
+        return nextTasks;
+      });
     } catch (updateError) {
       setError(formatTasksError(updateError));
     } finally {
@@ -395,15 +718,35 @@ export const TasksView = ({ hubspotPortalId, lastUpdates, orgId, prospects, sele
       [taskId]: result.analysis,
     }));
 
-    if (result.action === "completed") {
-      setTasks((currentTasks) => currentTasks.filter((task) => task.id !== taskId));
+    if (result.completedTask) {
+      setTasks((currentTasks) => {
+        const nextTasks = currentTasks.filter((task) => task.id !== taskId);
+        tasksRef.current = nextTasks;
+
+        if (selectedOwnerId) {
+          writeCachedTasks(orgId, selectedOwnerId, nextTasks);
+        }
+
+        return nextTasks;
+      });
     }
 
-    if (result.action === "rescheduled") {
-      setTasks((currentTasks) => [
-        ...(result.createdTask ? [result.createdTask] : []),
-        ...currentTasks.filter((task) => task.id !== taskId),
-      ]);
+    const createdTask = result.createdTask;
+
+    if (createdTask) {
+      setTasks((currentTasks) => {
+        const nextTasks = [
+          createdTask,
+          ...currentTasks.filter((task) => task.id !== taskId),
+        ];
+        tasksRef.current = nextTasks;
+
+        if (selectedOwnerId) {
+          writeCachedTasks(orgId, selectedOwnerId, nextTasks);
+        }
+
+        return nextTasks;
+      });
     }
   };
 
@@ -419,6 +762,11 @@ export const TasksView = ({ hubspotPortalId, lastUpdates, orgId, prospects, sele
       for (let attempt = 1; attempt <= TASK_MAX_ATTEMPTS; attempt += 1) {
         try {
           const result = await analyzeAndApplyHubSpotTask(orgId, taskId, refresh);
+          if (isLegacyNoopApplyResult(result)) {
+            throw new Error(
+              "L'API appelee a renvoye une ancienne reponse qui laisse la tache en retard. Redemarre le backend local et relance l'analyse.",
+            );
+          }
           applyTaskResultToState(taskId, result);
 
           return result;
@@ -426,7 +774,7 @@ export const TasksView = ({ hubspotPortalId, lastUpdates, orgId, prospects, sele
           lastError = taskError;
 
           if (attempt < TASK_MAX_ATTEMPTS) {
-            await wait(600 * attempt);
+            await wait(1_200 * attempt);
           }
         }
       }
@@ -443,11 +791,19 @@ export const TasksView = ({ hubspotPortalId, lastUpdates, orgId, prospects, sele
   };
 
   const handleAnalyzeTask = async (taskId: string, refresh = false) => {
+    const sourceTask = tasks.find((task) => task.id === taskId) ?? null;
+
     try {
       setAnalysisLoadingId(taskId);
       setError(null);
       setTaskActionMessage(null);
       const result = await runTaskAnalysisWithRetry(taskId, refresh);
+      setSelectedTaskAnalysis({
+        accountLabel: sourceTask ? getTaskAccountLabel(sourceTask) : null,
+        analysis: result.analysis,
+        taskId,
+        title: sourceTask?.title ?? result.createdTask?.title ?? result.completedTask?.title ?? `Tache ${taskId}`,
+      });
       setTaskActionMessage(result.message);
     } catch (analysisError) {
       setError(formatTasksError(analysisError));
@@ -458,7 +814,14 @@ export const TasksView = ({ hubspotPortalId, lastUpdates, orgId, prospects, sele
   };
 
   const handleProcessOverdueTasks = async () => {
-    const taskIds = overdueTasks.map((task) => task.id);
+    if (!selectedOwnerId) {
+      return;
+    }
+
+    setError(null);
+    setTaskActionMessage(null);
+
+    let taskIds = getOverdueOpenTaskIds(await fetchAndCommitTasks(selectedOwnerId));
 
     if (taskIds.length === 0) {
       return;
@@ -469,69 +832,86 @@ export const TasksView = ({ hubspotPortalId, lastUpdates, orgId, prospects, sele
       done: 0,
       failed: 0,
     });
-    setError(null);
-    setTaskActionMessage(null);
-
     let done = 0;
     let failed = 0;
+    const processedTaskIds = new Set<string>();
 
-    for (let index = 0; index < taskIds.length; index += TASK_BATCH_SIZE) {
-      const batch = taskIds.slice(index, index + TASK_BATCH_SIZE);
-      const results = await Promise.allSettled(batch.map((taskId) => runTaskAnalysisWithRetry(taskId, true)));
+    for (let pass = 0; pass < 10 && taskIds.length > 0; pass += 1) {
+      for (let index = 0; index < taskIds.length; index += TASK_BATCH_SIZE) {
+        const batch = taskIds.slice(index, index + TASK_BATCH_SIZE);
+        const results = await Promise.allSettled(batch.map((taskId) => runTaskAnalysisWithRetry(taskId, true)));
 
-      done += results.filter((result) => result.status === "fulfilled").length;
-      failed += results.filter((result) => result.status === "rejected").length;
-      setBatchProgress({
-        total: taskIds.length,
-        done,
-        failed,
-      });
+        for (const taskId of batch) {
+          processedTaskIds.add(taskId);
+        }
+
+        done += results.filter((result) => result.status === "fulfilled").length;
+        failed += results.filter((result) => result.status === "rejected").length;
+        setBatchProgress({
+          total: done + failed + Math.max(0, taskIds.length - index - TASK_BATCH_SIZE),
+          done,
+          failed,
+        });
+      }
+
+      const refreshedTasks = await fetchAndCommitTasks(selectedOwnerId);
+      taskIds = getOverdueOpenTaskIds(refreshedTasks).filter((taskId) => !processedTaskIds.has(taskId));
+
+      if (taskIds.length > 0) {
+        setBatchProgress({
+          total: done + failed + taskIds.length,
+          done,
+          failed,
+        });
+      }
     }
 
-    setTaskActionMessage(`${done} tache(s) en retard traitee(s), ${failed} echec(s).`);
+    const remainingOverdueCount = getOverdueOpenTaskIds(tasksRef.current).length;
+
+    setBatchProgress({
+      total: done + failed,
+      done,
+      failed,
+    });
+
+    setTaskActionMessage(
+      remainingOverdueCount === 0
+        ? `${done} tache(s) en retard traitee(s), ${failed} echec(s).`
+        : `${done} tache(s) traitee(s), ${failed} echec(s), ${remainingOverdueCount} encore en retard apres refresh.`,
+    );
 
     if (failed > 0) {
       setError(`${failed} tache(s) n'ont pas pu etre traitees apres retry.`);
+    } else if (remainingOverdueCount > 0) {
+      setError(`${remainingOverdueCount} tache(s) restent en retard. Relance l'analyse pour traiter la vague suivante.`);
     }
   };
 
-  const batchIsRunning = batchProgress !== null && batchProgress.done + batchProgress.failed < batchProgress.total;
+  const toggleTaskSection = (sectionId: TaskSectionId): void => {
+    setCollapsedSections((current) => ({
+      ...current,
+      [sectionId]: !current[sectionId],
+    }));
+  };
 
   return (
-    <section className="ae-view-panel" aria-label="Taches HubSpot">
-      <div className="ae-view-title ae-task-titlebar">
+    <section className="ae-view-panel ae-tasks-light-page" aria-label="Taches HubSpot">
+      <div className="ae-view-title ae-task-titlebar ae-tasks-light-titlebar">
         <div>
-          <p className="ae-eyebrow">Taches</p>
-          <h2>Actions HubSpot live</h2>
+          <h2>Taches</h2>
+          <span>/ {new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long", year: "numeric" }).format(new Date())}</span>
         </div>
-        <button className="ae-icon-action" disabled={isLoading || !selectedOwnerId} onClick={loadTasks} type="button">
-          <RefreshCw size={16} />
-          <span>{isLoading ? "Refresh..." : "Refresh"}</span>
-        </button>
-      </div>
-
-      <div className="ae-task-bulkbar">
         <button
-          disabled={!selectedOwnerId || overdueTasks.length === 0 || batchIsRunning}
-          onClick={handleProcessOverdueTasks}
+          aria-label="Rafraichir les taches"
+          className="ae-icon-action ae-task-refresh"
+          disabled={isLoading || !selectedOwnerId}
+          onClick={loadTasks}
+          title="Rafraichir"
           type="button"
         >
-          <Brain size={15} />
-          <span>
-            {batchIsRunning
-              ? `Traitement ${batchProgress.done + batchProgress.failed}/${batchProgress.total}`
-              : `Traiter ${overdueTasks.length} en retard`}
-          </span>
+          <RefreshCw size={16} />
         </button>
-        {batchProgress ? (
-          <small>
-            Batchs de {TASK_BATCH_SIZE} · {batchProgress.done} reussie(s) · {batchProgress.failed} echec(s)
-          </small>
-        ) : null}
       </div>
-
-      {error ? <p className="ae-admin-error">{error}</p> : null}
-      {taskActionMessage ? <p className="ae-admin-success">{taskActionMessage}</p> : null}
 
       <div className="ae-task-filters" aria-label="Filtres des taches">
         <label className="ae-task-search">
@@ -539,122 +919,189 @@ export const TasksView = ({ hubspotPortalId, lastUpdates, orgId, prospects, sele
           <input
             aria-label="Rechercher une tache"
             onChange={(event) => setSearchTerm(event.target.value)}
-            placeholder="Rechercher par titre, deal ou contenu"
+            placeholder="Rechercher une tache..."
             value={searchTerm}
           />
         </label>
         <select
-          aria-label="Filtrer par periode"
-          onChange={(event) => setDateFilter(event.target.value as TaskDateFilter)}
-          value={dateFilter}
+          aria-label="Filtrer par commercial"
+          onChange={(event) => onOwnerChange?.(event.target.value)}
+          value={selectedOwnerId ?? ""}
         >
-          <option value="all">Toutes les periodes</option>
-          <option value="overdue">En retard</option>
-          <option value="today">Aujourd'hui</option>
-          <option value="upcoming">A venir</option>
-          <option value="noDueDate">Sans echeance</option>
+          <option value="">{owners.length > 0 ? "Tous les reps" : selectedOwnerName}</option>
+          {selectedOwnerId && !ownerById.has(selectedOwnerId) ? (
+            <option value={selectedOwnerId}>{selectedOwnerName}</option>
+          ) : null}
+          {owners.map((owner) => (
+            <option key={owner.ownerId} value={owner.ownerId}>
+              {owner.name}
+            </option>
+          ))}
         </select>
-        <select
-          aria-label="Filtrer par priorite"
-          onChange={(event) => setPriorityFilter(event.target.value as TaskPriorityFilter)}
-          value={priorityFilter}
+        <button
+          className="ae-task-analyze-button"
+          disabled={!selectedOwnerId || overdueTasks.length === 0 || batchIsRunning}
+          onClick={handleProcessOverdueTasks}
+          type="button"
         >
-          <option value="all">Toutes les priorites</option>
-          <option value="none">Sans priorite</option>
-          <option value="high">High</option>
-          <option value="medium">Medium</option>
-          <option value="low">Low</option>
-        </select>
-        <strong>{filteredTaskCount} / {enrichedTasks.length}</strong>
+          <Brain size={15} />
+          <span>{analyzeButtonLabel}</span>
+        </button>
       </div>
 
-      <div className="ae-task-list">
-        {taskSections.map((section) =>
-          section.tasks.length > 0 ? (
-            <section className={`ae-task-section ${section.id}`} key={section.id} aria-label={section.label}>
-              <div className="ae-task-section-heading">
-                <div>
-                  <h3>{section.label}</h3>
-                  <span>{section.caption}</span>
-                </div>
-                <strong>{section.tasks.length}</strong>
-              </div>
-              <div className="ae-task-section-list">
-                {section.tasks.map((task) => (
-                  <article className="ae-task-item ae-hubspot-task-item" key={task.id}>
-                    <div>
-                      <strong>
-                        {getHubSpotRecordUrl(hubspotPortalId, "0-27", task.id) ? (
-                          <a
-                            href={getHubSpotRecordUrl(hubspotPortalId, "0-27", task.id) ?? undefined}
-                            rel="noreferrer"
-                            target="_blank"
-                          >
-                            {task.title}
-                          </a>
-                        ) : (
-                          task.title
-                        )}
-                      </strong>
-                      {getTaskAccountLabel(task) ? (
-                        <em className="ae-task-account">
-                          {task.associatedCompanyIds[0] && task.companyName ? (
+      <div className="ae-task-metrics" aria-label="Resume des taches">
+        <article className="overdue">
+          <span>En retard</span>
+          <strong>{overdueTaskCount}</strong>
+          <small>A traiter en priorite</small>
+        </article>
+        <article className="today">
+          <span>Aujourd'hui</span>
+          <strong>{todayTaskCount}</strong>
+          <small>Taches du jour restantes</small>
+        </article>
+        <article>
+          <span>Cette semaine</span>
+          <strong>{upcomingTaskCount}</strong>
+          <small>Taches planifiees</small>
+        </article>
+        <article>
+          <span>Plus tard</span>
+          <strong>{laterTaskCount}</strong>
+          <small>Apres cette semaine</small>
+        </article>
+      </div>
+
+      <div className="ae-task-tabs" aria-label="Filtrer par periode">
+        {taskFilterTabs.map((tab) => (
+          <button
+            className={dateFilter === tab.id ? "active" : ""}
+            key={tab.id}
+            onClick={() => setDateFilter(tab.id)}
+            type="button"
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {batchProgress ? (
+        <div className="ae-task-bulkbar">
+          <small>
+            Batchs de {TASK_BATCH_SIZE} · {batchProgress.done} reussie(s) · {batchProgress.failed} echec(s)
+          </small>
+        </div>
+      ) : null}
+
+      {error ? <p className="ae-admin-error">{error}</p> : null}
+      {taskActionMessage ? <p className="ae-admin-success">{taskActionMessage}</p> : null}
+
+      <div className="ae-task-workspace">
+        <div className="ae-task-list">
+          {taskSections.map((section) => {
+            const isCollapsed = Boolean(collapsedSections[section.id]);
+
+            return section.tasks.length > 0 ? (
+              <section
+                className={`ae-task-section ${section.id}${isCollapsed ? " collapsed" : ""}`}
+                key={section.id}
+                aria-label={section.label}
+              >
+                <button
+                  aria-expanded={!isCollapsed}
+                  className="ae-task-section-heading"
+                  onClick={() => toggleTaskSection(section.id)}
+                  type="button"
+                >
+                  <div>
+                    <h3>{section.label}</h3>
+                    <span>{section.caption}</span>
+                  </div>
+                  <strong>{section.tasks.length}</strong>
+                  <ChevronDown size={16} />
+                </button>
+                {!isCollapsed ? (
+                  <div className="ae-task-section-list">
+                  {section.tasks.map((task) => (
+                    <article className="ae-task-item ae-hubspot-task-item" key={task.id}>
+                      <div className={`ae-task-avatar priority-${task.priority ?? "none"}`} aria-hidden="true">
+                        <CircleDot size={14} />
+                      </div>
+                      <div className="ae-task-main">
+                        <strong>
+                          {getHubSpotRecordUrl(hubspotPortalId, "0-27", task.id) ? (
                             <a
-                              href={getHubSpotRecordUrl(hubspotPortalId, "0-2", task.associatedCompanyIds[0]) ?? undefined}
+                              href={getHubSpotRecordUrl(hubspotPortalId, "0-27", task.id) ?? undefined}
                               rel="noreferrer"
                               target="_blank"
                             >
-                              {task.companyName}
+                              {task.title}
                             </a>
                           ) : (
-                            task.companyName
+                            task.title
                           )}
-                          {task.companyName && task.contactName ? " · " : ""}
-                          {task.associatedContactIds[0] && task.contactName ? (
-                            <a
-                              href={getHubSpotRecordUrl(hubspotPortalId, "0-1", task.associatedContactIds[0]) ?? undefined}
-                              rel="noreferrer"
-                              target="_blank"
-                            >
-                              {task.contactName}
-                            </a>
+                        </strong>
+                        <div className="ae-task-subline">
+                          {getTaskAccountLabel(task) ? (
+                            <em className="ae-task-account">
+                              {task.associatedCompanyIds[0] && task.companyName ? (
+                                <a
+                                  href={getHubSpotRecordUrl(hubspotPortalId, "0-2", task.associatedCompanyIds[0]) ?? undefined}
+                                  rel="noreferrer"
+                                  target="_blank"
+                                >
+                                  {task.companyName}
+                                </a>
+                              ) : (
+                                task.companyName
+                              )}
+                              {task.companyName && task.contactName ? " · " : ""}
+                              {task.associatedContactIds[0] && task.contactName ? (
+                                <a
+                                  href={getHubSpotRecordUrl(hubspotPortalId, "0-1", task.associatedContactIds[0]) ?? undefined}
+                                  rel="noreferrer"
+                                  target="_blank"
+                                >
+                                  {task.contactName}
+                                </a>
+                              ) : (
+                                task.contactName
+                              )}
+                            </em>
                           ) : (
-                            task.contactName
+                            <span className="ae-task-context" title={task.dealName ?? task.body ?? undefined}>
+                              {task.dealName ?? formatTaskText(task.body)}
+                            </span>
                           )}
-                        </em>
-                      ) : null}
-                      <span title={task.dealName ?? task.body ?? undefined}>
-                        {task.dealName ?? truncateTaskText(task.body)}
-                      </span>
-                      <small>
-                        {statusLabels[task.status]} · {getTaskDueLabel(task.dueAt)}
-                        {task.lastUpdate ? ` · Last update: ${task.lastUpdate.reason ?? "Webhook HubSpot"}` : ""}
-                      </small>
-                      {analysisByTaskId[task.id] ? (
-                        <div className="ae-task-analysis">
-                          <strong>
-                            {taskTypeLabels[analysisByTaskId[task.id].taskType]} ·{" "}
-                            {recommendationLabels[analysisByTaskId[task.id].recommendation]} ·{" "}
-                            {priorityLabels[analysisByTaskId[task.id].priority]}
-                          </strong>
-                          <span>{analysisByTaskId[task.id].suggestedAction}</span>
-                          <small>
-                            {analysisByTaskId[task.id].rationale}
-                            {analysisByTaskId[task.id].shouldReschedule &&
-                            analysisByTaskId[task.id].suggestedDueInDays !== null
-                              ? ` · Replanifier J+${analysisByTaskId[task.id].suggestedDueInDays}`
-                              : ""}
-                          </small>
+                          <div className="ae-task-tags" aria-label="Priorite et urgence">
+                            {task.priority ? (
+                              <span className={`ae-task-tag priority-${task.priority}`}>
+                                {priorityLabels[task.priority]}
+                              </span>
+                            ) : null}
+                            <span className={`ae-task-tag urgency-${getTaskDateBucket(task.dueAt)}`}>
+                              {taskUrgencyLabels[getTaskDateBucket(task.dueAt)]}
+                            </span>
+                          </div>
                         </div>
-                      ) : null}
-                    </div>
-                    <div className="ae-task-priority-controls" aria-label="Priorite de la tache">
+                      </div>
+                      <div className="ae-task-meta">
+                        <small className={`ae-task-due ${getTaskDateBucket(task.dueAt)}`}>
+                          <i aria-hidden="true" />
+                          {getTaskDueShortLabel(task.dueAt)}
+                        </small>
+                        {task.lastUpdate ? <small>{task.lastUpdate.reason ?? "Webhook HubSpot"}</small> : null}
+                        <span className="ae-task-owner" title={statusLabels[task.status]}>
+                          {getTaskOwnerInitials(task)}
+                        </span>
+                      </div>
                       <button
+                        className="ae-task-inline-analyze"
                         disabled={analysisLoadingId === task.id || analysisApplyingId === task.id || processingTaskIds[task.id]}
                         onClick={() => handleAnalyzeTask(task.id, Boolean(analysisByTaskId[task.id]))}
                         type="button"
                       >
-                        <Brain size={14} />
+                        <Brain size={13} />
                         <span>
                           {analysisApplyingId === task.id
                             ? "Action..."
@@ -663,40 +1110,122 @@ export const TasksView = ({ hubspotPortalId, lastUpdates, orgId, prospects, sele
                               : "Analyser"}
                         </span>
                       </button>
-                      {taskPriorityOptions.map((priority) => (
+                      <div className="ae-task-priority-controls" aria-label="Priorite de la tache">
                         <button
-                          aria-pressed={task.priority === priority}
-                          className={task.priority === priority ? "active" : ""}
-                          disabled={priorityUpdatingId === task.id}
-                          key={priority ?? "none"}
-                          onClick={() => handlePriorityChange(task.id, priority)}
+                          disabled={analysisLoadingId === task.id || analysisApplyingId === task.id || processingTaskIds[task.id]}
+                          onClick={() => handleAnalyzeTask(task.id, Boolean(analysisByTaskId[task.id]))}
                           type="button"
                         >
-                          {priority === "high" ? <ArrowUp size={14} /> : null}
-                          <span>{priority ? priorityLabels[priority] : "Aucune"}</span>
+                          <Brain size={14} />
+                          <span>
+                            {analysisApplyingId === task.id
+                              ? "Action..."
+                              : analysisLoadingId === task.id || processingTaskIds[task.id]
+                                ? "Analyse..."
+                                : "Analyser"}
+                          </span>
                         </button>
-                      ))}
-                    </div>
-                  </article>
-                ))}
-              </div>
-            </section>
-          ) : null,
-        )}
-        {selectedOwnerId && enrichedTasks.length > 0 ? (
-          <div className="ae-task-summary" aria-label="Resume des taches">
-            <span>{taskSections.find((section) => section.id === "overdue")?.tasks.length ?? 0} en retard</span>
-            <span>{taskSections.find((section) => section.id === "today")?.tasks.length ?? 0} aujourd'hui</span>
-            <span>{taskSections.find((section) => section.id === "upcoming")?.tasks.length ?? 0} a venir</span>
+                        {taskPriorityOptions.map((priority) => (
+                          <button
+                            aria-pressed={task.priority === priority}
+                            className={task.priority === priority ? "active" : ""}
+                            disabled={priorityUpdatingId === task.id}
+                            key={priority ?? "none"}
+                            onClick={() => handlePriorityChange(task.id, priority)}
+                            type="button"
+                          >
+                            {priority === "high" ? <ArrowUp size={14} /> : null}
+                            <span>{priority ? priorityLabels[priority] : "Aucune"}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </article>
+                  ))}
+                  </div>
+                ) : null}
+              </section>
+            ) : null;
+          })}
+          {!selectedOwnerId ? <p className="ae-empty">Selectionne un owner HubSpot pour charger ses taches.</p> : null}
+          {selectedOwnerId && enrichedTasks.length === 0 && !isLoading ? (
+            <p className="ae-empty">Aucune tache HubSpot ouverte.</p>
+          ) : null}
+          {selectedOwnerId && enrichedTasks.length > 0 && filteredTaskCount === 0 ? (
+            <p className="ae-empty">Aucune tache ne correspond aux filtres.</p>
+          ) : null}
+        </div>
+
+        <aside className="ae-task-digest" aria-label="Digest du jour">
+          <div>
+            <strong>{filteredTaskCount}</strong>
+            <span>{filteredTaskCount === 1 ? "tache" : "taches"}</span>
+            <small>{filteredTaskCount === 1 ? "affichee" : "affichees"}</small>
           </div>
-        ) : null}
-        {!selectedOwnerId ? <p className="ae-empty">Selectionne un owner HubSpot pour charger ses taches.</p> : null}
-        {selectedOwnerId && enrichedTasks.length === 0 && !isLoading ? (
-          <p className="ae-empty">Aucune tache HubSpot ouverte.</p>
-        ) : null}
-        {selectedOwnerId && enrichedTasks.length > 0 && filteredTaskCount === 0 ? (
-          <p className="ae-empty">Aucune tache ne correspond aux filtres.</p>
-        ) : null}
+          <div className="ae-task-completion">
+            <CheckCircle2 size={16} />
+            <div>
+              <strong>Charge ouverte</strong>
+              <small>{openTasks.length} taches a traiter</small>
+            </div>
+          </div>
+          {selectedTaskAnalysis ? (
+            <section className="ae-task-analysis-panel">
+              <h3>Analyse de tache</h3>
+              <strong>{selectedTaskAnalysis.title}</strong>
+              {selectedTaskAnalysis.accountLabel ? <small>{selectedTaskAnalysis.accountLabel}</small> : null}
+              <div>
+                <span>{recommendationLabels[selectedTaskAnalysis.analysis.recommendation]}</span>
+                <span>{taskTypeLabels[selectedTaskAnalysis.analysis.taskType]}</span>
+                <span>{priorityLabels[selectedTaskAnalysis.analysis.priority]}</span>
+              </div>
+              <div className="ae-task-analysis-detail">
+                <span>Action recommandee</span>
+                <p>{selectedTaskAnalysis.analysis.suggestedAction}</p>
+              </div>
+              <div className="ae-task-analysis-detail">
+                <span>Justification</span>
+                <p>{selectedTaskAnalysis.analysis.rationale}</p>
+              </div>
+              {selectedTaskAnalysis.analysis.shouldReschedule && selectedTaskAnalysis.analysis.suggestedDueInDays !== null ? (
+                <small>Replanifier J+{selectedTaskAnalysis.analysis.suggestedDueInDays}</small>
+              ) : null}
+            </section>
+          ) : null}
+          <section>
+            <h3>Focus Jarvis — Aujourd'hui</h3>
+            <p>
+              {overdueTaskCount > 0
+                ? `${overdueTaskCount} tache(s) en retard - commencer par ${urgentTask?.companyName ?? urgentTask?.title ?? "la priorite la plus ancienne"}.`
+                : todayTaskCount > 0
+                  ? `${todayTaskCount} tache(s) aujourd'hui - traiter les actions les plus proches de leur echeance.`
+                  : "Aucune urgence detectee sur les taches ouvertes."}
+            </p>
+            <p>
+              {urgentTask
+                ? `${urgentTask.title}${urgentTask.dealName ? ` sur ${urgentTask.dealName}` : ""}: ${getTaskDueLabel(urgentTask.dueAt)}.`
+                : "Connecte un owner HubSpot pour afficher les priorites du jour."}
+            </p>
+            <p>
+              {nextTask
+                ? `${nextTask.title}${nextTask.companyName ? ` - ${nextTask.companyName}` : ""}.`
+                : "La prochaine action apparaitra ici quand la queue sera chargee."}
+            </p>
+          </section>
+          <section className="ae-task-load">
+            <h3>Charge par commercial</h3>
+            {ownerWorkload.length > 0 ? (
+              ownerWorkload.map((owner) => (
+                <div key={owner.id}>
+                  <span>{owner.initials}</span>
+                  <strong>{owner.label}</strong>
+                  <small>{owner.overdueCount > 0 ? `${owner.overdueCount} retard` : `${owner.taskCount} taches`}</small>
+                </div>
+              ))
+            ) : (
+              <p>Aucune charge visible pour ce filtre.</p>
+            )}
+          </section>
+        </aside>
       </div>
     </section>
   );
