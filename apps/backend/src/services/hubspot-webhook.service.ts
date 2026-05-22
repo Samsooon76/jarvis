@@ -95,12 +95,26 @@ type OrganizationPortalRow = {
   hubspot_portal_id: string | null;
 };
 
+type HubSpotDealScopeRow = {
+  hubspot_deal_id: string;
+};
+
 export type AcceptedHubSpotWebhookBatch = {
   accepted: number;
   duplicate: number;
+  ignored: number;
 };
 
 const SIGNATURE_TIMESTAMP_TOLERANCE_MS = 5 * 60 * 1000;
+const DEAL_OBJECT_TYPE_IDS = new Set(["0-3", "deal", "deals"]);
+const INTERESTING_DEAL_PROPERTIES = new Set([
+  "amount",
+  "closedate",
+  "dealstage",
+  "hs_deal_stage_probability",
+  "hubspot_owner_id",
+  "pipeline",
+]);
 
 const getHeader = (headers: HubSpotWebhookHeaderMap, name: string): string | null => {
   const directValue = headers[name] ?? headers[name.toLowerCase()];
@@ -229,6 +243,42 @@ const readStringArray = (record: Record<string, unknown>, key: string): string[]
     .map((item) => (typeof item === "string" || typeof item === "number" ? String(item) : null))
     .filter((item): item is string => Boolean(item?.trim()));
 };
+
+const isInterestingDealProperty = (propertyName: string | null): boolean =>
+  !propertyName || INTERESTING_DEAL_PROPERTIES.has(propertyName);
+
+const isDealObjectTypeId = (objectTypeId: string | null): boolean =>
+  Boolean(objectTypeId && DEAL_OBJECT_TYPE_IDS.has(objectTypeId));
+
+const resolveAssociationDealId = (event: NormalizedHubSpotWebhookEvent): string | null => {
+  if (isDealObjectTypeId(event.association.fromObjectTypeId)) {
+    return event.association.fromObjectId;
+  }
+
+  if (isDealObjectTypeId(event.association.toObjectTypeId)) {
+    return event.association.toObjectId;
+  }
+
+  return null;
+};
+
+const resolveDirectDealId = (event: NormalizedHubSpotWebhookEvent): string | null => {
+  if (isDealObjectTypeId(event.objectTypeId)) {
+    return event.objectId;
+  }
+
+  if (event.subscriptionType.startsWith("deal.")) {
+    return event.objectId;
+  }
+
+  return null;
+};
+
+const resolveCandidateDealId = (event: NormalizedHubSpotWebhookEvent): string | null =>
+  resolveDirectDealId(event) ?? resolveAssociationDealId(event);
+
+const isPrivacyDeletionEvent = (event: NormalizedHubSpotWebhookEvent): boolean =>
+  event.subscriptionType === "contact.privacyDeletion";
 
 const normalizeTimestamp = (value: string | number | null): string | null => {
   if (typeof value === "number" && Number.isFinite(value)) {
@@ -359,6 +409,122 @@ const loadOrgIdByPortalId = async (portalIds: string[]): Promise<Map<string, str
   );
 };
 
+const loadSalesAeOwnerIdsByOrg = async (orgIds: string[]): Promise<Map<string, Set<string>>> => {
+  if (orgIds.length === 0) {
+    return new Map();
+  }
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("users")
+    .select("org_id, hubspot_owner_id")
+    .in("org_id", orgIds)
+    .not("hubspot_owner_id", "is", null);
+
+  if (error) {
+    throw new Error(`Impossible de charger les owners Sales AE: ${error.message}`);
+  }
+
+  const ownerIdsByOrg = new Map<string, Set<string>>();
+
+  for (const row of (data ?? []) as Array<{ org_id: string | null; hubspot_owner_id: string | null }>) {
+    if (!row.org_id || !row.hubspot_owner_id) {
+      continue;
+    }
+
+    const ownerIds = ownerIdsByOrg.get(row.org_id) ?? new Set<string>();
+    ownerIds.add(row.hubspot_owner_id);
+    ownerIdsByOrg.set(row.org_id, ownerIds);
+  }
+
+  return ownerIdsByOrg;
+};
+
+const loadEligibleOpenDealIdsByOrg = async (
+  dealIdsByOrg: Map<string, Set<string>>,
+  ownerIdsByOrg: Map<string, Set<string>>,
+): Promise<Map<string, Set<string>>> => {
+  const eligibleDealIdsByOrg = new Map<string, Set<string>>();
+  const supabase = getSupabaseAdmin();
+
+  for (const [orgId, dealIds] of dealIdsByOrg.entries()) {
+    const salesAeOwnerIds = ownerIdsByOrg.get(orgId);
+
+    if (!salesAeOwnerIds?.size || dealIds.size === 0) {
+      continue;
+    }
+
+    const { data, error } = await supabase
+      .from("hubspot_deals")
+      .select("hubspot_deal_id")
+      .eq("org_id", orgId)
+      .eq("deal_lifecycle_status", "pending")
+      .in("hubspot_deal_id", Array.from(dealIds))
+      .in("hubspot_owner_id", Array.from(salesAeOwnerIds));
+
+    if (error) {
+      throw new Error(`Impossible de filtrer les deals HubSpot realtime: ${error.message}`);
+    }
+
+    eligibleDealIdsByOrg.set(
+      orgId,
+      new Set(((data ?? []) as HubSpotDealScopeRow[]).map((row) => row.hubspot_deal_id)),
+    );
+  }
+
+  return eligibleDealIdsByOrg;
+};
+
+const filterRealtimeScopedEvents = async (
+  events: NormalizedHubSpotWebhookEvent[],
+  orgIdByPortalId: Map<string, string>,
+): Promise<{ scopedEvents: NormalizedHubSpotWebhookEvent[]; ignored: number }> => {
+  const orgIds = Array.from(new Set(Array.from(orgIdByPortalId.values())));
+  const ownerIdsByOrg = await loadSalesAeOwnerIdsByOrg(orgIds);
+  const dealIdsByOrg = new Map<string, Set<string>>();
+
+  for (const event of events) {
+    const orgId = orgIdByPortalId.get(event.portalId);
+    const dealId = resolveCandidateDealId(event);
+
+    if (!orgId || !dealId || !isInterestingDealProperty(event.propertyName)) {
+      continue;
+    }
+
+    const dealIds = dealIdsByOrg.get(orgId) ?? new Set<string>();
+    dealIds.add(dealId);
+    dealIdsByOrg.set(orgId, dealIds);
+  }
+
+  const eligibleDealIdsByOrg = await loadEligibleOpenDealIdsByOrg(dealIdsByOrg, ownerIdsByOrg);
+  const scopedEvents = events.filter((event) => {
+    const orgId = orgIdByPortalId.get(event.portalId);
+
+    if (!orgId) {
+      return false;
+    }
+
+    if (isPrivacyDeletionEvent(event)) {
+      return true;
+    }
+
+    const dealId = resolveCandidateDealId(event);
+
+    if (dealId) {
+      return Boolean(isInterestingDealProperty(event.propertyName) && eligibleDealIdsByOrg.get(orgId)?.has(dealId));
+    }
+
+    // Activity changes without a deal association are intentionally dropped at
+    // ingest time. They were the main source of unbounded webhook noise.
+    return false;
+  });
+
+  return {
+    scopedEvents,
+    ignored: events.length - scopedEvents.length,
+  };
+};
+
 const persistWebhookEvents = async (
   events: NormalizedHubSpotWebhookEvent[],
 ): Promise<{
@@ -376,7 +542,8 @@ const persistWebhookEvents = async (
 
   const portalIds = Array.from(new Set(events.map((event) => event.portalId)));
   const orgIdByPortalId = await loadOrgIdByPortalId(portalIds);
-  const rows: HubSpotWebhookEventInsertRow[] = events.map((event) => {
+  const { scopedEvents, ignored: scopeIgnored } = await filterRealtimeScopedEvents(events, orgIdByPortalId);
+  const rows: HubSpotWebhookEventInsertRow[] = scopedEvents.map((event) => {
     const orgId = orgIdByPortalId.get(event.portalId) ?? null;
 
     return {
@@ -399,6 +566,14 @@ const persistWebhookEvents = async (
     };
   });
 
+  if (rows.length === 0) {
+    return {
+      inserted: [],
+      duplicate: 0,
+      ignored: events.length,
+    };
+  }
+
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("hubspot_webhook_events")
@@ -418,7 +593,7 @@ const persistWebhookEvents = async (
   return {
     inserted,
     duplicate: Math.max(0, rows.length - inserted.length),
-    ignored,
+    ignored: ignored + scopeIgnored,
   };
 };
 
@@ -442,7 +617,7 @@ export const acceptHubSpotWebhookBatch = async ({
   }
 
   const events = parseHubSpotWebhookEvents(parsedBody);
-  const { inserted, duplicate } = await persistWebhookEvents(events);
+  const { inserted, duplicate, ignored } = await persistWebhookEvents(events);
   const eventsToProcess = inserted.filter((event) => event.org_id && event.processing_status === "queued");
 
   await Promise.all(
@@ -457,5 +632,6 @@ export const acceptHubSpotWebhookBatch = async ({
   return {
     accepted: eventsToProcess.length,
     duplicate,
+    ignored,
   };
 };

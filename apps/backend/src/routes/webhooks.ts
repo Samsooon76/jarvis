@@ -151,6 +151,7 @@ export const registerHubSpotWebhookRoutes = async (app: FastifyInstance): Promis
           {
             accepted: result.accepted,
             duplicate: result.duplicate,
+            ignored: result.ignored,
             requestUri: buildPublicRequestUri(request),
           },
           "Webhook HubSpot accepte.",
