@@ -115,6 +115,47 @@ const INTERESTING_DEAL_PROPERTIES = new Set([
   "hubspot_owner_id",
   "pipeline",
 ]);
+const WEBHOOK_SCOPE_CACHE_TTL_MS = 60 * 1000;
+
+type CacheEntry<T> = {
+  expiresAt: number;
+  value: T;
+};
+
+const salesAeOwnerIdsCache = new Map<string, CacheEntry<Set<string>>>();
+const eligibleOpenDealIdsCache = new Map<string, CacheEntry<Set<string>>>();
+const orgIdByPortalIdCache = new Map<string, CacheEntry<string | null>>();
+
+const getCachedValue = <T>(cache: Map<string, CacheEntry<T>>, key: string, now: number): T | null => {
+  const cached = cache.get(key);
+
+  if (!cached) {
+    return null;
+  }
+
+  if (cached.expiresAt <= now) {
+    cache.delete(key);
+
+    return null;
+  }
+
+  return cached.value;
+};
+
+const pruneExpiredCacheEntries = <T>(cache: Map<string, CacheEntry<T>>, now: number): void => {
+  for (const [key, cached] of cache.entries()) {
+    if (cached.expiresAt <= now) {
+      cache.delete(key);
+    }
+  }
+};
+
+const setCachedValue = <T>(cache: Map<string, CacheEntry<T>>, key: string, value: T, now: number): void => {
+  cache.set(key, {
+    expiresAt: now + WEBHOOK_SCOPE_CACHE_TTL_MS,
+    value,
+  });
+};
 
 const getHeader = (headers: HubSpotWebhookHeaderMap, name: string): string | null => {
   const directValue = headers[name] ?? headers[name.toLowerCase()];
@@ -392,21 +433,53 @@ const loadOrgIdByPortalId = async (portalIds: string[]): Promise<Map<string, str
     return new Map();
   }
 
+  const now = Date.now();
+  pruneExpiredCacheEntries(orgIdByPortalIdCache, now);
+  const orgIdByPortalId = new Map<string, string>();
+  const uncachedPortalIds: string[] = [];
+
+  for (const portalId of portalIds) {
+    const cachedOrgId = getCachedValue(orgIdByPortalIdCache, portalId, now);
+
+    if (cachedOrgId !== null) {
+      orgIdByPortalId.set(portalId, cachedOrgId);
+    } else if (orgIdByPortalIdCache.has(portalId)) {
+      continue;
+    } else {
+      uncachedPortalIds.push(portalId);
+    }
+  }
+
+  if (uncachedPortalIds.length === 0) {
+    return orgIdByPortalId;
+  }
+
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("organizations")
     .select("id, hubspot_portal_id")
-    .in("hubspot_portal_id", portalIds);
+    .in("hubspot_portal_id", uncachedPortalIds);
 
   if (error) {
     throw new Error(`Impossible de mapper les portals HubSpot: ${error.message}`);
   }
 
-  return new Map(
+  const loadedOrgIdByPortalId = new Map(
     ((data ?? []) as OrganizationPortalRow[])
       .filter((row) => row.hubspot_portal_id)
       .map((row) => [row.hubspot_portal_id ?? "", row.id]),
   );
+
+  for (const portalId of uncachedPortalIds) {
+    const orgId = loadedOrgIdByPortalId.get(portalId) ?? null;
+    setCachedValue(orgIdByPortalIdCache, portalId, orgId, now);
+
+    if (orgId) {
+      orgIdByPortalId.set(portalId, orgId);
+    }
+  }
+
+  return orgIdByPortalId;
 };
 
 const loadSalesAeOwnerIdsByOrg = async (orgIds: string[]): Promise<Map<string, Set<string>>> => {
@@ -414,37 +487,69 @@ const loadSalesAeOwnerIdsByOrg = async (orgIds: string[]): Promise<Map<string, S
     return new Map();
   }
 
+  const now = Date.now();
+  pruneExpiredCacheEntries(salesAeOwnerIdsCache, now);
+  const ownerIdsByOrg = new Map<string, Set<string>>();
+  const uncachedOrgIds: string[] = [];
+
+  for (const orgId of orgIds) {
+    const cachedOwnerIds = getCachedValue(salesAeOwnerIdsCache, orgId, now);
+
+    if (cachedOwnerIds) {
+      ownerIdsByOrg.set(orgId, new Set(cachedOwnerIds));
+    } else {
+      uncachedOrgIds.push(orgId);
+    }
+  }
+
+  if (uncachedOrgIds.length === 0) {
+    return ownerIdsByOrg;
+  }
+
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("users")
     .select("org_id, hubspot_owner_id")
-    .in("org_id", orgIds)
+    .in("org_id", uncachedOrgIds)
     .not("hubspot_owner_id", "is", null);
 
   if (error) {
     throw new Error(`Impossible de charger les owners Sales AE: ${error.message}`);
   }
 
-  const ownerIdsByOrg = new Map<string, Set<string>>();
+  const loadedOwnerIdsByOrg = new Map<string, Set<string>>();
 
   for (const row of (data ?? []) as Array<{ org_id: string | null; hubspot_owner_id: string | null }>) {
     if (!row.org_id || !row.hubspot_owner_id) {
       continue;
     }
 
-    const ownerIds = ownerIdsByOrg.get(row.org_id) ?? new Set<string>();
+    const ownerIds = loadedOwnerIdsByOrg.get(row.org_id) ?? new Set<string>();
     ownerIds.add(row.hubspot_owner_id);
-    ownerIdsByOrg.set(row.org_id, ownerIds);
+    loadedOwnerIdsByOrg.set(row.org_id, ownerIds);
+  }
+
+  for (const orgId of uncachedOrgIds) {
+    const ownerIds = loadedOwnerIdsByOrg.get(orgId) ?? new Set<string>();
+    setCachedValue(salesAeOwnerIdsCache, orgId, new Set(ownerIds), now);
+    ownerIdsByOrg.set(orgId, ownerIds);
   }
 
   return ownerIdsByOrg;
 };
+
+const getEligibleOpenDealIdCacheKey = (orgId: string, dealId: string, ownerIds: Set<string>): string =>
+  [orgId, dealId, Array.from(ownerIds).sort().join(",")].join("|");
 
 const loadEligibleOpenDealIdsByOrg = async (
   dealIdsByOrg: Map<string, Set<string>>,
   ownerIdsByOrg: Map<string, Set<string>>,
 ): Promise<Map<string, Set<string>>> => {
   const eligibleDealIdsByOrg = new Map<string, Set<string>>();
+  const uncachedDealIdsByOrg = new Map<string, Set<string>>();
+  const cacheKeysByOrgAndDealId = new Map<string, string>();
+  const now = Date.now();
+  pruneExpiredCacheEntries(eligibleOpenDealIdsCache, now);
   const supabase = getSupabaseAdmin();
 
   for (const [orgId, dealIds] of dealIdsByOrg.entries()) {
@@ -454,22 +559,62 @@ const loadEligibleOpenDealIdsByOrg = async (
       continue;
     }
 
+    const eligibleDealIds = eligibleDealIdsByOrg.get(orgId) ?? new Set<string>();
+    const uncachedDealIds = uncachedDealIdsByOrg.get(orgId) ?? new Set<string>();
+
+    for (const dealId of dealIds) {
+      const cacheKey = getEligibleOpenDealIdCacheKey(orgId, dealId, salesAeOwnerIds);
+      const cachedEligibleDealIds = getCachedValue(eligibleOpenDealIdsCache, cacheKey, now);
+
+      if (cachedEligibleDealIds) {
+        for (const eligibleDealId of cachedEligibleDealIds) {
+          eligibleDealIds.add(eligibleDealId);
+        }
+      } else {
+        cacheKeysByOrgAndDealId.set(`${orgId}:${dealId}`, cacheKey);
+        uncachedDealIds.add(dealId);
+      }
+    }
+
+    eligibleDealIdsByOrg.set(orgId, eligibleDealIds);
+
+    if (uncachedDealIds.size > 0) {
+      uncachedDealIdsByOrg.set(orgId, uncachedDealIds);
+    }
+  }
+
+  for (const [orgId, dealIds] of uncachedDealIdsByOrg.entries()) {
+    const salesAeOwnerIds = ownerIdsByOrg.get(orgId);
+
     const { data, error } = await supabase
       .from("hubspot_deals")
       .select("hubspot_deal_id")
       .eq("org_id", orgId)
       .eq("deal_lifecycle_status", "pending")
       .in("hubspot_deal_id", Array.from(dealIds))
-      .in("hubspot_owner_id", Array.from(salesAeOwnerIds));
+      .in("hubspot_owner_id", Array.from(salesAeOwnerIds ?? []));
 
     if (error) {
       throw new Error(`Impossible de filtrer les deals HubSpot realtime: ${error.message}`);
     }
 
-    eligibleDealIdsByOrg.set(
-      orgId,
-      new Set(((data ?? []) as HubSpotDealScopeRow[]).map((row) => row.hubspot_deal_id)),
-    );
+    const loadedEligibleDealIds = new Set(((data ?? []) as HubSpotDealScopeRow[]).map((row) => row.hubspot_deal_id));
+    const eligibleDealIds = eligibleDealIdsByOrg.get(orgId) ?? new Set<string>();
+
+    for (const dealId of dealIds) {
+      const cachedDealValue = loadedEligibleDealIds.has(dealId) ? new Set([dealId]) : new Set<string>();
+      const cacheKey = cacheKeysByOrgAndDealId.get(`${orgId}:${dealId}`);
+
+      if (cacheKey) {
+        setCachedValue(eligibleOpenDealIdsCache, cacheKey, cachedDealValue, now);
+      }
+
+      if (loadedEligibleDealIds.has(dealId)) {
+        eligibleDealIds.add(dealId);
+      }
+    }
+
+    eligibleDealIdsByOrg.set(orgId, eligibleDealIds);
   }
 
   return eligibleDealIdsByOrg;

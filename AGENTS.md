@@ -9,11 +9,10 @@ Etat audite et mis a jour le 26 mars 2026 dans `/Users/hugo/Downloads/jarvis`.
 - Monorepo `npm` avec workspaces:
   - `apps/backend`
   - `apps/extension`
-  - `apps/dashboard`
   - `packages/shared`
 - Backend `Fastify + TypeScript` demarrable
 - Extension Chrome `Manifest V3 + React + TypeScript`
-- Dashboard manager web en React
+- Dashboard manager web en React, integre dans `apps/extension`
 - Schema Supabase initial pose avec migrations SQL
 - RLS activee sur les tables principales
 - Seed de demo present dans Supabase

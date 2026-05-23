@@ -974,7 +974,7 @@ export const fetchHubSpotQueue = async (
   options: ApiRequestOptions = {},
 ): Promise<HubSpotQueueData> => {
   const payload = await getJson<HubSpotQueueDashboardPayload>(
-    apiPath("/api/hubspot/queue-dashboard", {
+    apiPath("/api/queue/dashboard", {
       orgId,
       hubspotOwnerId: preferredHubSpotOwnerId,
       live,

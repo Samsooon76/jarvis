@@ -57,6 +57,7 @@ export const env = {
     .map((origin) => origin.trim())
     .filter(Boolean),
   requireApiAuth: (process.env.REQUIRE_API_AUTH ?? (process.env.NODE_ENV === "production" ? "true" : "false")) === "true",
+  apiAuthToken: process.env.API_AUTH_TOKEN ?? "",
   apiPublicUrl,
   redisUrl: process.env.REDIS_URL ?? "",
   hubspotWebhookDebounceSeconds: Number(process.env.HUBSPOT_WEBHOOK_DEBOUNCE_SECONDS ?? 90),

@@ -21,8 +21,13 @@ const registerRawJsonParser = (app: FastifyInstance): void => {
 const registerCorsHook = (app: FastifyInstance): void => {
   app.addHook("onRequest", async (request, reply) => {
     const origin = request.headers.origin;
+    const isAllowedOrigin =
+      origin &&
+      env.allowedCorsOrigins.some((allowedOrigin) =>
+        allowedOrigin.endsWith("*") ? origin.startsWith(allowedOrigin.slice(0, -1)) : origin === allowedOrigin,
+      );
     const allowedOrigin =
-      origin && (env.nodeEnv !== "production" || env.allowedCorsOrigins.includes(origin)) ? origin : env.allowedCorsOrigins[0] ?? "";
+      origin && (env.nodeEnv !== "production" || isAllowedOrigin) ? origin : env.allowedCorsOrigins[0] ?? "";
 
     if (allowedOrigin) {
       reply.header("Access-Control-Allow-Origin", allowedOrigin);
@@ -57,6 +62,10 @@ const registerAuthHook = (app: FastifyInstance): void => {
         success: false,
         error: "Authentification requise.",
       });
+    }
+
+    if (env.apiAuthToken && token === env.apiAuthToken) {
+      return;
     }
 
     const { data, error } = await getSupabaseAdmin().auth.getUser(token);

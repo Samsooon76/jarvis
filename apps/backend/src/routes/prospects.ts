@@ -23,6 +23,8 @@ import {
   runFollowUpTaskForProspect,
 } from "../services/follow-up-task.service.js";
 import { getSupabaseAdmin } from "../db/client.js";
+import type { Json } from "../db/database.types.js";
+import { createJob, getJob, updateJob, type PersistentJobSnapshot } from "../services/job-store.js";
 import { invalidateQueueCache } from "../services/queue.service.js";
 
 type FollowUpTaskParams = {
@@ -205,37 +207,51 @@ type DealAnalysisJobSnapshot = {
   error: string | null;
 };
 
-const DEAL_ANALYSIS_JOB_TTL_MS = 60 * 60 * 1000;
-const dealAnalysisJobs = new Map<string, DealAnalysisJobSnapshot>();
+const DEAL_ANALYSIS_JOB_TYPE = "deal_analysis";
+const DEAL_ANALYSIS_JOB_LOG_LIMIT = 40;
 
-const cleanupDealAnalysisJobs = (): void => {
-  const cutoff = Date.now() - DEAL_ANALYSIS_JOB_TTL_MS;
-
-  for (const [jobId, job] of dealAnalysisJobs.entries()) {
-    if (new Date(job.updatedAt).getTime() < cutoff) {
-      dealAnalysisJobs.delete(jobId);
-    }
+const toDealAnalysisJobSnapshot = (
+  job: PersistentJobSnapshot<Json | null>,
+): DealAnalysisJobSnapshot | null => {
+  if (job.type !== DEAL_ANALYSIS_JOB_TYPE) {
+    return null;
   }
+
+  const result = job.result as DealAnalysisBundleResult | null;
+  const snapshot = result?.page.snapshot ?? null;
+
+  return {
+    jobId: job.id,
+    prospectId: snapshot?.prospectId ?? "",
+    orgId: job.orgId ?? snapshot?.orgId ?? null,
+    hubspotDealId: snapshot?.hubspotDealId ?? null,
+    status: job.status === "skipped" ? "failed" : job.status,
+    progress: job.progress,
+    currentStep: job.currentStep,
+    startedAt: job.startedAt,
+    updatedAt: job.updatedAt,
+    finishedAt: job.finishedAt,
+    logs: job.logs as DealAnalysisJobLog[],
+    result,
+    error: job.error,
+  };
 };
 
-const createDealAnalysisJob = (
+const loadDealAnalysisJob = async (jobId: string): Promise<DealAnalysisJobSnapshot | null> => {
+  const job = await getJob(jobId);
+  return job ? toDealAnalysisJobSnapshot(job) : null;
+};
+
+const createDealAnalysisJob = async (
   prospectId: string,
   body: DealAnalysisRunBody,
-): DealAnalysisJobSnapshot => {
-  cleanupDealAnalysisJobs();
-
+): Promise<DealAnalysisJobSnapshot> => {
   const now = new Date().toISOString();
-  const job: DealAnalysisJobSnapshot = {
-    jobId: randomUUID(),
-    prospectId,
+  const job = await createJob({
+    id: randomUUID(),
     orgId: body.orgId ?? null,
-    hubspotDealId: body.hubspotDealId ?? null,
-    status: "queued",
-    progress: 0,
+    type: DEAL_ANALYSIS_JOB_TYPE,
     currentStep: "Analyse du deal en attente",
-    startedAt: now,
-    updatedAt: now,
-    finishedAt: null,
     logs: [
       {
         at: now,
@@ -243,17 +259,23 @@ const createDealAnalysisJob = (
         message: "Job d'analyse complete du deal cree.",
       },
     ],
-    result: null,
-    error: null,
+  });
+
+  const snapshot = await loadDealAnalysisJob(job.id);
+
+  if (!snapshot) {
+    throw new Error("Job d'analyse deal invalide apres creation.");
+  }
+
+  return {
+    ...snapshot,
+    prospectId,
+    hubspotDealId: body.hubspotDealId ?? null,
   };
-
-  dealAnalysisJobs.set(job.jobId, job);
-
-  return job;
 };
 
-const markDealAnalysisJobRunning = (jobId: string, step: string, progress: number): void => {
-  const job = dealAnalysisJobs.get(jobId);
+const markDealAnalysisJobRunning = async (jobId: string, step: string, progress: number): Promise<void> => {
+  const job = await loadDealAnalysisJob(jobId);
 
   if (!job || job.status === "completed" || job.status === "failed") {
     return;
@@ -263,7 +285,6 @@ const markDealAnalysisJobRunning = (jobId: string, step: string, progress: numbe
   job.status = "running";
   job.progress = Math.max(job.progress, Math.min(99, Math.round(progress)));
   job.currentStep = step;
-  job.updatedAt = now;
   job.logs = [
     ...job.logs,
     {
@@ -271,11 +292,18 @@ const markDealAnalysisJobRunning = (jobId: string, step: string, progress: numbe
       level: "info" as const,
       message: step,
     },
-  ].slice(-40);
+  ].slice(-DEAL_ANALYSIS_JOB_LOG_LIMIT);
+
+  await updateJob(jobId, {
+    status: "running",
+    progress: job.progress,
+    currentStep: job.currentStep,
+    logs: job.logs,
+  });
 };
 
-const completeDealAnalysisJob = (jobId: string, result: DealAnalysisBundleResult): void => {
-  const job = dealAnalysisJobs.get(jobId);
+const completeDealAnalysisJob = async (jobId: string, result: DealAnalysisBundleResult): Promise<void> => {
+  const job = await loadDealAnalysisJob(jobId);
 
   if (!job) {
     return;
@@ -285,7 +313,6 @@ const completeDealAnalysisJob = (jobId: string, result: DealAnalysisBundleResult
   job.status = "completed";
   job.progress = 100;
   job.currentStep = "Analyse complete du deal terminee";
-  job.updatedAt = now;
   job.finishedAt = now;
   job.result = result;
   job.error = null;
@@ -296,11 +323,21 @@ const completeDealAnalysisJob = (jobId: string, result: DealAnalysisBundleResult
       level: "success" as const,
       message: "Analyse complete du deal disponible.",
     },
-  ].slice(-40);
+  ].slice(-DEAL_ANALYSIS_JOB_LOG_LIMIT);
+
+  await updateJob(jobId, {
+    status: "completed",
+    progress: 100,
+    currentStep: job.currentStep,
+    logs: job.logs,
+    result: result as unknown as Json,
+    error: null,
+    finishedAt: now,
+  });
 };
 
-const failDealAnalysisJob = (jobId: string, error: unknown): void => {
-  const job = dealAnalysisJobs.get(jobId);
+const failDealAnalysisJob = async (jobId: string, error: unknown): Promise<void> => {
+  const job = await loadDealAnalysisJob(jobId);
 
   if (!job) {
     return;
@@ -310,7 +347,6 @@ const failDealAnalysisJob = (jobId: string, error: unknown): void => {
   const message = error instanceof Error ? error.message : "Erreur inconnue pendant l'analyse du deal.";
   job.status = "failed";
   job.currentStep = "Analyse du deal en erreur";
-  job.updatedAt = now;
   job.finishedAt = now;
   job.error = message;
   job.logs = [
@@ -320,7 +356,16 @@ const failDealAnalysisJob = (jobId: string, error: unknown): void => {
       level: "error" as const,
       message,
     },
-  ].slice(-40);
+  ].slice(-DEAL_ANALYSIS_JOB_LOG_LIMIT);
+
+  await updateJob(jobId, {
+    status: "failed",
+    progress: job.progress,
+    currentStep: job.currentStep,
+    logs: job.logs,
+    error: message,
+    finishedAt: now,
+  });
 };
 
 export const registerProspectRoutes = async (app: FastifyInstance): Promise<void> => {
@@ -522,9 +567,7 @@ export const registerProspectRoutes = async (app: FastifyInstance): Promise<void
   app.get<{ Params: DealAnalysisJobParams; Reply: ApiResponse<DealAnalysisJobSnapshot> }>(
     "/api/prospects/deal-analysis-runs/:jobId",
     async (request, reply) => {
-      cleanupDealAnalysisJobs();
-
-      const job = dealAnalysisJobs.get(request.params.jobId);
+      const job = await loadDealAnalysisJob(request.params.jobId);
 
       if (!job) {
         return reply.code(404).send({
@@ -583,11 +626,11 @@ export const registerProspectRoutes = async (app: FastifyInstance): Promise<void
   app.post<{ Params: DealAnalysisRunParams; Body: DealAnalysisRunBody; Reply: ApiResponse<DealAnalysisJobSnapshot> }>(
     "/api/prospects/:id/deal-analysis-runs",
     async (request, reply) => {
-      const job = createDealAnalysisJob(request.params.id, request.body);
+      const job = await createDealAnalysisJob(request.params.id, request.body);
 
       void (async () => {
         try {
-          markDealAnalysisJobRunning(job.jobId, "Construction du contexte CRM et HubSpot", 15);
+          await markDealAnalysisJobRunning(job.jobId, "Construction du contexte CRM et HubSpot", 15);
           const result = await buildDealAnalysisBundleForProspect(request.params.id, {
             orgId: request.body.orgId ?? null,
             hubspotDealId: request.body.hubspotDealId ?? null,
@@ -595,8 +638,8 @@ export const registerProspectRoutes = async (app: FastifyInstance): Promise<void
             llmModel: request.body.llmModel ?? null,
             refresh: request.body.refresh ?? true,
           });
-          markDealAnalysisJobRunning(job.jobId, "Persistance des analyses du deal", 90);
-          completeDealAnalysisJob(job.jobId, result);
+          await markDealAnalysisJobRunning(job.jobId, "Persistance des analyses du deal", 90);
+          await completeDealAnalysisJob(job.jobId, result);
         } catch (error) {
           request.log.error(
             {
@@ -608,7 +651,7 @@ export const registerProspectRoutes = async (app: FastifyInstance): Promise<void
             },
             "Job d'analyse complete du deal en erreur.",
           );
-          failDealAnalysisJob(job.jobId, error);
+          await failDealAnalysisJob(job.jobId, error);
         }
       })();
 

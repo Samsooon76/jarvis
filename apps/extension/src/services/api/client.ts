@@ -13,6 +13,7 @@ const resolveApiBaseUrl = (): string => {
 };
 
 export const API_BASE_URL = resolveApiBaseUrl();
+const API_AUTH_STORAGE_KEY = "jarvis.apiAuthToken";
 
 export type ApiRequestOptions = {
   signal?: AbortSignal;
@@ -34,6 +35,31 @@ export const apiPath = (path: string, query: Record<string, ApiQueryValue> = {})
   const queryString = searchParams.toString();
 
   return queryString ? `${path}?${queryString}` : path;
+};
+
+const getApiAuthToken = (): string | null => {
+  const envToken = import.meta.env.VITE_API_AUTH_TOKEN?.trim();
+
+  if (envToken) {
+    return envToken;
+  }
+
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  return window.localStorage.getItem(API_AUTH_STORAGE_KEY)?.trim() || null;
+};
+
+const buildApiHeaders = (headers: Record<string, string> = {}): Record<string, string> => {
+  const authToken = getApiAuthToken();
+
+  return authToken
+    ? {
+        ...headers,
+        Authorization: `Bearer ${authToken}`,
+      }
+    : headers;
 };
 
 const parseApiResponse = async <T>(response: Response): Promise<T> => {
@@ -64,6 +90,7 @@ const parseApiResponse = async <T>(response: Response): Promise<T> => {
 
 export const getJson = async <T>(path: string, options: ApiRequestOptions = {}): Promise<T> => {
   const response = await fetch(`${API_BASE_URL}${path}`, {
+    headers: buildApiHeaders(),
     signal: options.signal,
   });
 
@@ -77,9 +104,9 @@ export const postJson = async <T>(
 ): Promise<T> => {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: "POST",
-    headers: {
+    headers: buildApiHeaders({
       "Content-Type": "application/json",
-    },
+    }),
     body: JSON.stringify(body),
     signal: options.signal,
   });

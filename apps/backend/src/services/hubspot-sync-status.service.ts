@@ -66,16 +66,17 @@ export const upsertHubSpotSyncStatus = async (input: {
     updated_at: now,
   });
 
-  await supabase
-    .schema("private")
-    .from("organization_integrations")
-    .update({
-      last_sync_started_at: input.status === "queued" || input.status === "running" ? now : undefined,
-      last_sync_finished_at: isFinished ? now : null,
-      last_sync_status: input.status,
-      last_sync_error: input.status === "failed" ? input.error ?? "Erreur inconnue" : null,
-    })
-    .eq("org_id", input.orgId);
+  const { error } = await supabase.rpc("set_hubspot_integration_sync_status", {
+    target_org_id: input.orgId,
+    target_started_at: input.status === "queued" || input.status === "running" ? now : null,
+    target_finished_at: isFinished ? now : null,
+    target_status: input.status,
+    target_error: input.status === "failed" ? input.error ?? "Erreur inconnue" : null,
+  });
+
+  if (error) {
+    throw new Error(`Impossible de mettre a jour le statut prive HubSpot: ${error.message}`);
+  }
 };
 
 export const getHubSpotSyncStatus = async (orgId: string): Promise<HubSpotSyncStatusSnapshot | null> => {

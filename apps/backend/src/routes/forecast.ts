@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import type { ApiResponse } from "@jarvis/shared";
+import type { Json } from "../db/database.types.js";
 import {
   analyzeForecastDeal,
   analyzeForecastOpenDeals,
@@ -11,6 +12,7 @@ import {
   type ForecastOverviewResult,
   type ForecastScope,
 } from "../services/forecast.service.js";
+import { createJob, getJob, updateJob, type PersistentJobSnapshot } from "../services/job-store.js";
 
 type ForecastOverviewQuery = {
   orgId?: string;
@@ -75,32 +77,43 @@ const isValidOrgId = (value: string | undefined): value is string =>
 
 const parseScope = (value: string | undefined | null): ForecastScope => (value === "owner" ? "owner" : "all");
 
-const forecastAnalyzeJobs = new Map<string, ForecastAnalyzeJobSnapshot>();
-const FORECAST_JOB_TTL_MS = 60 * 60 * 1000;
+const FORECAST_ANALYZE_JOB_TYPE = "forecast_analyze";
+const FORECAST_ANALYZE_JOB_LOG_LIMIT = 80;
 
-const cleanupForecastAnalyzeJobs = (): void => {
-  const cutoff = Date.now() - FORECAST_JOB_TTL_MS;
-
-  for (const [jobId, job] of forecastAnalyzeJobs.entries()) {
-    if (new Date(job.updatedAt).getTime() < cutoff) {
-      forecastAnalyzeJobs.delete(jobId);
-    }
+const toForecastAnalyzeJobSnapshot = (
+  job: PersistentJobSnapshot<Json | null>,
+): ForecastAnalyzeJobSnapshot | null => {
+  if (job.type !== FORECAST_ANALYZE_JOB_TYPE || !job.orgId) {
+    return null;
   }
+
+  return {
+    jobId: job.id,
+    orgId: job.orgId,
+    status: job.status === "skipped" ? "failed" : job.status,
+    progress: job.progress,
+    currentStep: job.currentStep,
+    startedAt: job.startedAt,
+    updatedAt: job.updatedAt,
+    finishedAt: job.finishedAt,
+    logs: job.logs as ForecastAnalyzeJobLog[],
+    result: job.result as ForecastAnalyzeResult | null,
+    error: job.error,
+  };
 };
 
-const createForecastAnalyzeJob = (orgId: string): ForecastAnalyzeJobSnapshot => {
-  cleanupForecastAnalyzeJobs();
+const loadForecastAnalyzeJob = async (jobId: string): Promise<ForecastAnalyzeJobSnapshot | null> => {
+  const job = await getJob(jobId);
+  return job ? toForecastAnalyzeJobSnapshot(job) : null;
+};
 
+const createForecastAnalyzeJob = async (orgId: string): Promise<ForecastAnalyzeJobSnapshot> => {
   const now = new Date().toISOString();
-  const job: ForecastAnalyzeJobSnapshot = {
-    jobId: randomUUID(),
+  const job = await createJob({
+    id: randomUUID(),
     orgId,
-    status: "queued",
-    progress: 0,
+    type: FORECAST_ANALYZE_JOB_TYPE,
     currentStep: "Analyse forecast en attente",
-    startedAt: now,
-    updatedAt: now,
-    finishedAt: null,
     logs: [
       {
         at: now,
@@ -108,17 +121,19 @@ const createForecastAnalyzeJob = (orgId: string): ForecastAnalyzeJobSnapshot => 
         message: "Job d'analyse des deals ouverts cree.",
       },
     ],
-    result: null,
-    error: null,
-  };
+  });
 
-  forecastAnalyzeJobs.set(job.jobId, job);
+  const snapshot = toForecastAnalyzeJobSnapshot(job);
 
-  return job;
+  if (!snapshot) {
+    throw new Error("Job d'analyse forecast invalide apres creation.");
+  }
+
+  return snapshot;
 };
 
-const updateForecastAnalyzeJob = (jobId: string, event: ForecastAnalyzeProgressEvent): void => {
-  const job = forecastAnalyzeJobs.get(jobId);
+const updateForecastAnalyzeJob = async (jobId: string, event: ForecastAnalyzeProgressEvent): Promise<void> => {
+  const job = await loadForecastAnalyzeJob(jobId);
 
   if (!job || job.status === "completed" || job.status === "failed") {
     return;
@@ -128,8 +143,6 @@ const updateForecastAnalyzeJob = (jobId: string, event: ForecastAnalyzeProgressE
   job.status = "running";
   job.progress = Math.max(job.progress, Math.min(99, Math.round(event.progress)));
   job.currentStep = event.step;
-  job.updatedAt = now;
-
   if (event.message) {
     job.logs = [
       ...job.logs,
@@ -138,12 +151,19 @@ const updateForecastAnalyzeJob = (jobId: string, event: ForecastAnalyzeProgressE
         level: event.level ?? "info",
         message: event.message,
       },
-    ].slice(-80);
+    ].slice(-FORECAST_ANALYZE_JOB_LOG_LIMIT);
   }
+
+  await updateJob(jobId, {
+    status: job.status,
+    progress: job.progress,
+    currentStep: job.currentStep,
+    logs: job.logs,
+  });
 };
 
-const completeForecastAnalyzeJob = (jobId: string, result: ForecastAnalyzeResult): void => {
-  const job = forecastAnalyzeJobs.get(jobId);
+const completeForecastAnalyzeJob = async (jobId: string, result: ForecastAnalyzeResult): Promise<void> => {
+  const job = await loadForecastAnalyzeJob(jobId);
 
   if (!job) {
     return;
@@ -153,7 +173,6 @@ const completeForecastAnalyzeJob = (jobId: string, result: ForecastAnalyzeResult
   job.status = "completed";
   job.progress = 100;
   job.currentStep = "Analyse forecast terminee";
-  job.updatedAt = now;
   job.finishedAt = now;
   job.result = result;
   job.logs = [
@@ -163,11 +182,21 @@ const completeForecastAnalyzeJob = (jobId: string, result: ForecastAnalyzeResult
       level: "success" as const,
       message: `Analyse terminee: ${result.analyzedCount} traite(s), ${result.reusedCount} reutilise(s), ${result.failedCount} echec(s).`,
     },
-  ].slice(-80);
+  ].slice(-FORECAST_ANALYZE_JOB_LOG_LIMIT);
+
+  await updateJob(jobId, {
+    status: "completed",
+    progress: 100,
+    currentStep: job.currentStep,
+    logs: job.logs,
+    result: result as unknown as Json,
+    error: null,
+    finishedAt: now,
+  });
 };
 
-const failForecastAnalyzeJob = (jobId: string, error: unknown): void => {
-  const job = forecastAnalyzeJobs.get(jobId);
+const failForecastAnalyzeJob = async (jobId: string, error: unknown): Promise<void> => {
+  const job = await loadForecastAnalyzeJob(jobId);
 
   if (!job) {
     return;
@@ -177,7 +206,6 @@ const failForecastAnalyzeJob = (jobId: string, error: unknown): void => {
   const message = error instanceof Error ? error.message : "Erreur inconnue pendant l'analyse forecast.";
   job.status = "failed";
   job.currentStep = "Analyse forecast en erreur";
-  job.updatedAt = now;
   job.finishedAt = now;
   job.error = message;
   job.logs = [
@@ -187,16 +215,23 @@ const failForecastAnalyzeJob = (jobId: string, error: unknown): void => {
       level: "error" as const,
       message,
     },
-  ].slice(-80);
+  ].slice(-FORECAST_ANALYZE_JOB_LOG_LIMIT);
+
+  await updateJob(jobId, {
+    status: "failed",
+    progress: job.progress,
+    currentStep: job.currentStep,
+    logs: job.logs,
+    error: message,
+    finishedAt: now,
+  });
 };
 
 export const registerForecastRoutes = async (app: FastifyInstance): Promise<void> => {
   app.get<{ Params: ForecastAnalyzeJobParams; Reply: ApiResponse<ForecastAnalyzeJobSnapshot> }>(
     "/api/forecast/analyze-open-deals/jobs/:jobId",
     async (request, reply) => {
-      cleanupForecastAnalyzeJobs();
-
-      const job = forecastAnalyzeJobs.get(request.params.jobId);
+      const job = await loadForecastAnalyzeJob(request.params.jobId);
 
       if (!job) {
         return reply.code(404).send({
@@ -282,7 +317,7 @@ export const registerForecastRoutes = async (app: FastifyInstance): Promise<void
 
       try {
         if (request.body.async === true) {
-          const job = createForecastAnalyzeJob(orgId);
+          const job = await createForecastAnalyzeJob(orgId);
 
           void analyzeForecastOpenDeals({
             orgId,
@@ -296,10 +331,16 @@ export const registerForecastRoutes = async (app: FastifyInstance): Promise<void
             limit: request.body.limit ?? null,
             batchSize: request.body.batchSize ?? null,
             retryFailedCount: request.body.retryFailedCount ?? null,
-            onProgress: (event) => updateForecastAnalyzeJob(job.jobId, event),
+            onProgress: (event) => {
+              void updateForecastAnalyzeJob(job.jobId, event);
+            },
           })
-            .then((result) => completeForecastAnalyzeJob(job.jobId, result))
-            .catch((error: unknown) => failForecastAnalyzeJob(job.jobId, error));
+            .then((result) => {
+              void completeForecastAnalyzeJob(job.jobId, result);
+            })
+            .catch((error: unknown) => {
+              void failForecastAnalyzeJob(job.jobId, error);
+            });
 
           return reply.send({
             success: true,

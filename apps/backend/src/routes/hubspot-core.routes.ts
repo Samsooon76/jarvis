@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import type { ApiResponse, ProspectPriority } from "@jarvis/shared";
 import { env } from "../config/env.js";
 import { getSupabaseAdmin } from "../db/client.js";
+import type { Json } from "../db/database.types.js";
 import {
   hubSpotService,
   type DealLifecycleStatus,
@@ -16,7 +17,6 @@ import { runAutomaticFollowUpTasksForOrg } from "../services/follow-up-task.serv
 import { scoreProspect } from "../services/scoring.service.js";
 import { createJob, getJob, updateJob } from "../services/job-store.js";
 import { getHubSpotSyncStatus, upsertHubSpotSyncStatus, type HubSpotSyncStatusSnapshot } from "../services/hubspot-sync-status.service.js";
-import { loadHubSpotDashboard } from "../services/hubspot-dashboard.service.js";
 
 type HubSpotStartQuery = {
   orgId?: string;
@@ -105,13 +105,6 @@ type HubSpotOwnerProspectsQuery = {
   orgId?: string;
   hubspotOwnerId?: string;
   live?: string;
-};
-
-type HubSpotQueueDashboardQuery = {
-  orgId?: string;
-  hubspotOwnerId?: string;
-  live?: string;
-  limit?: string;
 };
 
 type HubSpotDealHistoryQuery = {
@@ -242,13 +235,6 @@ type HubSpotOwnerProspectsPayload = {
   hubspotOwnerId: string;
   hubspotDealCount: number | null;
   prospects: HubSpotOwnerProspect[];
-};
-
-type HubSpotQueueDashboardPayload = HubSpotOwnerProspectsPayload & {
-  status: HubSpotConnectionStatus;
-  owner: HubSpotOwnerOption;
-  owners: HubSpotOwnerOption[];
-  lastUpdates: HubSpotLastUpdateItem[];
 };
 
 type HubSpotLastUpdateItem = {
@@ -704,10 +690,9 @@ const DEFAULT_TARGET_HUBSPOT_CONTACT_NAMES = [
 const hubspotStatusCache = new Map<string, HubSpotStatusCacheEntry>();
 const hubspotTasksCache = new Map<string, HubSpotTasksCacheEntry>();
 const hubspotTasksRefreshes = new Map<string, Promise<HubSpotTasksPayload>>();
-const hubspotSyncJobs = new Map<string, SyncJobSnapshot>();
 const salesAeOwnerCache = new Map<string, SalesAeOwnerCacheEntry>();
-const HUBSPOT_SYNC_JOB_TTL_MS = 30 * 60 * 1000;
 const HUBSPOT_SYNC_JOB_LOG_LIMIT = 80;
+const HUBSPOT_SYNC_JOB_TYPE = "hubspot_sync";
 const SALES_AE_OWNER_CACHE_TTL_MS = 5 * 60 * 1000;
 
 const getDisplayTeamName = (teams: HubSpotOwnerTeam[] | undefined): string | null =>
@@ -824,31 +809,38 @@ const formatDurationMs = (startedAtMs: number): number => Math.round((getNowMs()
 
 const createSyncJobId = (): string => `hubspot-sync-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
-const cleanupHubSpotSyncJobs = (): void => {
-  const now = Date.now();
-
-  for (const [jobId, job] of hubspotSyncJobs) {
-    const updatedAtMs = new Date(job.updatedAt).getTime();
-
-    if (Number.isFinite(updatedAtMs) && now - updatedAtMs > HUBSPOT_SYNC_JOB_TTL_MS) {
-      hubspotSyncJobs.delete(jobId);
-    }
+const toSyncJobSnapshot = (job: Awaited<ReturnType<typeof getJob>>): SyncJobSnapshot | null => {
+  if (!job || job.type !== HUBSPOT_SYNC_JOB_TYPE || !job.orgId) {
+    return null;
   }
+
+  return {
+    jobId: job.id,
+    orgId: job.orgId,
+    status: job.status === "skipped" ? "failed" : job.status,
+    progress: job.progress,
+    currentStep: job.currentStep,
+    startedAt: job.startedAt,
+    updatedAt: job.updatedAt,
+    finishedAt: job.finishedAt,
+    logs: job.logs.filter((log) => log.level !== "warning") as SyncProgressLog[],
+    result: job.result as SyncResult | null,
+    error: job.error,
+  };
+};
+
+const loadHubSpotSyncJob = async (jobId: string): Promise<SyncJobSnapshot | null> => {
+  const job = await getJob(jobId);
+  return toSyncJobSnapshot(job);
 };
 
 const createHubSpotSyncJob = async (orgId: string): Promise<SyncJobSnapshot> => {
-  cleanupHubSpotSyncJobs();
-
   const now = new Date().toISOString();
-  const job: SyncJobSnapshot = {
-    jobId: createSyncJobId(),
+  const job = await createJob({
+    id: createSyncJobId(),
     orgId,
-    status: "queued",
-    progress: 0,
+    type: HUBSPOT_SYNC_JOB_TYPE,
     currentStep: "Sync en attente",
-    startedAt: now,
-    updatedAt: now,
-    finishedAt: null,
     logs: [
       {
         at: now,
@@ -856,31 +848,27 @@ const createHubSpotSyncJob = async (orgId: string): Promise<SyncJobSnapshot> => 
         message: "Job de sync HubSpot cree.",
       },
     ],
-    result: null,
-    error: null,
-  };
-
-  hubspotSyncJobs.set(job.jobId, job);
-  void createJob({
-    id: job.jobId,
-    orgId,
-    type: "hubspot_sync",
-    currentStep: job.currentStep,
-    logs: job.logs,
   });
+
   void upsertHubSpotSyncStatus({
     orgId,
     status: "queued",
-    jobId: job.jobId,
+    jobId: job.id,
     progress: 0,
     currentStep: job.currentStep,
   });
 
-  return job;
+  const snapshot = toSyncJobSnapshot(job);
+
+  if (!snapshot) {
+    throw new Error("Job de sync HubSpot invalide apres creation.");
+  }
+
+  return snapshot;
 };
 
-const updateHubSpotSyncJob = (jobId: string, event: SyncProgressEvent): void => {
-  const job = hubspotSyncJobs.get(jobId);
+const updateHubSpotSyncJob = async (jobId: string, event: SyncProgressEvent): Promise<void> => {
+  const job = await loadHubSpotSyncJob(jobId);
 
   if (!job) {
     return;
@@ -890,7 +878,6 @@ const updateHubSpotSyncJob = (jobId: string, event: SyncProgressEvent): void => 
   job.status = job.status === "queued" ? "running" : job.status;
   job.progress = Math.max(job.progress, Math.min(99, Math.round(event.progress)));
   job.currentStep = event.step;
-  job.updatedAt = now;
 
   if (event.message) {
     job.logs = [
@@ -902,7 +889,7 @@ const updateHubSpotSyncJob = (jobId: string, event: SyncProgressEvent): void => 
       },
     ].slice(-HUBSPOT_SYNC_JOB_LOG_LIMIT);
   }
-  void updateJob(jobId, {
+  await updateJob(jobId, {
     status: job.status,
     progress: job.progress,
     currentStep: job.currentStep,
@@ -917,8 +904,8 @@ const updateHubSpotSyncJob = (jobId: string, event: SyncProgressEvent): void => 
   });
 };
 
-const completeHubSpotSyncJob = (jobId: string, result: SyncResult): void => {
-  const job = hubspotSyncJobs.get(jobId);
+const completeHubSpotSyncJob = async (jobId: string, result: SyncResult): Promise<void> => {
+  const job = await loadHubSpotSyncJob(jobId);
 
   if (!job) {
     return;
@@ -928,7 +915,6 @@ const completeHubSpotSyncJob = (jobId: string, result: SyncResult): void => {
   job.status = "completed";
   job.progress = 100;
   job.currentStep = "Sync terminee";
-  job.updatedAt = now;
   job.finishedAt = now;
   job.result = result;
   job.logs = [
@@ -939,12 +925,12 @@ const completeHubSpotSyncJob = (jobId: string, result: SyncResult): void => {
       message: `Sync terminee: ${result.syncedCount} prospect(s), ${result.crm.dealCount} deal(s), ${result.crm.contactCount} contact(s).`,
     } satisfies SyncProgressLog,
   ].slice(-HUBSPOT_SYNC_JOB_LOG_LIMIT);
-  void updateJob(jobId, {
+  await updateJob(jobId, {
     status: "completed",
     progress: 100,
     currentStep: job.currentStep,
     logs: job.logs,
-    result: result as unknown as never,
+    result: result as unknown as Json,
     error: null,
     finishedAt: now,
   });
@@ -957,8 +943,8 @@ const completeHubSpotSyncJob = (jobId: string, result: SyncResult): void => {
   });
 };
 
-const failHubSpotSyncJob = (jobId: string, error: unknown): void => {
-  const job = hubspotSyncJobs.get(jobId);
+const failHubSpotSyncJob = async (jobId: string, error: unknown): Promise<void> => {
+  const job = await loadHubSpotSyncJob(jobId);
 
   if (!job) {
     return;
@@ -968,7 +954,6 @@ const failHubSpotSyncJob = (jobId: string, error: unknown): void => {
   const message = error instanceof Error ? error.message : "Erreur inconnue pendant la sync HubSpot.";
   job.status = "failed";
   job.currentStep = "Sync en erreur";
-  job.updatedAt = now;
   job.finishedAt = now;
   job.error = message;
   job.logs = [
@@ -979,8 +964,9 @@ const failHubSpotSyncJob = (jobId: string, error: unknown): void => {
       message,
     } satisfies SyncProgressLog,
   ].slice(-HUBSPOT_SYNC_JOB_LOG_LIMIT);
-  void updateJob(jobId, {
+  await updateJob(jobId, {
     status: "failed",
+    progress: job.progress,
     currentStep: job.currentStep,
     logs: job.logs,
     error: message,
@@ -1686,7 +1672,7 @@ const disconnectHubSpotIntegration = async (
   };
 };
 
-export const registerHubSpotLegacyRoutes = async (app: FastifyInstance): Promise<void> => {
+export const registerHubSpotCoreRoutes = async (app: FastifyInstance): Promise<void> => {
   app.get<{ Reply: ApiResponse<HubSpotConfigStatus> }>("/api/hubspot/config-status", async (_request, reply) =>
     reply.send({
       success: true,
@@ -1699,54 +1685,6 @@ export const registerHubSpotLegacyRoutes = async (app: FastifyInstance): Promise
         hasHubSpotAppId: Boolean(env.hubspotAppId),
       },
     }),
-  );
-
-  app.get<{ Querystring: HubSpotQueueDashboardQuery; Reply: ApiResponse<HubSpotQueueDashboardPayload> }>(
-    "/api/hubspot/queue-dashboard",
-    async (request, reply) => {
-      const orgId = request.query.orgId;
-
-      if (!orgId) {
-        return reply.code(400).send({
-          success: false,
-          error: "Le parametre orgId est obligatoire pour charger la queue HubSpot.",
-        });
-      }
-
-      if (!isValidOrgId(orgId)) {
-        return reply.code(400).send({
-          success: false,
-          error: "Le parametre orgId doit etre un UUID Jarvis valide.",
-        });
-      }
-
-      try {
-        const dashboard = await loadHubSpotDashboard({
-          orgId,
-          preferredHubSpotOwnerId: request.query.hubspotOwnerId ?? null,
-          live: request.query.live !== "false",
-        });
-
-        if (!dashboard.status.connected) {
-          return reply.code(409).send({
-            success: false,
-            error: "HubSpot n'est pas connecte pour cette organisation.",
-          });
-        }
-
-        return reply.send({
-          success: true,
-          data: dashboard,
-        });
-      } catch (error) {
-        request.log.error({ error, orgId }, "Impossible de charger la queue dashboard HubSpot.");
-
-        return reply.code(500).send({
-          success: false,
-          error: getPublicErrorMessage(error, "Erreur inconnue pendant le chargement de la queue HubSpot."),
-        });
-      }
-    },
   );
 
   app.get<{ Querystring: HubSpotStatusQuery; Reply: ApiResponse<HubSpotConnectionStatus> }>(
@@ -2722,32 +2660,9 @@ export const registerHubSpotLegacyRoutes = async (app: FastifyInstance): Promise
   app.get<{ Params: HubSpotSyncJobParams; Reply: ApiResponse<SyncJobSnapshot> }>(
     "/api/sync/hubspot/jobs/:jobId",
     async (request, reply) => {
-      cleanupHubSpotSyncJobs();
-
-      const job = hubspotSyncJobs.get(request.params.jobId);
+      const job = await loadHubSpotSyncJob(request.params.jobId);
 
       if (!job) {
-        const persistedJob = await getJob(request.params.jobId);
-
-        if (persistedJob && persistedJob.type === "hubspot_sync") {
-          return reply.send({
-            success: true,
-            data: {
-              jobId: persistedJob.id,
-              orgId: persistedJob.orgId ?? "",
-              status: persistedJob.status === "skipped" ? "failed" : persistedJob.status,
-              progress: persistedJob.progress,
-              currentStep: persistedJob.currentStep,
-              startedAt: persistedJob.startedAt,
-              updatedAt: persistedJob.updatedAt,
-              finishedAt: persistedJob.finishedAt,
-              logs: persistedJob.logs.filter((log) => log.level !== "warning") as SyncProgressLog[],
-              result: persistedJob.result as SyncResult | null,
-              error: persistedJob.error,
-            },
-          });
-        }
-
         return reply.code(404).send({
           success: false,
           error: "Job de sync HubSpot introuvable.",
@@ -2804,13 +2719,13 @@ export const registerHubSpotLegacyRoutes = async (app: FastifyInstance): Promise
           const job = await createHubSpotSyncJob(orgId);
 
           void syncHubSpotProspects(orgId, targetContactNames, includeFullSync, hubspotOwnerIds, (event) => {
-            updateHubSpotSyncJob(job.jobId, event);
+            void updateHubSpotSyncJob(job.jobId, event);
           })
             .then((syncResult) => {
-              completeHubSpotSyncJob(job.jobId, syncResult);
+              void completeHubSpotSyncJob(job.jobId, syncResult);
             })
             .catch((syncError: unknown) => {
-              failHubSpotSyncJob(job.jobId, syncError);
+              void failHubSpotSyncJob(job.jobId, syncError);
               request.log.error({ error: syncError, orgId, jobId: job.jobId }, "Echec du job de sync HubSpot.");
             });
 
