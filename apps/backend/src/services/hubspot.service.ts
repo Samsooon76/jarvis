@@ -93,6 +93,33 @@ type HubSpotCompany = {
   properties: Record<string, string | null | undefined>;
 };
 
+type HubSpotLead = {
+  id: string;
+  properties: Record<string, string | null | undefined>;
+  associations?: {
+    contacts?: {
+      results: Array<{ id: string }>;
+    };
+    companies?: {
+      results: Array<{ id: string }>;
+    };
+  };
+};
+
+export type HubSpotLeadRecord = {
+  id: string;
+  hubspotOwnerId: string | null;
+  name: string;
+  pipelineId: string | null;
+  pipelineLabel: string | null;
+  phaseId: string | null;
+  phaseLabel: string | null;
+  associatedContactIds: string[];
+  associatedCompanyIds: string[];
+  createdAt: string | null;
+  updatedAt: string | null;
+};
+
 type HubSpotDealStageMetadata = {
   isClosed?: string;
   probability?: string;
@@ -362,9 +389,20 @@ const HUBSPOT_CONTACT_PROPERTIES = [
   "phone",
   "jobtitle",
   "company",
+  "hs_lead_status",
+  "lifecyclestage",
   "lastactivitydate",
   "hs_lastmodifieddate",
   "hubspot_owner_id",
+];
+const HUBSPOT_LEAD_OBJECT_TYPE = "0-136";
+const HUBSPOT_LEAD_PROPERTIES = [
+  "hs_lead_name",
+  "hs_pipeline",
+  "hs_pipeline_stage",
+  "hubspot_owner_id",
+  "hs_createdate",
+  "hs_lastmodifieddate",
 ];
 const HUBSPOT_DEAL_PROPERTIES = [
   "dealname",
@@ -789,6 +827,95 @@ const buildDealStageLookup = (pipelines: HubSpotDealPipeline[]): Map<string, Hub
   }
 
   return stageDefinitionByStageId;
+};
+
+const searchLeadsByOwner = async (
+  accessToken: string,
+  objectType: string,
+  hubspotOwnerId: string,
+  maxResults: number,
+): Promise<HubSpotLead[]> => {
+  const leads: HubSpotLead[] = [];
+  let after: string | undefined;
+
+  do {
+    const remaining = maxResults - leads.length;
+    const payload = await hubSpotFetch<HubSpotSearchResponse<HubSpotLead>>(
+      `/crm/v3/objects/${objectType}/search`,
+      {
+        method: "POST",
+        accessToken,
+        body: JSON.stringify({
+          limit: Math.min(HUBSPOT_BATCH_READ_LIMIT, remaining),
+          after,
+          properties: HUBSPOT_LEAD_PROPERTIES,
+          associations: ["contacts", "companies"],
+          filterGroups: [
+            {
+              filters: [
+                {
+                  propertyName: "hubspot_owner_id",
+                  operator: "EQ",
+                  value: hubspotOwnerId,
+                },
+              ],
+            },
+          ],
+          sorts: [
+            {
+              propertyName: "hs_lastmodifieddate",
+              direction: "DESCENDING",
+            },
+          ],
+        }),
+        maxRetries: HUBSPOT_DEFAULT_MAX_RETRIES,
+      },
+    );
+
+    leads.push(...payload.results);
+    after = payload.paging?.next?.after;
+  } while (after && leads.length < maxResults);
+
+  return leads.slice(0, maxResults);
+};
+
+const fetchPipelineStageLookup = async (
+  accessToken: string,
+  objectType: string,
+): Promise<Map<string, HubSpotDealStageDefinition>> => {
+  const pipelines = await hubSpotFetch<HubSpotCollectionResponse<HubSpotDealPipeline>>(
+    `/crm/v3/pipelines/${objectType}`,
+    {
+      accessToken,
+      maxRetries: HUBSPOT_DEFAULT_MAX_RETRIES,
+    },
+  );
+
+  return buildDealStageLookup(pipelines.results);
+};
+
+const mapLeadRecord = (
+  lead: HubSpotLead,
+  stageById: Map<string, HubSpotDealStageDefinition>,
+): HubSpotLeadRecord => {
+  const pipelineId = readProperty(lead.properties, "hs_pipeline");
+  const phaseId = readProperty(lead.properties, "hs_pipeline_stage");
+  const stage = phaseId ? stageById.get(phaseId) ?? null : null;
+  const leadName = readProperty(lead.properties, "hs_lead_name");
+
+  return {
+    id: lead.id,
+    hubspotOwnerId: readProperty(lead.properties, "hubspot_owner_id"),
+    name: leadName ?? `Lead ${lead.id}`,
+    pipelineId,
+    pipelineLabel: stage?.pipelineLabel ?? null,
+    phaseId,
+    phaseLabel: stage?.label ?? phaseId,
+    associatedContactIds: lead.associations?.contacts?.results.map((contact) => contact.id) ?? [],
+    associatedCompanyIds: lead.associations?.companies?.results.map((company) => company.id) ?? [],
+    createdAt: readProperty(lead.properties, "hs_createdate"),
+    updatedAt: readProperty(lead.properties, "hs_lastmodifieddate"),
+  };
 };
 
 const buildDealStageSnapshot = (dealStageLookup: Map<string, HubSpotDealStageDefinition>): HubSpotCrmSyncSnapshot["dealStages"] =>
@@ -2572,6 +2699,15 @@ export const hubSpotService = {
 
       throw error;
     }
+  },
+
+  async fetchLeadsByOwner(accessToken: string, hubspotOwnerId: string, limit: number): Promise<HubSpotLeadRecord[]> {
+    const [leads, stageById] = await Promise.all([
+      searchLeadsByOwner(accessToken, HUBSPOT_LEAD_OBJECT_TYPE, hubspotOwnerId, limit),
+      fetchPipelineStageLookup(accessToken, HUBSPOT_LEAD_OBJECT_TYPE),
+    ]);
+
+    return leads.map((lead) => mapLeadRecord(lead, stageById));
   },
 
   async createTask(accessToken: string, input: CreateHubSpotTaskInput): Promise<CreatedHubSpotTask> {

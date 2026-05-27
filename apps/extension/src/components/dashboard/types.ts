@@ -53,6 +53,7 @@ export type StageFilter =
   | "late";
 export type WorkspaceView =
   | "overview"
+  | "leads"
   | "forecast"
   | "stats"
   | "tasks"

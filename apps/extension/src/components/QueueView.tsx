@@ -24,6 +24,11 @@ const ForecastView = lazy(async () => {
 
   return { default: module.ForecastView };
 });
+const LeadsView = lazy(async () => {
+  const module = await import("./dashboard/LeadsView");
+
+  return { default: module.LeadsView };
+});
 const SettingsView = lazy(async () => {
   const module = await import("./dashboard/SettingsView");
 
@@ -90,6 +95,11 @@ const workspaceCopy = {
     eyebrow: "Revenue workspace",
     title: "Forecast IA",
     subtitle: "Analyser les deals ouverts HubSpot et anticiper l'atterrissage de fin de periode.",
+  },
+  leads: {
+    eyebrow: "AE workspace",
+    title: "Leads",
+    subtitle: "Liste des leads ouverts pour l'AE selectionne.",
   },
   overview: {
     eyebrow: "AE workspace",
@@ -219,6 +229,7 @@ export const QueueView = ({
   useEffect(() => {
     void import("./dashboard/CloseLostAnalysisView");
     void import("./dashboard/ForecastView");
+    void import("./dashboard/LeadsView");
   }, []);
 
   useEffect(() => {
@@ -373,6 +384,16 @@ export const QueueView = ({
               orgId={orgId}
               owners={owners}
               selectedAiProvider={dashboard.selectedAiProvider}
+              selectedOwnerId={selectedOwnerId}
+            />
+          ) : null}
+
+          {dashboard.activeView === "leads" ? (
+            <LeadsView
+              hubspotPortalId={hubspotPortalId}
+              onOwnerChange={onOwnerChange}
+              orgId={orgId}
+              owners={owners}
               selectedOwnerId={selectedOwnerId}
             />
           ) : null}

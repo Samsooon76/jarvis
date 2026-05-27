@@ -5,6 +5,7 @@ import { registerForecastRoutes } from "./forecast.js";
 import { registerHubSpotRoutes } from "./hubspot.js";
 import { registerHubSpotWebhookRoutes } from "./webhooks.js";
 import { registerHealthRoute } from "./health.js";
+import { registerLeadRoutes } from "./leads.js";
 import { registerLlmRoutes } from "./llm.js";
 import { registerProspectRoutes } from "./prospects.js";
 import { registerQueueRoutes } from "./queue.js";
@@ -18,6 +19,7 @@ export const registerRoutes = async (app: FastifyInstance): Promise<void> => {
   await registerForecastRoutes(app);
   await registerHubSpotRoutes(app);
   await registerHubSpotWebhookRoutes(app);
+  await registerLeadRoutes(app);
   await registerLlmRoutes(app);
   await registerProspectRoutes(app);
   await registerQueueRoutes(app);

@@ -4,6 +4,7 @@ import {
   ChartNoAxesCombined,
   CircleX,
   LayoutDashboard,
+  ListFilter,
   ListTodo,
   Settings,
 } from "lucide-react";
@@ -20,6 +21,7 @@ const viewIcons: Record<WorkspaceView, LucideIcon> = {
   closeLostAnalysis: CircleX,
   dealAnalysis: ChartNoAxesCombined,
   forecast: ChartNoAxesCombined,
+  leads: ListFilter,
   overview: LayoutDashboard,
   settings: Settings,
   stats: BarChart3,

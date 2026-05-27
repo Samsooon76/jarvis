@@ -87,6 +87,8 @@ export const env = {
       "crm.objects.deals.write",
       "crm.objects.appointments.read",
       "crm.objects.calls.read",
+      "crm.objects.leads.read",
+      "crm.objects.leads.write",
       "crm.objects.communications.read",
       "crm.objects.emails.read",
       "crm.objects.meetings.read",

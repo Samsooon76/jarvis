@@ -105,6 +105,7 @@ export const dealStatusLabels: Record<DealStatus, string> = {
 
 export const workspaceViews: WorkspaceViewDefinition[] = [
   { id: "overview", label: "Overview" },
+  { id: "leads", label: "Leads" },
   { id: "forecast", label: "Forecast IA" },
   { id: "closeLostAnalysis", label: "Close Lost Analysis" },
   { id: "stats", label: "Statistiques" },

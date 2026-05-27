@@ -163,6 +163,32 @@ export type HubSpotTaskListItem = {
   associatedDealIds: string[];
 };
 
+export type HubSpotLeadListItem = {
+  hubspotLeadId: string | null;
+  hubspotContactId: string;
+  hubspotOwnerId: string | null;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  title: string | null;
+  companyName: string | null;
+  pipelineId: string | null;
+  pipelineLabel: string | null;
+  phaseId: string | null;
+  phaseLabel: string | null;
+  lifecycleStage: string | null;
+  leadStatus: string | null;
+  lastActivityAt: string | null;
+  syncedAt: string;
+  updatedAt: string;
+};
+
+type HubSpotLeadsPayload = {
+  orgId: string;
+  hubspotOwnerId: string;
+  leads: HubSpotLeadListItem[];
+};
+
 export type TaskAnalysisType =
   | "cold_call"
   | "deal_follow_up"
@@ -920,6 +946,20 @@ const toQueueProspect = (prospect: HubSpotOwnerProspect): QueueProspect => ({
   hubspotDealId: prospect.hubspotDealId,
 });
 
+
+export const fetchHubSpotLeads = async (
+  orgId: string,
+  hubspotOwnerId: string,
+  limit = 500,
+  options: ApiRequestOptions = {},
+): Promise<HubSpotLeadListItem[]> => {
+  const payload = await getJson<HubSpotLeadsPayload>(
+    apiPath("/api/leads", { orgId, hubspotOwnerId, limit }),
+    options,
+  );
+
+  return payload.leads;
+};
 export const fetchHubSpotLastUpdates = async (
   orgId: string,
   limit = 12,
