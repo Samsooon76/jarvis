@@ -15,6 +15,14 @@ const resolveApiBaseUrl = (): string => {
 export const API_BASE_URL = resolveApiBaseUrl();
 const API_AUTH_STORAGE_KEY = "jarvis.apiAuthToken";
 
+export const setApiAuthToken = (token: string): void => {
+  window.localStorage.setItem(API_AUTH_STORAGE_KEY, token);
+};
+
+export const clearApiAuthToken = (): void => {
+  window.localStorage.removeItem(API_AUTH_STORAGE_KEY);
+};
+
 export type ApiRequestOptions = {
   signal?: AbortSignal;
 };
@@ -38,17 +46,11 @@ export const apiPath = (path: string, query: Record<string, ApiQueryValue> = {})
 };
 
 const getApiAuthToken = (): string | null => {
-  const envToken = import.meta.env.VITE_API_AUTH_TOKEN?.trim();
-
-  if (envToken) {
-    return envToken;
-  }
-
   if (typeof window === "undefined") {
-    return null;
+    return import.meta.env.VITE_API_AUTH_TOKEN?.trim() || null;
   }
 
-  return window.localStorage.getItem(API_AUTH_STORAGE_KEY)?.trim() || null;
+  return window.localStorage.getItem(API_AUTH_STORAGE_KEY)?.trim() || import.meta.env.VITE_API_AUTH_TOKEN?.trim() || null;
 };
 
 const buildApiHeaders = (headers: Record<string, string> = {}): Record<string, string> => {

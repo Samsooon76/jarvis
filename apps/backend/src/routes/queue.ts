@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { ApiResponse, QueueData } from "@jarvis/shared";
 import { loadHubSpotDashboard, type HubSpotQueueDashboardData } from "../services/hubspot-dashboard.service.js";
+import { loadOptionalAuthenticatedAppUserProfile } from "../services/app-auth.service.js";
 import { getQueueDebug, getUserQueue, type QueueDebugData } from "../services/queue.service.js";
 
 type QueueParams = {
@@ -14,7 +15,7 @@ type QueueDashboardQuery = {
 };
 
 const UUID_V4_LIKE_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i;
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const isValidOrgId = (value: string | undefined): value is string =>
   typeof value === "string" && UUID_V4_LIKE_PATTERN.test(value.trim());
@@ -56,9 +57,39 @@ export const registerQueueRoutes = async (app: FastifyInstance): Promise<void> =
         }
 
         try {
+          const authenticatedProfile = await loadOptionalAuthenticatedAppUserProfile(request);
+          let preferredHubSpotOwnerId = request.query.hubspotOwnerId ?? null;
+
+          if (authenticatedProfile) {
+            if (!authenticatedProfile.orgId || authenticatedProfile.orgId !== orgId) {
+              return reply.code(403).send({
+                success: false,
+                error: "Cette session n'a pas acces a cette organisation.",
+              });
+            }
+
+            if (authenticatedProfile.role === "sales") {
+              if (!authenticatedProfile.hubspotOwnerId) {
+                return reply.code(403).send({
+                  success: false,
+                  error: "Ce compte sales n'est rattache a aucun owner HubSpot.",
+                });
+              }
+
+              if (preferredHubSpotOwnerId && preferredHubSpotOwnerId !== authenticatedProfile.hubspotOwnerId) {
+                return reply.code(403).send({
+                  success: false,
+                  error: "Un commercial ne peut charger que ses propres deals HubSpot.",
+                });
+              }
+
+              preferredHubSpotOwnerId = authenticatedProfile.hubspotOwnerId;
+            }
+          }
+
           const dashboard = await loadHubSpotDashboard({
             orgId,
-            preferredHubSpotOwnerId: request.query.hubspotOwnerId ?? null,
+            preferredHubSpotOwnerId,
             live: request.query.live !== "false",
           });
 

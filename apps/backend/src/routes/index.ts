@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { registerAuthRoutes } from "./auth.js";
 import { registerCloseLostAnalysisRoutes } from "./close-lost-analysis.js";
 import { registerDebugRoutes } from "./debug.js";
 import { registerForecastRoutes } from "./forecast.js";
@@ -14,6 +15,7 @@ import { registerTaskRoutes } from "./tasks.js";
 
 export const registerRoutes = async (app: FastifyInstance): Promise<void> => {
   await registerHealthRoute(app);
+  await registerAuthRoutes(app);
   await registerCloseLostAnalysisRoutes(app);
   await registerDebugRoutes(app);
   await registerForecastRoutes(app);

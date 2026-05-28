@@ -29,3 +29,17 @@ test("moves same-day weekend tasks to the next Monday", () => {
     "2026-05-25T09:00:00.000Z",
   );
 });
+
+test("keeps same-day due dates in the future when today is requested", () => {
+  assert.equal(
+    buildBusinessDueAtFromDays(0, new Date("2026-05-25T12:12:00.000Z")),
+    "2026-05-25T12:45:00.000Z",
+  );
+});
+
+test("moves same-day due dates to next business morning after the daily planning window", () => {
+  assert.equal(
+    buildBusinessDueAtFromDays(0, new Date("2026-05-25T15:45:00.000Z")),
+    "2026-05-26T09:00:00.000Z",
+  );
+});

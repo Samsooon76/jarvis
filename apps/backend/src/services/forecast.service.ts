@@ -84,6 +84,21 @@ export type ForecastReliabilityDimension = {
   score: number;
 };
 
+export type ForecastMonthlyProjection = {
+  month: string;
+  label: string;
+  dealCount: number;
+  wonDealCount: number;
+  analyzedDealCount: number;
+  missingAnalysisCount: number;
+  pipelineAmount: number;
+  commitAmount: number;
+  forecastAmount: number;
+  objectiveAmount: number | null;
+  gapToObjective: number | null;
+  confidenceScore: number;
+};
+
 export type ForecastOverviewResult = {
   orgId: string;
   scope: ForecastScope;
@@ -108,6 +123,7 @@ export type ForecastOverviewResult = {
   risks: ForecastRisk[];
   levers: ForecastLever[];
   reliability: ForecastReliabilityDimension[];
+  monthlyProjection: ForecastMonthlyProjection[];
   deals: ForecastDeal[];
 };
 
@@ -250,6 +266,29 @@ const getDefaultDateRange = (dateFrom?: string | null, dateTo?: string | null): 
     dateFrom: normalizeDateInput(dateFrom) ?? firstDay.toISOString().slice(0, 10),
     dateTo: normalizeDateInput(dateTo) ?? lastDay.toISOString().slice(0, 10),
   };
+};
+
+const getMonthStart = (date: Date): Date => new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
+
+const getMonthEnd = (date: Date): Date => new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0));
+
+const getMonthKey = (date: Date): string => getMonthStart(date).toISOString().slice(0, 10);
+
+const getMonthLabel = (month: string): string =>
+  new Intl.DateTimeFormat("fr-FR", { month: "short", year: "2-digit", timeZone: "UTC" }).format(new Date(`${month}T00:00:00.000Z`));
+
+const getMonthsBetween = (dateFrom: string, dateTo: string): string[] => {
+  const start = getMonthStart(new Date(`${dateFrom}T00:00:00.000Z`));
+  const end = getMonthStart(new Date(`${dateTo}T00:00:00.000Z`));
+  const months: string[] = [];
+  const cursor = new Date(start);
+
+  while (cursor.getTime() <= end.getTime()) {
+    months.push(cursor.toISOString().slice(0, 10));
+    cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+  }
+
+  return months;
 };
 
 const addDays = (date: Date, days: number): Date => {
@@ -498,7 +537,7 @@ const buildForecastDeal = (context: ForecastDealContext, analysisRow: DealAiAnal
   const analysis = analysisRow?.analysis ?? null;
   const status = isWon ? "closed_won" : getAnalysisStatus(context.row, analysisRow);
   const aiProbability = isWon ? 100 : status === "fresh" && analysis ? clamp(Math.round(analysis.closeWonProbability), 0, 100) : null;
-  const probability = aiProbability ?? 0;
+  const probability = aiProbability ?? crmProbability;
   const dealName = context.row.deal_name;
   const companyName = context.company?.name ?? context.contact?.company_name ?? dealName ?? "Entreprise inconnue";
 
@@ -529,18 +568,18 @@ const buildForecastDeal = (context: ForecastDealContext, analysisRow: DealAiAnal
 };
 
 const buildScenarios = (deals: ForecastDeal[]): ForecastScenario[] => {
-  const analyzedDeals = deals.filter((deal) => deal.aiProbability !== null);
-  const commitAmount = analyzedDeals
-    .filter((deal) => (deal.aiProbability ?? 0) >= 70 || deal.dealHealth === "strong")
+  const weightedDeals = deals.filter((deal) => deal.analysisStatus === "closed_won" || deal.aiProbability !== null || deal.crmProbability > 0);
+  const commitAmount = weightedDeals
+    .filter((deal) => (deal.aiProbability ?? deal.crmProbability) >= 70 || deal.dealHealth === "strong")
     .reduce((sum, deal) => sum + deal.forecastAmount, 0);
-  const likelyAmount = analyzedDeals.reduce((sum, deal) => sum + deal.forecastAmount, 0);
-  const upsideAmount = analyzedDeals.reduce((sum, deal) => {
-    const probability = (deal.aiProbability ?? 0) / 100;
+  const likelyAmount = weightedDeals.reduce((sum, deal) => sum + deal.forecastAmount, 0);
+  const upsideAmount = weightedDeals.reduce((sum, deal) => {
+    const probability = (deal.aiProbability ?? deal.crmProbability) / 100;
     return sum + Math.round(deal.amount * clamp(probability + 0.22, 0, 0.98));
   }, 0);
   const averageProbability =
-    analyzedDeals.length > 0
-      ? Math.round(analyzedDeals.reduce((sum, deal) => sum + (deal.aiProbability ?? 0), 0) / analyzedDeals.length)
+    weightedDeals.length > 0
+      ? Math.round(weightedDeals.reduce((sum, deal) => sum + (deal.aiProbability ?? deal.crmProbability), 0) / weightedDeals.length)
       : 0;
 
   return [
@@ -548,7 +587,7 @@ const buildScenarios = (deals: ForecastDeal[]): ForecastScenario[] => {
       id: "commit",
       label: "Commit",
       amount: commitAmount,
-      probability: analyzedDeals.length > 0 ? clamp(Math.round(averageProbability * 0.82), 0, 100) : 0,
+      probability: weightedDeals.length > 0 ? clamp(Math.round(averageProbability * 0.82), 0, 100) : 0,
     },
     {
       id: "likely",
@@ -560,7 +599,7 @@ const buildScenarios = (deals: ForecastDeal[]): ForecastScenario[] => {
       id: "upside",
       label: "Upside",
       amount: upsideAmount,
-      probability: analyzedDeals.length > 0 ? clamp(Math.round(averageProbability * 0.42), 0, 100) : 0,
+      probability: weightedDeals.length > 0 ? clamp(Math.round(averageProbability * 0.42), 0, 100) : 0,
     },
   ];
 };
@@ -703,6 +742,70 @@ const buildReliability = (deals: ForecastDeal[]): ForecastReliabilityDimension[]
 const averageScore = (items: ForecastReliabilityDimension[]): number =>
   items.length > 0 ? Math.round(items.reduce((sum, item) => sum + item.score, 0) / items.length) : 0;
 
+const buildMonthlyProjection = async ({
+  orgId,
+  scope,
+  hubspotOwnerId,
+  dateFrom,
+  dateTo,
+  deals,
+}: {
+  orgId: string;
+  scope: ForecastScope;
+  hubspotOwnerId: string | null;
+  dateFrom: string;
+  dateTo: string;
+  deals: ForecastDeal[];
+}): Promise<ForecastMonthlyProjection[]> => {
+  const dealsByMonth = deals.reduce<Map<string, ForecastDeal[]>>((months, deal) => {
+    const closeDate = deal.closeDate ? new Date(deal.closeDate) : null;
+    const month = closeDate && !Number.isNaN(closeDate.getTime()) ? getMonthKey(closeDate) : getMonthKey(new Date(`${dateTo}T00:00:00.000Z`));
+    const currentDeals = months.get(month) ?? [];
+
+    currentDeals.push(deal);
+    months.set(month, currentDeals);
+
+    return months;
+  }, new Map());
+
+  return Promise.all(
+    getMonthsBetween(dateFrom, dateTo).map(async (month) => {
+      const monthStart = new Date(`${month}T00:00:00.000Z`);
+      const monthEnd = getMonthEnd(monthStart).toISOString().slice(0, 10);
+      const monthDeals = dealsByMonth.get(month) ?? [];
+      const reliability = buildReliability(monthDeals);
+      const objectiveAmount = await getObjectiveAmountForForecast({
+        orgId,
+        scope,
+        hubspotOwnerId,
+        dateFrom: month,
+        dateTo: monthEnd,
+      });
+      const wonDeals = monthDeals.filter((deal) => deal.analysisStatus === "closed_won");
+      const analyzedDeals = monthDeals.filter((deal) => deal.analysisStatus === "fresh" || deal.analysisStatus === "closed_won");
+      const missingDeals = monthDeals.filter((deal) => deal.analysisStatus === "missing" || deal.analysisStatus === "stale");
+      const forecastAmount = monthDeals.reduce((sum, deal) => sum + deal.forecastAmount, 0);
+
+      return {
+        month,
+        label: getMonthLabel(month),
+        dealCount: monthDeals.length,
+        wonDealCount: wonDeals.length,
+        analyzedDealCount: analyzedDeals.length,
+        missingAnalysisCount: missingDeals.length,
+        pipelineAmount: monthDeals.reduce((sum, deal) => sum + deal.amount, 0),
+        commitAmount: monthDeals
+          .filter((deal) => deal.analysisStatus === "closed_won" || (deal.aiProbability ?? deal.crmProbability) >= 70 || deal.dealHealth === "strong")
+          .reduce((sum, deal) => sum + deal.forecastAmount, 0),
+        forecastAmount,
+        objectiveAmount,
+        gapToObjective: objectiveAmount === null ? null : forecastAmount - objectiveAmount,
+        confidenceScore: averageScore(reliability),
+      };
+    }),
+  );
+};
+
 const getProvider = (providerId?: string | null, modelId?: string | null) =>
   createLlmProvider({
     provider: providerId,
@@ -738,13 +841,21 @@ export const getForecastOverview = async (options: ForecastOverviewOptions): Pro
     .map((deal) => deal.analyzedAt)
     .filter((value): value is string => Boolean(value))
     .sort((left, right) => new Date(right).getTime() - new Date(left).getTime())[0] ?? null;
-  const forecastAmount = [...freshDeals, ...wonDeals].reduce((sum, deal) => sum + deal.forecastAmount, 0);
+  const forecastAmount = deals.reduce((sum, deal) => sum + deal.forecastAmount, 0);
   const objectiveAmount = await getObjectiveAmountForForecast({
     orgId: options.orgId,
     scope,
     hubspotOwnerId: options.hubspotOwnerId ?? null,
     dateFrom,
     dateTo,
+  });
+  const monthlyProjection = await buildMonthlyProjection({
+    orgId: options.orgId,
+    scope,
+    hubspotOwnerId: scope === "owner" ? options.hubspotOwnerId ?? null : null,
+    dateFrom,
+    dateTo,
+    deals,
   });
 
   return {
@@ -771,6 +882,7 @@ export const getForecastOverview = async (options: ForecastOverviewOptions): Pro
     risks: buildRisks(freshDeals),
     levers: buildLevers(freshDeals),
     reliability,
+    monthlyProjection,
     deals,
   };
 };

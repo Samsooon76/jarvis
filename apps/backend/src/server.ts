@@ -1,6 +1,7 @@
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { env } from "./config/env.js";
 import { getSupabaseAdmin } from "./db/client.js";
+import { registerSentryErrorHandler, setRequestSentryUser } from "./lib/sentry.js";
 import { registerRoutes } from "./routes/index.js";
 
 const registerRawJsonParser = (app: FastifyInstance): void => {
@@ -50,6 +51,8 @@ const isPublicRoute = (url: string): boolean =>
 
 const registerAuthHook = (app: FastifyInstance): void => {
   app.addHook("preHandler", async (request, reply) => {
+    setRequestSentryUser(null);
+
     if (!env.requireApiAuth || isPublicRoute(request.url)) {
       return;
     }
@@ -76,6 +79,12 @@ const registerAuthHook = (app: FastifyInstance): void => {
         error: "Token applicatif invalide.",
       });
     }
+
+    setRequestSentryUser({
+      id: data.user.id,
+      orgId: typeof data.user.app_metadata.org_id === "string" ? data.user.app_metadata.org_id : null,
+      role: typeof data.user.app_metadata.role === "string" ? data.user.app_metadata.role : null,
+    });
   });
 };
 
@@ -89,6 +98,7 @@ export const buildServer = async (): Promise<FastifyInstance> => {
   registerAuthHook(app);
 
   await registerRoutes(app);
+  registerSentryErrorHandler(app);
 
   return app;
 };

@@ -37,4 +37,13 @@ pids+=("$!")
 
 echo "Jarvis dev stack is starting. Press Ctrl+C to stop everything."
 
-wait -n "${pids[@]}"
+while true; do
+  for pid in "${pids[@]}"; do
+    if ! kill -0 "$pid" 2>/dev/null; then
+      wait "$pid"
+      exit "$?"
+    fi
+  done
+
+  sleep 1
+done

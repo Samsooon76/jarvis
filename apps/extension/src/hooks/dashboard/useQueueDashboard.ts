@@ -344,7 +344,7 @@ export const useQueueDashboard = ({
         ? ` Relances: ${result.autoFollowUp.createdCount} creee(s), ${result.autoFollowUp.failedCount} echec(s).`
         : "";
       const crmMessage = result.crm
-        ? ` CRM: ${result.crm.dealCount} deal(s), ${result.crm.contactCount} contact(s), ${result.crm.companyCount} entreprise(s).`
+        ? ` CRM: ${result.crm.dealCount} deal(s), ${result.crm.contactCount} contact(s), ${result.crm.companyCount} entreprise(s), ${result.crm.leadCount} lead(s).`
         : "";
 
       setAdminMessage(

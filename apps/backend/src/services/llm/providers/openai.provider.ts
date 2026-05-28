@@ -16,10 +16,13 @@ import type {
   DealIntelligenceNextStep,
   DealQualificationAnalysis,
   FollowUpTaskRecommendation,
+  LeadContactRankingAnalysis,
   LlmProvider,
+  RankLeadContactsInput,
   RecommendFollowUpTaskInput,
   TaskAnalysis,
 } from "../llm.provider.js";
+import { buildLeadContactRankingPrompt, parseLeadContactRanking } from "../lead-contact-ranking.js";
 import { buildDealActivityPlanPrompt, parseDealActivityPlan } from "../activity-plan.js";
 import {
   buildCloseLostDealPrompt,
@@ -681,6 +684,10 @@ export class OpenAiProvider implements LlmProvider {
 
   async analyzeTask(input: AnalyzeTaskInput): Promise<TaskAnalysis> {
     return parseTaskAnalysis(await this.completeJson(buildTaskAnalysisPrompt(input), 4_000), "OpenAI");
+  }
+
+  async rankLeadContacts(input: RankLeadContactsInput): Promise<LeadContactRankingAnalysis> {
+    return parseLeadContactRanking(await this.completeJson(buildLeadContactRankingPrompt(input), 2_000), "OpenAI");
   }
 
   private async completeJson(prompt: string, maxTokens: number): Promise<string> {

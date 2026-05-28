@@ -19,6 +19,7 @@ export type HubSpotConnectionStatusData = {
 
 export type HubSpotOwnerOptionData = {
   ownerId: string;
+  userId: string | null;
   hubspotUserId: string | null;
   name: string;
   email: string;
@@ -352,6 +353,7 @@ export const loadHubSpotDashboard = async (input: {
 
         return {
           ownerId: owner.id,
+          userId: ownerUserIdByHubSpotId.get(owner.id) ?? null,
           hubspotUserId:
             typeof owner.userId === "number"
               ? String(owner.userId)
@@ -378,6 +380,7 @@ export const loadHubSpotDashboard = async (input: {
   if (owners.length === 0) {
     owners = Array.from(prospectMetricsByOwner.entries()).map(([ownerId, metrics]) => ({
       ownerId,
+      userId: ownerUserIdByHubSpotId.get(ownerId) ?? null,
       hubspotUserId: null,
       name: `Owner ${ownerId}`,
       email: "",

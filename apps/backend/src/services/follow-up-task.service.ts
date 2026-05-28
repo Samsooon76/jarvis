@@ -303,14 +303,12 @@ const normalizeFollowUpRecommendation = (
 
 const hasOpenTask = async (prospectId: string): Promise<boolean> => {
   const supabase = getSupabaseAdmin();
-  const now = new Date().toISOString();
   const { data, error } = await supabase
     .from("actions")
     .select("id")
     .eq("prospect_id", prospectId)
     .eq("type", "task")
     .in("status", ["pending", "snoozed"])
-    .or(`due_at.gte.${now},due_at.is.null`)
     .limit(1);
 
   if (error) {

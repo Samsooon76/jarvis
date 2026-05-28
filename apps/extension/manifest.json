@@ -4,7 +4,12 @@
   "version": "0.1.0",
   "description": "AI-powered sales copilot that orchestrates your day",
   "permissions": ["sidePanel"],
-  "host_permissions": ["https://jarvisapi-production-10cd.up.railway.app/*", "http://localhost:4000/*"],
+  "host_permissions": [
+    "https://jarvisapi-production-10cd.up.railway.app/*",
+    "http://localhost:4000/*",
+    "https://*.ingest.sentry.io/*",
+    "https://*.ingest.us.sentry.io/*"
+  ],
   "side_panel": {
     "default_path": "index.html"
   },

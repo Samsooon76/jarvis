@@ -15,7 +15,9 @@ import type {
   DealHistoryAnalysis,
   DealQualificationAnalysis,
   FollowUpTaskRecommendation,
+  LeadContactRankingAnalysis,
   LlmProvider,
+  RankLeadContactsInput,
   RecommendFollowUpTaskInput,
   TaskAnalysis,
 } from "../llm.provider.js";
@@ -27,6 +29,7 @@ import {
   parseCloseLostPortfolioAnalysis,
 } from "../close-lost.js";
 import { buildDealQualificationPrompt, parseDealQualification } from "../qualification.js";
+import { buildLeadContactRankingPrompt, parseLeadContactRanking } from "../lead-contact-ranking.js";
 import { buildTaskAnalysisPrompt, parseTaskAnalysis } from "../task-analysis.js";
 
 type GeminiGenerateContentResponse = {
@@ -584,5 +587,40 @@ export class VertexGeminiProvider implements LlmProvider {
     const payload = (await response.json()) as GeminiGenerateContentResponse;
 
     return parseTaskAnalysis(extractText(payload), "Vertex AI");
+  }
+
+  async rankLeadContacts(input: RankLeadContactsInput): Promise<LeadContactRankingAnalysis> {
+    const response = await fetch(`${GEMINI_ENDPOINT}/${this.modelName}:generateContent?key=${this.apiKey}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            role: "user",
+            parts: [
+              {
+                text: buildLeadContactRankingPrompt(input),
+              },
+            ],
+          },
+        ],
+        generationConfig: {
+          temperature: 0.1,
+          responseMimeType: "application/json",
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+
+      throw new Error(`Vertex AI error (${response.status}): ${errorText}`);
+    }
+
+    const payload = (await response.json()) as GeminiGenerateContentResponse;
+
+    return parseLeadContactRanking(extractText(payload), "Vertex AI");
   }
 }

@@ -1,14 +1,19 @@
-import { ArrowUp, Brain, CheckCircle2, ChevronDown, CircleDot, RefreshCw, Search } from "lucide-react";
+import { ArrowUp, Brain, CheckCircle2, ChevronDown, CircleDot, Clock, RefreshCw, Search, SkipForward } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { QueueProspect } from "@jarvis/shared";
 import {
   fetchHubSpotTasks,
+  fetchSalesTasksToday,
   analyzeAndApplyHubSpotTask,
+  completeSalesTask,
+  skipSalesTask,
+  snoozeSalesTask,
   updateHubSpotTaskPriority,
   type HubSpotLastUpdateItem,
   type HubSpotOwnerOption,
   type HubSpotTaskListItem,
   type HubSpotTaskPriority,
+  type SalesTaskListItem,
   type TaskAnalysis,
   type TaskAnalyzerApplyResult,
   type TaskAnalysisRecommendation,
@@ -28,8 +33,13 @@ type TasksViewProps = {
 
 type EnrichedTask = HubSpotTaskListItem & {
   dealName: string | null;
+  jarvisTask?: SalesTaskListItem;
   lastUpdate: HubSpotLastUpdateItem | null;
   sortScore: number;
+};
+
+type DisplayTask = HubSpotTaskListItem & {
+  jarvisTask?: SalesTaskListItem;
 };
 
 type TaskDateBucket = "overdue" | "today" | "upcoming" | "later" | "noDueDate";
@@ -366,7 +376,7 @@ const wait = (durationMs: number): Promise<void> =>
 
 type CachedHubSpotTasks = {
   cachedAt: number;
-  tasks: HubSpotTaskListItem[];
+  tasks: DisplayTask[];
 };
 
 const getTaskCacheKey = (orgId: string, selectedOwnerId: string): string =>
@@ -382,7 +392,7 @@ const isHubSpotTaskListItem = (value: unknown): value is HubSpotTaskListItem => 
   return typeof candidate.id === "string" && typeof candidate.title === "string";
 };
 
-const readCachedTasks = (orgId: string, selectedOwnerId: string): HubSpotTaskListItem[] | null => {
+const readCachedTasks = (orgId: string, selectedOwnerId: string): DisplayTask[] | null => {
   try {
     const rawCache = window.localStorage.getItem(getTaskCacheKey(orgId, selectedOwnerId));
 
@@ -407,7 +417,7 @@ const readCachedTasks = (orgId: string, selectedOwnerId: string): HubSpotTaskLis
   }
 };
 
-const writeCachedTasks = (orgId: string, selectedOwnerId: string, tasks: HubSpotTaskListItem[]): void => {
+const writeCachedTasks = (orgId: string, selectedOwnerId: string, tasks: DisplayTask[]): void => {
   try {
     const cachePayload: CachedHubSpotTasks = {
       cachedAt: Date.now(),
@@ -420,6 +430,47 @@ const writeCachedTasks = (orgId: string, selectedOwnerId: string, tasks: HubSpot
   }
 };
 
+const toHubSpotPriority = (priorityScore: number): HubSpotTaskPriority =>
+  priorityScore >= 75 ? "high" : priorityScore >= 45 ? "medium" : "low";
+
+const toHubSpotStatus = (status: SalesTaskListItem["status"]): HubSpotTaskListItem["status"] => {
+  if (status === "done" || status === "skipped" || status === "canceled") {
+    return "completed";
+  }
+
+  if (status === "snoozed") {
+    return "deferred";
+  }
+
+  return "not_started";
+};
+
+const mapSalesTaskToDisplayTask = (
+  task: SalesTaskListItem,
+  ownerHubSpotId: string | null | undefined,
+): DisplayTask => ({
+  id: task.id,
+  title: task.title,
+  body: task.context ?? task.reason,
+  status: toHubSpotStatus(task.status),
+  priority: toHubSpotPriority(task.priorityScore),
+  dueAt: task.scheduledAt,
+  ownerHubSpotId: ownerHubSpotId ?? null,
+  taskType: task.taskType,
+  contactName: task.prospect?.name ?? null,
+  contactEmail: task.prospect?.email ?? null,
+  companyName: task.prospect?.company ?? null,
+  dealName: task.prospect?.dealName ?? null,
+  createdAt: task.createdAt,
+  associatedContactIds: task.hubspotContactId ? [task.hubspotContactId] : [],
+  associatedCompanyIds: [],
+  associatedDealIds: task.hubspotDealId ? [task.hubspotDealId] : [],
+  jarvisTask: task,
+});
+
+const getTaskDurationLabel = (task: DisplayTask): string | null =>
+  task.jarvisTask ? `${task.jarvisTask.estimatedDurationMinutes} min` : null;
+
 export const TasksView = ({
   hubspotPortalId,
   lastUpdates,
@@ -429,11 +480,12 @@ export const TasksView = ({
   prospects,
   selectedOwnerId,
 }: TasksViewProps) => {
-  const [tasks, setTasks] = useState<HubSpotTaskListItem[]>([]);
+  const [tasks, setTasks] = useState<DisplayTask[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [dateFilter, setDateFilter] = useState<TaskDateFilter>("all");
   const [isLoading, setIsLoading] = useState(false);
   const [priorityUpdatingId, setPriorityUpdatingId] = useState<string | null>(null);
+  const [taskActionUpdatingId, setTaskActionUpdatingId] = useState<string | null>(null);
   const [analysisLoadingId, setAnalysisLoadingId] = useState<string | null>(null);
   const [analysisApplyingId, setAnalysisApplyingId] = useState<string | null>(null);
   const [processingTaskIds, setProcessingTaskIds] = useState<Record<string, boolean>>({});
@@ -445,20 +497,30 @@ export const TasksView = ({
   const [error, setError] = useState<string | null>(null);
   const loadTasksInFlightRef = useRef(false);
   const displayedOwnerIdRef = useRef<string | null>(null);
-  const tasksRef = useRef<HubSpotTaskListItem[]>([]);
+  const tasksRef = useRef<DisplayTask[]>([]);
+  const ownerById = useMemo(() => new Map(owners.map((owner) => [owner.ownerId, owner])), [owners]);
+  const selectedOwner = selectedOwnerId ? ownerById.get(selectedOwnerId) ?? null : null;
+  const selectedOwnerUserId = selectedOwner?.userId ?? null;
+  const selectedOwnerName = selectedOwnerId ? selectedOwner?.name ?? "Owner actif" : "Tous les reps";
+  const usingSalesOperatingQueue = Boolean(selectedOwnerUserId);
 
-  const commitTasks = (nextTasks: HubSpotTaskListItem[]): void => {
+  const commitTasks = (nextTasks: DisplayTask[]): void => {
     tasksRef.current = nextTasks;
     setTasks(nextTasks);
   };
 
-  const fetchAndCommitTasks = async (ownerId: string): Promise<HubSpotTaskListItem[]> => {
-    const hubspotTasks = await fetchHubSpotTasks(orgId, ownerId);
-    commitTasks(hubspotTasks);
-    displayedOwnerIdRef.current = ownerId;
-    writeCachedTasks(orgId, ownerId, hubspotTasks);
+  const fetchAndCommitTasks = async (ownerId: string): Promise<DisplayTask[]> => {
+    const owner = ownerById.get(ownerId);
+    const localUserId = owner?.userId ?? null;
+    const nextTasks = localUserId
+      ? (await fetchSalesTasksToday(localUserId)).tasks.map((task) => mapSalesTaskToDisplayTask(task, ownerId))
+      : await fetchHubSpotTasks(orgId, ownerId);
 
-    return hubspotTasks;
+    commitTasks(nextTasks);
+    displayedOwnerIdRef.current = ownerId;
+    writeCachedTasks(orgId, ownerId, nextTasks);
+
+    return nextTasks;
   };
 
   const loadTasks = async () => {
@@ -502,7 +564,7 @@ export const TasksView = ({
     }, 60_000);
 
     return () => window.clearInterval(intervalId);
-  }, [analysisApplyingId, analysisLoadingId, orgId, selectedOwnerId]);
+  }, [analysisApplyingId, analysisLoadingId, orgId, ownerById, selectedOwnerId]);
 
   const dealLabelById = useMemo(() => {
     const labels = new Map<string, string>();
@@ -524,8 +586,6 @@ export const TasksView = ({
     () => new Map(lastUpdates.map((update) => [update.hubspotDealId, update])),
     [lastUpdates],
   );
-  const ownerById = useMemo(() => new Map(owners.map((owner) => [owner.ownerId, owner])), [owners]);
-  const selectedOwnerName = selectedOwnerId ? ownerById.get(selectedOwnerId)?.name ?? "Owner actif" : "Tous les reps";
   const getTaskOwnerInitials = (task: HubSpotTaskListItem): string => {
     const ownerName = task.ownerHubSpotId ? ownerById.get(task.ownerHubSpotId)?.name : null;
 
@@ -690,6 +750,65 @@ export const TasksView = ({
       .slice(0, 4);
   }, [openTasks, ownerById, selectedOwnerId, selectedOwnerName]);
 
+  const applySalesTaskToState = (salesTask: SalesTaskListItem): void => {
+    const displayTask = mapSalesTaskToDisplayTask(salesTask, selectedOwnerId);
+
+    setTasks((currentTasks) => {
+      const nextTasks = currentTasks.map((task) => (task.id === salesTask.id ? displayTask : task));
+      tasksRef.current = nextTasks;
+
+      if (selectedOwnerId) {
+        writeCachedTasks(orgId, selectedOwnerId, nextTasks);
+      }
+
+      return nextTasks;
+    });
+  };
+
+  const handleCompleteSalesTask = async (taskId: string): Promise<void> => {
+    try {
+      setTaskActionUpdatingId(taskId);
+      setError(null);
+      const updatedTask = await completeSalesTask(taskId);
+      applySalesTaskToState(updatedTask);
+      setTaskActionMessage("Tache terminee.");
+    } catch (actionError) {
+      setError(formatTasksError(actionError));
+    } finally {
+      setTaskActionUpdatingId(null);
+    }
+  };
+
+  const handleSnoozeSalesTask = async (taskId: string): Promise<void> => {
+    const snoozedUntil = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+
+    try {
+      setTaskActionUpdatingId(taskId);
+      setError(null);
+      const updatedTask = await snoozeSalesTask(taskId, snoozedUntil);
+      applySalesTaskToState(updatedTask);
+      setTaskActionMessage("Tache snoozee.");
+    } catch (actionError) {
+      setError(formatTasksError(actionError));
+    } finally {
+      setTaskActionUpdatingId(null);
+    }
+  };
+
+  const handleSkipSalesTask = async (taskId: string): Promise<void> => {
+    try {
+      setTaskActionUpdatingId(taskId);
+      setError(null);
+      const updatedTask = await skipSalesTask(taskId);
+      applySalesTaskToState(updatedTask);
+      setTaskActionMessage("Tache ignoree.");
+    } catch (actionError) {
+      setError(formatTasksError(actionError));
+    } finally {
+      setTaskActionUpdatingId(null);
+    }
+  };
+
   const handlePriorityChange = async (taskId: string, priority: HubSpotTaskPriority | null) => {
     try {
       setPriorityUpdatingId(taskId);
@@ -718,9 +837,11 @@ export const TasksView = ({
       [taskId]: result.analysis,
     }));
 
-    if (result.completedTask) {
+    const completedTaskIds = new Set(result.completedTaskIds ?? (result.completedTask ? [taskId] : []));
+
+    if (completedTaskIds.size > 0) {
       setTasks((currentTasks) => {
-        const nextTasks = currentTasks.filter((task) => task.id !== taskId);
+        const nextTasks = currentTasks.filter((task) => !completedTaskIds.has(task.id));
         tasksRef.current = nextTasks;
 
         if (selectedOwnerId) {
@@ -731,13 +852,13 @@ export const TasksView = ({
       });
     }
 
-    const createdTask = result.createdTask;
+    const createdTask = result.createdTask ?? result.retainedTask ?? null;
 
     if (createdTask) {
       setTasks((currentTasks) => {
         const nextTasks = [
           createdTask,
-          ...currentTasks.filter((task) => task.id !== taskId),
+          ...currentTasks.filter((task) => task.id !== taskId && task.id !== createdTask.id),
         ];
         tasksRef.current = nextTasks;
 
@@ -938,15 +1059,17 @@ export const TasksView = ({
             </option>
           ))}
         </select>
-        <button
-          className="ae-task-analyze-button"
-          disabled={!selectedOwnerId || overdueTasks.length === 0 || batchIsRunning}
-          onClick={handleProcessOverdueTasks}
-          type="button"
-        >
-          <Brain size={15} />
-          <span>{analyzeButtonLabel}</span>
-        </button>
+        {!usingSalesOperatingQueue ? (
+          <button
+            className="ae-task-analyze-button"
+            disabled={!selectedOwnerId || overdueTasks.length === 0 || batchIsRunning}
+            onClick={handleProcessOverdueTasks}
+            type="button"
+          >
+            <Brain size={15} />
+            <span>{analyzeButtonLabel}</span>
+          </button>
+        ) : null}
       </div>
 
       <div className="ae-task-metrics" aria-label="Resume des taches">
@@ -1029,7 +1152,7 @@ export const TasksView = ({
                       </div>
                       <div className="ae-task-main">
                         <strong>
-                          {getHubSpotRecordUrl(hubspotPortalId, "0-27", task.id) ? (
+                          {!task.jarvisTask && getHubSpotRecordUrl(hubspotPortalId, "0-27", task.id) ? (
                             <a
                               href={getHubSpotRecordUrl(hubspotPortalId, "0-27", task.id) ?? undefined}
                               rel="noreferrer"
@@ -1082,6 +1205,9 @@ export const TasksView = ({
                             <span className={`ae-task-tag urgency-${getTaskDateBucket(task.dueAt)}`}>
                               {taskUrgencyLabels[getTaskDateBucket(task.dueAt)]}
                             </span>
+                            {getTaskDurationLabel(task) ? (
+                              <span className="ae-task-tag">{getTaskDurationLabel(task)}</span>
+                            ) : null}
                           </div>
                         </div>
                       </div>
@@ -1090,33 +1216,20 @@ export const TasksView = ({
                           <i aria-hidden="true" />
                           {getTaskDueShortLabel(task.dueAt)}
                         </small>
-                        {task.lastUpdate ? <small>{task.lastUpdate.reason ?? "Webhook HubSpot"}</small> : null}
+                        {task.jarvisTask ? <small>{task.jarvisTask.reason}</small> : null}
+                        {!task.jarvisTask && task.lastUpdate ? <small>{task.lastUpdate.reason ?? "Webhook HubSpot"}</small> : null}
                         <span className="ae-task-owner" title={statusLabels[task.status]}>
                           {getTaskOwnerInitials(task)}
                         </span>
                       </div>
-                      <button
-                        className="ae-task-inline-analyze"
-                        disabled={analysisLoadingId === task.id || analysisApplyingId === task.id || processingTaskIds[task.id]}
-                        onClick={() => handleAnalyzeTask(task.id, Boolean(analysisByTaskId[task.id]))}
-                        type="button"
-                      >
-                        <Brain size={13} />
-                        <span>
-                          {analysisApplyingId === task.id
-                            ? "Action..."
-                            : analysisLoadingId === task.id || processingTaskIds[task.id]
-                              ? "Analyse..."
-                              : "Analyser"}
-                        </span>
-                      </button>
-                      <div className="ae-task-priority-controls" aria-label="Priorite de la tache">
+                      {!task.jarvisTask ? (
                         <button
+                          className="ae-task-inline-analyze"
                           disabled={analysisLoadingId === task.id || analysisApplyingId === task.id || processingTaskIds[task.id]}
                           onClick={() => handleAnalyzeTask(task.id, Boolean(analysisByTaskId[task.id]))}
                           type="button"
                         >
-                          <Brain size={14} />
+                          <Brain size={13} />
                           <span>
                             {analysisApplyingId === task.id
                               ? "Action..."
@@ -1125,7 +1238,52 @@ export const TasksView = ({
                                 : "Analyser"}
                           </span>
                         </button>
-                        {taskPriorityOptions.map((priority) => (
+                      ) : null}
+                      <div className="ae-task-priority-controls" aria-label="Priorite de la tache">
+                        {task.jarvisTask ? (
+                          <>
+                            <button
+                              disabled={taskActionUpdatingId === task.id || task.jarvisTask.status === "done"}
+                              onClick={() => void handleCompleteSalesTask(task.id)}
+                              type="button"
+                            >
+                              <CheckCircle2 size={14} />
+                              <span>Done</span>
+                            </button>
+                            <button
+                              disabled={taskActionUpdatingId === task.id || task.jarvisTask.status === "done" || task.jarvisTask.status === "skipped"}
+                              onClick={() => void handleSnoozeSalesTask(task.id)}
+                              type="button"
+                            >
+                              <Clock size={14} />
+                              <span>Snooze</span>
+                            </button>
+                            <button
+                              disabled={taskActionUpdatingId === task.id || task.jarvisTask.status === "done" || task.jarvisTask.status === "skipped"}
+                              onClick={() => void handleSkipSalesTask(task.id)}
+                              type="button"
+                            >
+                              <SkipForward size={14} />
+                              <span>Skip</span>
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              disabled={analysisLoadingId === task.id || analysisApplyingId === task.id || processingTaskIds[task.id]}
+                              onClick={() => handleAnalyzeTask(task.id, Boolean(analysisByTaskId[task.id]))}
+                              type="button"
+                            >
+                              <Brain size={14} />
+                              <span>
+                                {analysisApplyingId === task.id
+                                  ? "Action..."
+                                  : analysisLoadingId === task.id || processingTaskIds[task.id]
+                                    ? "Analyse..."
+                                    : "Analyser"}
+                              </span>
+                            </button>
+                            {taskPriorityOptions.map((priority) => (
                           <button
                             aria-pressed={task.priority === priority}
                             className={task.priority === priority ? "active" : ""}
@@ -1137,7 +1295,9 @@ export const TasksView = ({
                             {priority === "high" ? <ArrowUp size={14} /> : null}
                             <span>{priority ? priorityLabels[priority] : "Aucune"}</span>
                           </button>
-                        ))}
+                            ))}
+                          </>
+                        )}
                       </div>
                     </article>
                   ))}
@@ -1148,7 +1308,7 @@ export const TasksView = ({
           })}
           {!selectedOwnerId ? <p className="ae-empty">Selectionne un owner HubSpot pour charger ses taches.</p> : null}
           {selectedOwnerId && enrichedTasks.length === 0 && !isLoading ? (
-            <p className="ae-empty">Aucune tache HubSpot ouverte.</p>
+            <p className="ae-empty">{usingSalesOperatingQueue ? "Aucune tache Jarvis ouverte." : "Aucune tache HubSpot ouverte."}</p>
           ) : null}
           {selectedOwnerId && enrichedTasks.length > 0 && filteredTaskCount === 0 ? (
             <p className="ae-empty">Aucune tache ne correspond aux filtres.</p>

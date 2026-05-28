@@ -118,6 +118,7 @@ type SyncResult = {
     contactCount: number;
     companyCount: number;
     dealCount: number;
+    leadCount: number;
   };
   autoFollowUp: {
     analyzedCount: number;
@@ -381,6 +382,23 @@ type HubSpotDealStageUpsertRow = {
   synced_at: string;
 };
 
+type HubSpotLeadUpsertRow = {
+  org_id: string;
+  hubspot_lead_id: string;
+  hubspot_owner_id: string | null;
+  associated_contact_ids: string[];
+  associated_company_ids: string[];
+  name: string;
+  pipeline_id: string | null;
+  pipeline_label: string | null;
+  phase_id: string | null;
+  phase_label: string | null;
+  hubspot_created_at: string | null;
+  hubspot_updated_at: string | null;
+  properties: Record<string, string | null>;
+  synced_at: string;
+};
+
 type HubSpotRealtimeAnalysisRunListRow = {
   id: string;
   org_id: string;
@@ -555,37 +573,51 @@ const formatOperationError = (prefix: string, message: string): string =>
 const getPublicErrorMessage = (error: unknown, fallbackMessage: string): string =>
   error instanceof Error ? normalizeUpstreamErrorMessage(error.message) : fallbackMessage;
 
-const buildOAuthPopupHtml = (targetUrl: string): string => `<!doctype html>
+const escapeHtml = (value: string): string =>
+  value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+
+const buildOAuthPopupHtml = (targetUrl: string, status: "connected" | "error", message: string): string => `<!doctype html>
 <html lang="fr">
   <head>
     <meta charset="utf-8" />
     <title>Jarvis OAuth</title>
   </head>
   <body style="font-family: ui-sans-serif, system-ui; padding: 24px;">
-    <p>Connexion HubSpot finalisee. Retour vers Jarvis...</p>
-    <p>Si cette fenetre reste ouverte, <a id="fallback-link" href="${targetUrl}">revenir a Jarvis</a>.</p>
+    <p>${escapeHtml(message)}</p>
+    <p>Si cette fenetre reste ouverte, <a id="fallback-link" href="${escapeHtml(targetUrl)}">revenir a Jarvis</a>.</p>
     <script>
       const targetUrl = ${JSON.stringify(targetUrl)};
+      const status = ${JSON.stringify(status)};
       const targetOrigin = new URL(targetUrl).origin;
       const fallbackLink = document.getElementById("fallback-link");
       fallbackLink.href = targetUrl;
 
       if (window.opener && !window.opener.closed) {
         try {
-          window.opener.postMessage({ type: "jarvis:hubspot-connected", targetUrl }, targetOrigin);
-          window.opener.location.href = targetUrl;
+          window.opener.postMessage({ type: "jarvis:hubspot-" + status, targetUrl }, targetOrigin);
+
+          if (status === "connected") {
+            window.opener.location.href = targetUrl;
+          }
         } catch (error) {
           window.location.href = targetUrl;
         }
       }
 
-      window.setTimeout(() => {
-        window.close();
-      }, 250);
+      if (status === "connected") {
+        window.setTimeout(() => {
+          window.close();
+        }, 250);
 
-      window.setTimeout(() => {
-        window.location.href = targetUrl;
-      }, 1200);
+        window.setTimeout(() => {
+          window.location.href = targetUrl;
+        }, 1200);
+      }
     </script>
   </body>
 </html>`;
@@ -922,7 +954,7 @@ const completeHubSpotSyncJob = async (jobId: string, result: SyncResult): Promis
     {
       at: now,
       level: "success",
-      message: `Sync terminee: ${result.syncedCount} prospect(s), ${result.crm.dealCount} deal(s), ${result.crm.contactCount} contact(s).`,
+      message: `Sync terminee: ${result.syncedCount} prospect(s), ${result.crm.dealCount} deal(s), ${result.crm.contactCount} contact(s), ${result.crm.leadCount} lead(s).`,
     } satisfies SyncProgressLog,
   ].slice(-HUBSPOT_SYNC_JOB_LOG_LIMIT);
   await updateJob(jobId, {
@@ -1148,6 +1180,22 @@ const upsertHubSpotCrmSnapshot = async (
     probability: stage.probability,
     synced_at: syncedAt,
   }));
+  const leadRows: HubSpotLeadUpsertRow[] = snapshot.leads.map((lead) => ({
+    org_id: orgId,
+    hubspot_lead_id: lead.id,
+    hubspot_owner_id: lead.hubspotOwnerId,
+    associated_contact_ids: lead.associatedContactIds,
+    associated_company_ids: lead.associatedCompanyIds,
+    name: lead.name,
+    pipeline_id: lead.pipelineId,
+    pipeline_label: lead.pipelineLabel,
+    phase_id: lead.phaseId,
+    phase_label: lead.phaseLabel,
+    hubspot_created_at: normalizeHubSpotTimestamp(lead.createdAt),
+    hubspot_updated_at: normalizeHubSpotTimestamp(lead.updatedAt),
+    properties: lead.properties,
+    synced_at: syncedAt,
+  }));
   const dealRows: HubSpotDealUpsertRow[] = snapshot.deals.map((deal) => {
     const dealStageId = readHubSpotProperty(deal.properties, "dealstage");
     const stage = stageLabelById.get(dealStageId ?? "");
@@ -1215,6 +1263,16 @@ const upsertHubSpotCrmSnapshot = async (
 
     if (error) {
       throw new Error(formatOperationError("Impossible de synchroniser les stages HubSpot", error.message));
+    }
+  }
+
+  for (const batch of createBatches(leadRows, PROSPECT_UPSERT_BATCH_SIZE)) {
+    const { error } = await supabase.from("hubspot_leads").upsert(batch, {
+      onConflict: "org_id,hubspot_lead_id",
+    });
+
+    if (error) {
+      throw new Error(formatOperationError("Impossible de synchroniser les leads HubSpot", error.message));
     }
   }
 };
@@ -1447,6 +1505,7 @@ const syncHubSpotProspects = async (
           contactCount: crmSnapshot?.contacts.length ?? 0,
           companyCount: crmSnapshot?.companies.length ?? 0,
           dealCount: crmSnapshot?.deals.length ?? 0,
+          leadCount: crmSnapshot?.leads.length ?? 0,
         },
         autoFollowUp: {
           analyzedCount: 0,
@@ -1527,7 +1586,7 @@ const syncHubSpotProspects = async (
       reportProgress?.({
         progress: 68,
         step: "Ecriture CRM",
-        message: `${crmSnapshot.deals.length} deal(s), ${crmSnapshot.contacts.length} contact(s), ${crmSnapshot.companies.length} entreprise(s).`,
+        message: `${crmSnapshot.deals.length} deal(s), ${crmSnapshot.contacts.length} contact(s), ${crmSnapshot.companies.length} entreprise(s), ${crmSnapshot.leads.length} lead(s).`,
       });
       await upsertHubSpotCrmSnapshot(orgId, crmSnapshot, syncedAt);
     }
@@ -1580,6 +1639,7 @@ const syncHubSpotProspects = async (
         contactCount: crmSnapshot?.contacts.length ?? 0,
         companyCount: crmSnapshot?.companies.length ?? 0,
         dealCount: crmSnapshot?.deals.length ?? 0,
+        leadCount: crmSnapshot?.leads.length ?? 0,
       },
       autoFollowUp,
     };
@@ -2880,25 +2940,38 @@ export const registerHubSpotCoreRoutes = async (app: FastifyInstance): Promise<v
           invalidateHubSpotStatusCache(orgId);
         }
 
-        void syncHubSpotProspects(orgId)
+        const initialSyncJob = await createHubSpotSyncJob(orgId);
+
+        void syncHubSpotProspects(orgId, DEFAULT_TARGET_HUBSPOT_CONTACT_NAMES, true, [], (event) => {
+          void updateHubSpotSyncJob(initialSyncJob.jobId, event);
+        })
           .then((syncResult) => {
+            void completeHubSpotSyncJob(initialSyncJob.jobId, syncResult);
             request.log.info(
-              { orgId, syncedCount: syncResult.syncedCount },
+              { orgId, jobId: initialSyncJob.jobId, syncedCount: syncResult.syncedCount },
               "Connexion HubSpot terminee, sync initiale terminee en arriere-plan.",
             );
           })
           .catch((syncError: unknown) => {
+            void failHubSpotSyncJob(initialSyncJob.jobId, syncError);
             request.log.error(
-              { error: syncError, orgId },
+              { error: syncError, orgId, jobId: initialSyncJob.jobId },
               "Connexion HubSpot terminee, mais la sync initiale en arriere-plan a echoue.",
             );
           });
+
+        const connectedTarget = new URL(returnTo);
+        connectedTarget.searchParams.set("hubspot", "connected");
+        connectedTarget.searchParams.set("sync", "started");
+        connectedTarget.searchParams.set("syncJobId", initialSyncJob.jobId);
 
         return reply
           .type("text/html; charset=utf-8")
           .send(
             buildOAuthPopupHtml(
-              `${returnTo}${returnTo.includes("?") ? "&" : "?"}hubspot=connected&sync=started`,
+              connectedTarget.toString(),
+              "connected",
+              "Connexion HubSpot finalisee. Retour vers Jarvis...",
             ),
           );
       } catch (error) {
@@ -2911,6 +2984,8 @@ export const registerHubSpotCoreRoutes = async (app: FastifyInstance): Promise<v
           .send(
             buildOAuthPopupHtml(
               appendErrorQuery(fallbackTarget.replace(/[?&]reason=[^&]*/g, ""), errorMessage),
+              "error",
+              `Connexion HubSpot echouee: ${errorMessage}`,
             ),
           );
       }

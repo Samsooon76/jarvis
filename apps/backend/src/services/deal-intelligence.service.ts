@@ -14,7 +14,7 @@ import type {
 } from "./llm/llm.provider.js";
 
 const UUID_V4_LIKE_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i;
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type DealIntelligenceContext = {
   orgId?: string | null;

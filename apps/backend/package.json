@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@jarvis/shared": "0.1.0",
+    "@sentry/node": "^10.53.1",
     "@supabase/supabase-js": "^2.100.0",
     "bullmq": "^5.76.8",
     "fastify": "^5.6.1",

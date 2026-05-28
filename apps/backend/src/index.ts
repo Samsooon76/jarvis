@@ -1,7 +1,10 @@
 import { env } from "./config/env.js";
-import { buildServer } from "./server.js";
+import { initSentry } from "./lib/sentry.js";
+
+initSentry();
 
 const start = async () => {
+  const { buildServer } = await import("./server.js");
   const app = await buildServer();
 
   try {

@@ -68,8 +68,24 @@ type HubSpotConnectionStatus = {
   lastSyncedAt: string | null;
 };
 
+export type AppUserRole = "sales" | "manager" | "admin";
+
+export type AppUserProfile = {
+  id: string | null;
+  authUserId: string;
+  orgId: string | null;
+  orgName: string | null;
+  email: string;
+  name: string;
+  role: AppUserRole | null;
+  hubspotOwnerId: string | null;
+  onboardingRequired: boolean;
+  canManageHubSpot: boolean;
+};
+
 export type HubSpotOwnerOption = {
   ownerId: string;
+  userId: string | null;
   hubspotUserId: string | null;
   name: string;
   email: string;
@@ -183,10 +199,117 @@ export type HubSpotLeadListItem = {
   updatedAt: string;
 };
 
+export type HubSpotLeadContactListItem = {
+  hubspotContactId: string;
+  hubspotOwnerId: string | null;
+  name: string | null;
+  email: string | null;
+  phone: string | null;
+  title: string | null;
+  lifecycleStage: string | null;
+  leadStatus: string | null;
+  lastActivityAt: string | null;
+  deterministicScore: number;
+  aiScore: number | null;
+  finalScore: number;
+  priority: ProspectPriority;
+  reason: string;
+  recommendedAction: string;
+  confidence: "low" | "medium" | "high" | null;
+  scoringSource: "deterministic" | "ai_cached";
+};
+
+export type HubSpotLeadAccountItem = {
+  lead: {
+    hubspotLeadId: string;
+    hubspotOwnerId: string | null;
+    name: string;
+    companyName: string | null;
+    pipelineId: string | null;
+    pipelineLabel: string | null;
+    phaseId: string | null;
+    phaseLabel: string | null;
+    lifecycleStage: string | null;
+    leadStatus: string | null;
+    lastActivityAt: string | null;
+    syncedAt: string;
+    updatedAt: string;
+    contactCount: number;
+  };
+  contacts: HubSpotLeadContactListItem[];
+  bestContact: HubSpotLeadContactListItem | null;
+};
+
 type HubSpotLeadsPayload = {
   orgId: string;
   hubspotOwnerId: string;
   leads: HubSpotLeadListItem[];
+};
+
+type HubSpotLeadAccountsPayload = {
+  orgId: string;
+  hubspotOwnerId: string;
+  accounts: HubSpotLeadAccountItem[];
+};
+
+export type SalesTaskStatus = "pending" | "snoozed" | "skipped" | "done" | "canceled";
+
+export type SalesTaskType = "respond_to_client" | "follow_up" | "post_call_next_step" | "deal_review" | "crm_update";
+
+export type SalesTaskListItem = {
+  id: string;
+  orgId: string;
+  userId: string | null;
+  prospectId: string | null;
+  sourceEventId: string | null;
+  taskKey: string;
+  taskType: SalesTaskType;
+  title: string;
+  context: string | null;
+  reason: string;
+  scheduledAt: string;
+  estimatedDurationMinutes: number;
+  priorityScore: number;
+  status: SalesTaskStatus;
+  snoozedUntil: string | null;
+  completedAt: string | null;
+  skippedAt: string | null;
+  canceledAt: string | null;
+  hubspotContactId: string | null;
+  hubspotDealId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  prospect: {
+    id: string;
+    name: string;
+    company: string | null;
+    email: string | null;
+    phone: string | null;
+    title: string | null;
+    dealName: string | null;
+    dealStage: string | null;
+    dealAmount: number | null;
+    closeProbability: number;
+  } | null;
+};
+
+export type SalesTasksTodayPayload = {
+  userId: string;
+  orgId: string;
+  generatedAt: string;
+  tasks: SalesTaskListItem[];
+  nowTask: SalesTaskListItem | null;
+  nextTask: SalesTaskListItem | null;
+  counts: {
+    pending: number;
+    snoozed: number;
+    skipped: number;
+    done: number;
+  };
+};
+
+type SalesTaskActionResult = {
+  task: SalesTaskListItem;
 };
 
 export type TaskAnalysisType =
@@ -218,9 +341,11 @@ export type TaskAnalysis = {
 export type TaskAnalyzerApplyResult = {
   orgId: string;
   hubspotTaskId: string;
-  action: "completed" | "rescheduled";
+  action: "completed" | "rescheduled" | "consolidated";
   completedTask: HubSpotTaskListItem | null;
+  completedTaskIds?: string[];
   createdTask: HubSpotTaskListItem | null;
+  retainedTask?: HubSpotTaskListItem | null;
   analysis: TaskAnalysis;
   message: string;
 };
@@ -251,6 +376,7 @@ export type HubSpotSyncResult = {
     contactCount: number;
     companyCount: number;
     dealCount: number;
+    leadCount: number;
   };
   autoFollowUp?: {
     analyzedCount: number;
@@ -814,6 +940,21 @@ export type ForecastReliabilityDimension = {
   score: number;
 };
 
+export type ForecastMonthlyProjection = {
+  month: string;
+  label: string;
+  dealCount: number;
+  wonDealCount: number;
+  analyzedDealCount: number;
+  missingAnalysisCount: number;
+  pipelineAmount: number;
+  commitAmount: number;
+  forecastAmount: number;
+  objectiveAmount: number | null;
+  gapToObjective: number | null;
+  confidenceScore: number;
+};
+
 export type ForecastOverviewResult = {
   orgId: string;
   scope: ForecastScope;
@@ -838,6 +979,7 @@ export type ForecastOverviewResult = {
   risks: ForecastRisk[];
   levers: ForecastLever[];
   reliability: ForecastReliabilityDimension[];
+  monthlyProjection: ForecastMonthlyProjection[];
   deals: ForecastDeal[];
 };
 
@@ -946,20 +1088,6 @@ const toQueueProspect = (prospect: HubSpotOwnerProspect): QueueProspect => ({
   hubspotDealId: prospect.hubspotDealId,
 });
 
-
-export const fetchHubSpotLeads = async (
-  orgId: string,
-  hubspotOwnerId: string,
-  limit = 500,
-  options: ApiRequestOptions = {},
-): Promise<HubSpotLeadListItem[]> => {
-  const payload = await getJson<HubSpotLeadsPayload>(
-    apiPath("/api/leads", { orgId, hubspotOwnerId, limit }),
-    options,
-  );
-
-  return payload.leads;
-};
 export const fetchHubSpotLastUpdates = async (
   orgId: string,
   limit = 12,
@@ -985,6 +1113,60 @@ export const fetchHubSpotTasks = async (
   );
 
   return payload.tasks;
+};
+
+export const fetchHubSpotLeads = async (
+  orgId: string,
+  hubspotOwnerId: string,
+  limit = 500,
+  options: ApiRequestOptions = {},
+): Promise<HubSpotLeadListItem[]> => {
+  const payload = await getJson<HubSpotLeadsPayload>(
+    apiPath("/api/leads", { orgId, hubspotOwnerId, limit }),
+    options,
+  );
+
+  return payload.leads;
+};
+
+export const fetchHubSpotLeadAccounts = async (
+  orgId: string,
+  hubspotOwnerId: string,
+  limit = 500,
+  options: ApiRequestOptions = {},
+): Promise<HubSpotLeadAccountItem[]> => {
+  const payload = await getJson<HubSpotLeadAccountsPayload>(
+    apiPath("/api/leads/accounts", { orgId, hubspotOwnerId, limit }),
+    options,
+  );
+
+  return payload.accounts;
+};
+
+export const fetchSalesTasksToday = async (
+  userId: string,
+  options: ApiRequestOptions = {},
+): Promise<SalesTasksTodayPayload> =>
+  getJson<SalesTasksTodayPayload>(`/api/tasks/today/${encodeURIComponent(userId)}`, options);
+
+export const completeSalesTask = async (taskId: string): Promise<SalesTaskListItem> => {
+  const result = await postJson<SalesTaskActionResult>(`/api/tasks/${encodeURIComponent(taskId)}/complete`, {});
+
+  return result.task;
+};
+
+export const snoozeSalesTask = async (taskId: string, snoozedUntil: string): Promise<SalesTaskListItem> => {
+  const result = await postJson<SalesTaskActionResult>(`/api/tasks/${encodeURIComponent(taskId)}/snooze`, {
+    snoozedUntil,
+  });
+
+  return result.task;
+};
+
+export const skipSalesTask = async (taskId: string): Promise<SalesTaskListItem> => {
+  const result = await postJson<SalesTaskActionResult>(`/api/tasks/${encodeURIComponent(taskId)}/skip`, {});
+
+  return result.task;
 };
 
 export const updateHubSpotTaskPriority = async (
@@ -1045,10 +1227,23 @@ export const fetchHubSpotQueue = async (
   };
 };
 
+export const fetchCurrentUserProfile = async (options: ApiRequestOptions = {}): Promise<AppUserProfile> =>
+  getJson<AppUserProfile>("/api/auth/me", options);
+
+export const completeAdminOnboarding = async (input: {
+  organizationName: string;
+  fullName: string;
+}): Promise<AppUserProfile> =>
+  postJson<AppUserProfile>("/api/auth/onboarding/admin", input);
+
+export const completeMemberOnboarding = async (): Promise<AppUserProfile> =>
+  postJson<AppUserProfile>("/api/auth/onboarding/member", {});
+
 export const buildHubSpotConnectUrl = (orgId: string, returnTo: string): string => {
   const redirectUrl = new URL(`${API_BASE_URL}/api/auth/hubspot/start`);
   redirectUrl.searchParams.set("orgId", orgId);
   redirectUrl.searchParams.set("returnTo", returnTo);
+  redirectUrl.searchParams.set("_", String(Date.now()));
 
   return redirectUrl.toString();
 };
@@ -1065,7 +1260,7 @@ const wait = async (durationMs: number): Promise<void> =>
     window.setTimeout(resolve, durationMs);
   });
 
-const fetchHubSpotSyncJob = async (jobId: string): Promise<HubSpotSyncJobStatus> =>
+export const fetchHubSpotSyncJob = async (jobId: string): Promise<HubSpotSyncJobStatus> =>
   getJson<HubSpotSyncJobStatus>(`/api/sync/hubspot/jobs/${encodeURIComponent(jobId)}`);
 
 const runHubSpotSyncInline = async (orgId: string, hubspotOwnerIds: string[]): Promise<HubSpotSyncResult> =>

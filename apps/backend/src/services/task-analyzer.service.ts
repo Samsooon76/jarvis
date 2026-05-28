@@ -75,9 +75,11 @@ export type TaskAnalyzerResult = {
 export type TaskAnalyzerApplyResult = {
   orgId: string;
   hubspotTaskId: string;
-  action: "completed" | "rescheduled";
+  action: "completed" | "rescheduled" | "consolidated";
   completedTask: HubSpotTaskListItem | null;
+  completedTaskIds: string[];
   createdTask: HubSpotTaskListItem | null;
+  retainedTask: HubSpotTaskListItem | null;
   analysis: TaskAnalysis;
   message: string;
 };
@@ -101,6 +103,35 @@ const compactText = (value: string, maxLength: number): string => {
 
 const isOpenTask = (task: HubSpotTaskListItem): boolean => task.status !== "completed";
 
+const hasIntersection = (left: string[], right: string[]): boolean => {
+  const rightSet = new Set(right);
+
+  return left.some((value) => rightSet.has(value));
+};
+
+const isSameHubSpotWorkItem = (left: HubSpotTaskListItem, right: HubSpotTaskListItem): boolean => {
+  if (left.id === right.id) {
+    return true;
+  }
+
+  if (hasIntersection(left.associatedDealIds, right.associatedDealIds)) {
+    return true;
+  }
+
+  if (hasIntersection(left.associatedCompanyIds, right.associatedCompanyIds)) {
+    return true;
+  }
+
+  return hasIntersection(left.associatedContactIds, right.associatedContactIds);
+};
+
+const getTodayStart = (baseDate = new Date()): Date => {
+  const todayStart = new Date(baseDate.getTime());
+  todayStart.setHours(0, 0, 0, 0);
+
+  return todayStart;
+};
+
 const isTaskBeforeToday = (task: HubSpotTaskListItem, baseDate = new Date()): boolean => {
   if (!task.dueAt) {
     return false;
@@ -112,10 +143,17 @@ const isTaskBeforeToday = (task: HubSpotTaskListItem, baseDate = new Date()): bo
     return false;
   }
 
-  const todayStart = new Date(baseDate.getTime());
-  todayStart.setHours(0, 0, 0, 0);
+  return dueAt.getTime() < getTodayStart(baseDate).getTime();
+};
 
-  return dueAt.getTime() < todayStart.getTime();
+const isTaskTodayOrLater = (task: HubSpotTaskListItem, baseDate = new Date()): boolean => {
+  if (!task.dueAt) {
+    return false;
+  }
+
+  const dueAt = new Date(task.dueAt);
+
+  return !Number.isNaN(dueAt.getTime()) && dueAt.getTime() >= getTodayStart(baseDate).getTime();
 };
 
 const getExpiresAt = (): string => {
@@ -385,6 +423,54 @@ const buildCreatedTaskSnapshot = ({
   createdAt: new Date().toISOString(),
 });
 
+const loadOpenTasksForSameWorkItem = async (
+  accessToken: string,
+  sourceTask: HubSpotTaskListItem,
+): Promise<HubSpotTaskListItem[]> => {
+  if (!sourceTask.ownerHubSpotId) {
+    return [sourceTask];
+  }
+
+  const ownerTasks = await hubSpotService.fetchTasksByOwner(accessToken, sourceTask.ownerHubSpotId, 500, false);
+  const sameWorkItemTasks = ownerTasks.filter((task) => isOpenTask(task) && isSameHubSpotWorkItem(task, sourceTask));
+
+  if (sameWorkItemTasks.some((task) => task.id === sourceTask.id)) {
+    return sameWorkItemTasks;
+  }
+
+  return [sourceTask, ...sameWorkItemTasks];
+};
+
+const pickRetainedOpenTask = (tasks: HubSpotTaskListItem[], sourceTaskId: string): HubSpotTaskListItem | null =>
+  tasks
+    .filter((task) => task.id !== sourceTaskId && isTaskTodayOrLater(task))
+    .sort((left, right) => {
+      const leftDueAt = left.dueAt ? new Date(left.dueAt).getTime() : Number.MAX_SAFE_INTEGER;
+      const rightDueAt = right.dueAt ? new Date(right.dueAt).getTime() : Number.MAX_SAFE_INTEGER;
+
+      return leftDueAt - rightDueAt;
+    })[0] ?? null;
+
+const completeOpenDuplicateTasks = async ({
+  accessToken,
+  keepTaskId,
+  tasks,
+}: {
+  accessToken: string;
+  keepTaskId: string | null;
+  tasks: HubSpotTaskListItem[];
+}): Promise<string[]> => {
+  const taskIdsToComplete = Array.from(
+    new Set(tasks.filter((task) => isOpenTask(task) && task.id !== keepTaskId).map((task) => task.id)),
+  );
+
+  for (const taskId of taskIdsToComplete) {
+    await hubSpotService.markTaskCompleted(accessToken, taskId);
+  }
+
+  return taskIdsToComplete;
+};
+
 const applyTaskAnalysisResult = async (result: TaskAnalyzerResult): Promise<TaskAnalyzerApplyResult> => {
   const accessToken = await getHubSpotAccessToken(result.orgId);
   const analysis = result.analysis;
@@ -397,7 +483,9 @@ const applyTaskAnalysisResult = async (result: TaskAnalyzerResult): Promise<Task
       hubspotTaskId: result.hubspotTaskId,
       action: "completed",
       completedTask: buildCompletedTaskSnapshot(result.task),
+      completedTaskIds: [result.hubspotTaskId],
       createdTask: null,
+      retainedTask: null,
       analysis,
       message: "Tache marquee comme terminee dans HubSpot.",
     };
@@ -411,6 +499,29 @@ const applyTaskAnalysisResult = async (result: TaskAnalyzerResult): Promise<Task
       ? buildRescheduledBody(analysis, result.task)
       : buildManualTaskBody(analysis, result.task);
     const actionSource = result.provider === "jarvis-rules" ? "regle Jarvis" : "recommandation IA";
+    const sameWorkItemOpenTasks = await loadOpenTasksForSameWorkItem(accessToken, result.task);
+    const retainedTask = pickRetainedOpenTask(sameWorkItemOpenTasks, result.hubspotTaskId);
+
+    if (retainedTask) {
+      const completedTaskIds = await completeOpenDuplicateTasks({
+        accessToken,
+        keepTaskId: retainedTask.id,
+        tasks: sameWorkItemOpenTasks,
+      });
+
+      return {
+        orgId: result.orgId,
+        hubspotTaskId: result.hubspotTaskId,
+        action: "consolidated",
+        completedTask: completedTaskIds.includes(result.hubspotTaskId) ? buildCompletedTaskSnapshot(result.task) : null,
+        completedTaskIds,
+        createdTask: null,
+        retainedTask,
+        analysis,
+        message: `Taches doublons cloturees; une tache deja planifiee est conservee pour ${retainedTask.dueAt ?? "aujourd'hui"}.`,
+      };
+    }
+
     const created = await hubSpotService.createTask(accessToken, {
       title,
       body,
@@ -419,13 +530,18 @@ const applyTaskAnalysisResult = async (result: TaskAnalyzerResult): Promise<Task
       ownerHubSpotId: result.task.ownerHubSpotId,
       associations: buildTaskAssociations(result.task),
     });
-    await hubSpotService.markTaskCompleted(accessToken, result.hubspotTaskId);
+    const completedTaskIds = await completeOpenDuplicateTasks({
+      accessToken,
+      keepTaskId: created.taskId,
+      tasks: sameWorkItemOpenTasks,
+    });
 
     return {
       orgId: result.orgId,
       hubspotTaskId: result.hubspotTaskId,
       action: "rescheduled",
       completedTask: buildCompletedTaskSnapshot(result.task),
+      completedTaskIds,
       createdTask: buildCreatedTaskSnapshot({
         sourceTask: result.task,
         taskId: created.taskId,
@@ -434,10 +550,11 @@ const applyTaskAnalysisResult = async (result: TaskAnalyzerResult): Promise<Task
         dueAt,
         priority: analysis.priority,
       }),
+      retainedTask: null,
       analysis,
       message: dueInDays === 0
-        ? `Ancienne tache terminee et nouvelle tache planifiee aujourd'hui avec la ${actionSource}.`
-        : `Ancienne tache terminee et nouvelle tache planifiee a J+${dueInDays}.`,
+        ? `Doublons termines et nouvelle tache unique planifiee aujourd'hui avec la ${actionSource}.`
+        : `Doublons termines et nouvelle tache unique planifiee a J+${dueInDays}.`,
     };
   }
 };

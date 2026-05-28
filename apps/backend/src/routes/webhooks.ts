@@ -5,6 +5,11 @@ import { getSupabaseAdmin } from "../db/client.js";
 import { processHubSpotRealtimeJob } from "../services/hubspot-activity.service.js";
 import { startHubSpotRealtimeWorker } from "../services/hubspot-realtime-queue.service.js";
 import { acceptHubSpotWebhookBatch, type AcceptedHubSpotWebhookBatch } from "../services/hubspot-webhook.service.js";
+import {
+  acceptNormalizedSalesActivityEvent,
+  parseNormalizedSalesActivityEvent,
+  type AcceptedSalesActivityEvent,
+} from "../services/task-planning.service.js";
 
 type RawBodyRequest = FastifyRequest & {
   rawBody?: string;
@@ -74,6 +79,12 @@ const isValidOrgId = (value: string | undefined): value is string =>
 const getHeaderValue = (value: string | string[] | undefined): string | null =>
   Array.isArray(value) ? value[0] ?? null : value ?? null;
 
+const isWebhookInputError = (message: string): boolean =>
+  message.includes("obligatoire") ||
+  message.includes("valide") ||
+  message.includes("supporte") ||
+  message.includes("body doit etre");
+
 const buildPublicRequestUri = (request: FastifyRequest): string => {
   if (env.apiPublicUrl) {
     return `${env.apiPublicUrl.replace(/\/+$/, "")}${request.url}`;
@@ -125,6 +136,45 @@ const mapAnalysisRun = (
 
 export const registerHubSpotWebhookRoutes = async (app: FastifyInstance): Promise<void> => {
   startHubSpotRealtimeWorker(processHubSpotRealtimeJob, app.log);
+
+  app.post<{ Body: unknown; Reply: ApiResponse<AcceptedSalesActivityEvent> }>(
+    "/api/webhooks/events",
+    async (request, reply) => {
+      try {
+        const input = parseNormalizedSalesActivityEvent(request.body);
+        const result = await acceptNormalizedSalesActivityEvent(input);
+
+        request.log.info(
+          {
+            eventId: result.event.id,
+            eventType: result.event.eventType,
+            orgId: result.event.orgId,
+            prospectId: result.event.prospectId,
+            userId: result.event.userId,
+            created: result.planning.created,
+            updated: result.planning.updated,
+            canceled: result.planning.canceled,
+          },
+          "Evenement commercial normalise accepte.",
+        );
+
+        return reply.send({
+          success: true,
+          data: result,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Erreur inconnue pendant le webhook evenement.";
+        const statusCode = isWebhookInputError(message) ? 400 : 500;
+
+        request.log.error({ error }, "Webhook evenement commercial refuse.");
+
+        return reply.code(statusCode).send({
+          success: false,
+          error: message,
+        });
+      }
+    },
+  );
 
   app.post<{ Reply: ApiResponse<AcceptedHubSpotWebhookBatch> }>(
     "/api/webhooks/hubspot",

@@ -298,6 +298,43 @@ export type AnalyzeTaskInput = {
   history?: string | null;
 };
 
+export type LeadContactRankingContactInput = {
+  hubspotContactId: string;
+  name: string | null;
+  title: string | null;
+  email: string | null;
+  phone: string | null;
+  lastActivityAt: string | null;
+  lifecycleStage: string | null;
+  leadStatus: string | null;
+  deterministicScore: number;
+  deterministicReason: string;
+};
+
+export type RankLeadContactsInput = {
+  lead: {
+    hubspotLeadId: string;
+    name: string;
+    companyName: string | null;
+    pipelineLabel: string | null;
+    phaseId: string | null;
+    phaseLabel: string | null;
+    lastActivityAt: string | null;
+  };
+  contacts: LeadContactRankingContactInput[];
+  today?: string | null;
+};
+
+export type LeadContactRankingAnalysis = {
+  contacts: Array<{
+    hubspotContactId: string;
+    aiScore: number;
+    reason: string;
+    recommendedAction: string;
+    confidence: "low" | "medium" | "high";
+  }>;
+};
+
 export type AnalyzeDealIntelligenceInput = RecommendFollowUpTaskInput & {
   currentCloseProbability?: number | null;
   dealAmount?: number | null;
@@ -350,4 +387,5 @@ export interface LlmProvider {
   analyzeCloseLostPortfolio(input: AnalyzeCloseLostPortfolioInput): Promise<CloseLostPortfolioAnalysis>;
   recommendFollowUpTask(input: RecommendFollowUpTaskInput): Promise<FollowUpTaskRecommendation>;
   analyzeTask(input: AnalyzeTaskInput): Promise<TaskAnalysis>;
+  rankLeadContacts(input: RankLeadContactsInput): Promise<LeadContactRankingAnalysis>;
 }

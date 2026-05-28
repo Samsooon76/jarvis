@@ -118,6 +118,7 @@ export type HubSpotLeadRecord = {
   associatedCompanyIds: string[];
   createdAt: string | null;
   updatedAt: string | null;
+  properties: Record<string, string | null>;
 };
 
 type HubSpotDealStageMetadata = {
@@ -260,6 +261,7 @@ export type HubSpotCrmSyncSnapshot = {
     id: string;
     properties: Record<string, string | null>;
   }>;
+  leads: HubSpotLeadRecord[];
   dealStages: Array<{
     pipelineId: string;
     pipelineLabel: string | null;
@@ -271,6 +273,8 @@ export type HubSpotCrmSyncSnapshot = {
   }>;
   prospects: HubSpotProspectSyncItem[];
 };
+
+export type HubSpotContactSnapshotItem = HubSpotCrmSyncSnapshot["contacts"][number];
 
 export type DealLifecycleStatus = "pending" | "won" | "lost";
 
@@ -380,6 +384,7 @@ const HUBSPOT_TEN_SECOND_ROLLING_WAIT_MS = 11_000;
 const HUBSPOT_DEFAULT_MAX_RETRIES = 3;
 const HUBSPOT_BATCH_READ_LIMIT = 100;
 const HUBSPOT_OWNER_PROSPECT_LIMIT = 100;
+const HUBSPOT_OWNER_LEAD_LIMIT = 500;
 const HUBSPOT_DETAIL_CONCURRENCY = 10;
 const HUBSPOT_ASSOCIATION_CONCURRENCY = 25;
 const HUBSPOT_CONTACT_PROPERTIES = [
@@ -496,6 +501,11 @@ const isHubSpotCompanyScopeError = (error: unknown): boolean =>
   error instanceof Error &&
   error.message.includes("MISSING_SCOPES") &&
   error.message.includes("crm.objects.companies");
+
+const isHubSpotLeadScopeError = (error: unknown): boolean =>
+  error instanceof Error &&
+  error.message.includes("MISSING_SCOPES") &&
+  error.message.includes("crm.objects.leads");
 
 const toBase64Url = (value: string): string => Buffer.from(value, "utf8").toString("base64url");
 
@@ -897,6 +907,8 @@ const fetchPipelineStageLookup = async (
 const mapLeadRecord = (
   lead: HubSpotLead,
   stageById: Map<string, HubSpotDealStageDefinition>,
+  associatedContactIds?: string[],
+  associatedCompanyIds?: string[],
 ): HubSpotLeadRecord => {
   const pipelineId = readProperty(lead.properties, "hs_pipeline");
   const phaseId = readProperty(lead.properties, "hs_pipeline_stage");
@@ -911,11 +923,61 @@ const mapLeadRecord = (
     pipelineLabel: stage?.pipelineLabel ?? null,
     phaseId,
     phaseLabel: stage?.label ?? phaseId,
-    associatedContactIds: lead.associations?.contacts?.results.map((contact) => contact.id) ?? [],
-    associatedCompanyIds: lead.associations?.companies?.results.map((company) => company.id) ?? [],
+    associatedContactIds: associatedContactIds ?? lead.associations?.contacts?.results.map((contact) => contact.id) ?? [],
+    associatedCompanyIds: associatedCompanyIds ?? lead.associations?.companies?.results.map((company) => company.id) ?? [],
     createdAt: readProperty(lead.properties, "hs_createdate"),
     updatedAt: readProperty(lead.properties, "hs_lastmodifieddate"),
+    properties: toNullablePropertiesRecord(lead.properties, HUBSPOT_LEAD_PROPERTIES),
   };
+};
+
+const fetchLeadRecordsByOwners = async (
+  accessToken: string,
+  hubspotOwnerIds: string[],
+): Promise<HubSpotLeadRecord[]> => {
+  const uniqueOwnerIds = Array.from(new Set(hubspotOwnerIds.map((ownerId) => ownerId.trim()).filter(Boolean)));
+
+  if (uniqueOwnerIds.length === 0) {
+    return [];
+  }
+
+  try {
+    const stageById = await fetchPipelineStageLookup(accessToken, HUBSPOT_LEAD_OBJECT_TYPE);
+    const leadResults: HubSpotLead[] = [];
+
+    for (const [index, hubspotOwnerId] of uniqueOwnerIds.entries()) {
+      if (index > 0) {
+        await sleep(1_500);
+      }
+
+      leadResults.push(...(await searchLeadsByOwner(accessToken, HUBSPOT_LEAD_OBJECT_TYPE, hubspotOwnerId, HUBSPOT_OWNER_LEAD_LIMIT)));
+    }
+
+    const leads = Array.from(new Map(leadResults.map((lead) => [lead.id, lead])).values());
+
+    const [contactIdsByLeadId, companyIdsByLeadId] = await Promise.all([
+      fetchAssociatedIdMapForMany(accessToken, HUBSPOT_LEAD_OBJECT_TYPE, leads.map((lead) => lead.id), "contacts"),
+      fetchAssociatedIdMapForMany(accessToken, HUBSPOT_LEAD_OBJECT_TYPE, leads.map((lead) => lead.id), "companies").catch(
+        (error: unknown) => {
+          if (isHubSpotCompanyScopeError(error)) {
+            return new Map<string, string[]>();
+          }
+
+          throw error;
+        },
+      ),
+    ]);
+
+    return leads.map((lead) => mapLeadRecord(lead, stageById, contactIdsByLeadId.get(lead.id), companyIdsByLeadId.get(lead.id)));
+  } catch (error) {
+    if (isHubSpotLeadScopeError(error)) {
+      throw new Error(
+        "HubSpot refuse la lecture des leads. Ajoute le scope crm.objects.leads.read puis reconnecte HubSpot.",
+      );
+    }
+
+    throw error;
+  }
 };
 
 const buildDealStageSnapshot = (dealStageLookup: Map<string, HubSpotDealStageDefinition>): HubSpotCrmSyncSnapshot["dealStages"] =>
@@ -2030,6 +2092,15 @@ export const hubSpotService = {
         dealStageLookup,
       );
     });
+    const leadOwnerIds = Array.from(
+      new Set(
+        [
+          ...contacts.map((contact) => readProperty(contact.properties, "hubspot_owner_id")),
+          ...deals.map((deal) => readProperty(deal.properties, "hubspot_owner_id")),
+        ].filter((ownerId): ownerId is string => Boolean(ownerId)),
+      ),
+    );
+    const leads = await fetchLeadRecordsByOwners(accessToken, leadOwnerIds);
 
     return {
       contacts: contacts.map((contact) => ({
@@ -2046,6 +2117,7 @@ export const hubSpotService = {
         id: company.id,
         properties: toNullablePropertiesRecord(company.properties, HUBSPOT_COMPANY_PROPERTIES),
       })),
+      leads,
       dealStages,
       prospects,
     };
@@ -2264,12 +2336,14 @@ export const hubSpotService = {
         contacts: [],
         deals: [],
         companies: [],
+        leads: [],
         dealStages: [],
         prospects: [],
       };
     }
 
     const ownerDealResults: HubSpotDeal[] = [];
+    const ownerLeadRecords = await fetchLeadRecordsByOwners(accessToken, uniqueOwnerIds);
 
     for (const [index, hubspotOwnerId] of uniqueOwnerIds.entries()) {
       if (index > 0) {
@@ -2287,6 +2361,7 @@ export const hubSpotService = {
         contacts: [],
         deals: [],
         companies: [],
+        leads: ownerLeadRecords,
         dealStages: [],
         prospects: [],
       };
@@ -2365,6 +2440,7 @@ export const hubSpotService = {
         id: company.id,
         properties: toNullablePropertiesRecord(company.properties, HUBSPOT_COMPANY_PROPERTIES),
       })),
+      leads: ownerLeadRecords,
       dealStages,
       prospects,
     };
@@ -2706,8 +2782,29 @@ export const hubSpotService = {
       searchLeadsByOwner(accessToken, HUBSPOT_LEAD_OBJECT_TYPE, hubspotOwnerId, limit),
       fetchPipelineStageLookup(accessToken, HUBSPOT_LEAD_OBJECT_TYPE),
     ]);
+    const [contactIdsByLeadId, companyIdsByLeadId] = await Promise.all([
+      fetchAssociatedIdMapForMany(accessToken, HUBSPOT_LEAD_OBJECT_TYPE, leads.map((lead) => lead.id), "contacts"),
+      fetchAssociatedIdMapForMany(accessToken, HUBSPOT_LEAD_OBJECT_TYPE, leads.map((lead) => lead.id), "companies").catch(
+        (error: unknown) => {
+          if (isHubSpotCompanyScopeError(error)) {
+            return new Map<string, string[]>();
+          }
 
-    return leads.map((lead) => mapLeadRecord(lead, stageById));
+          throw error;
+        },
+      ),
+    ]);
+
+    return leads.map((lead) => mapLeadRecord(lead, stageById, contactIdsByLeadId.get(lead.id), companyIdsByLeadId.get(lead.id)));
+  },
+
+  async fetchContactsByIds(accessToken: string, contactIds: string[]): Promise<HubSpotContactSnapshotItem[]> {
+    const contacts = await fetchContactsByIds(accessToken, contactIds);
+
+    return contacts.map((contact) => ({
+      id: contact.id,
+      properties: toNullablePropertiesRecord(contact.properties, HUBSPOT_CONTACT_PROPERTIES),
+    }));
   },
 
   async createTask(accessToken: string, input: CreateHubSpotTaskInput): Promise<CreatedHubSpotTask> {

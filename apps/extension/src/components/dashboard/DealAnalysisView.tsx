@@ -28,6 +28,7 @@ import {
   type QualificationRisk,
   type FollowUpTaskResult,
 } from "../../services/api";
+import { captureAppError } from "../../sentry";
 import { formatAmount, formatDate, formatDateTime } from "../../utils/dashboard/formatters";
 import { getInitials } from "../../utils/dashboard/prospects";
 import { MetricIcon } from "./MetricIcon";
@@ -52,6 +53,8 @@ const pageCache = new Map<string, DealAnalysisPageResult>();
 const bundleCache = new Map<string, DealAnalysisBundleResult>();
 const qualificationCache = new Map<string, DealQualificationResult>();
 const activityPlanCache = new Map<string, DealActivityPlanResult>();
+
+const getErrorMessage = (error: unknown, fallback: string): string => (error instanceof Error ? error.message : fallback);
 
 const qualificationLoadingSteps: LoadingStep[] = [
   {
@@ -1238,7 +1241,17 @@ export const DealAnalysisView = ({
       qualificationCache.set(cacheKey, result);
       setQualification(result);
     } catch (error) {
-      setQualificationError(error instanceof Error ? error.message : "Qualification deal indisponible.");
+      captureAppError(error, {
+        feature: "deal_analysis",
+        operation: "load_qualification",
+        orgId,
+        prospectId: activeProspect.id,
+        hubspotDealId: activeProspect.hubspotDealId ?? null,
+        provider: selectedAiProvider.id,
+        model: selectedAiProvider.model,
+        refresh,
+      });
+      setQualificationError(getErrorMessage(error, "Qualification deal indisponible."));
     } finally {
       setQualificationLoading(false);
     }
@@ -1269,7 +1282,17 @@ export const DealAnalysisView = ({
       activityPlanCache.set(cacheKey, result);
       setActivityPlan(result);
     } catch (error) {
-      setActivityPlanError(error instanceof Error ? error.message : "Activite deal indisponible.");
+      captureAppError(error, {
+        feature: "deal_analysis",
+        operation: "load_activity_plan",
+        orgId,
+        prospectId: activeProspect.id,
+        hubspotDealId: activeProspect.hubspotDealId ?? null,
+        provider: selectedAiProvider.id,
+        model: selectedAiProvider.model,
+        refresh,
+      });
+      setActivityPlanError(getErrorMessage(error, "Activite deal indisponible."));
     } finally {
       setActivityPlanLoading(false);
     }
@@ -1326,7 +1349,17 @@ export const DealAnalysisView = ({
       const result = await runDealAnalysisJob(refresh);
       applyBundle(result, cacheKey);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Analyse complete du deal indisponible.";
+      captureAppError(error, {
+        feature: "deal_analysis",
+        operation: "load_bundle",
+        orgId,
+        prospectId: activeProspect.id,
+        hubspotDealId: activeProspect.hubspotDealId ?? null,
+        provider: selectedAiProvider.id,
+        model: selectedAiProvider.model,
+        refresh,
+      });
+      const message = getErrorMessage(error, "Analyse complete du deal indisponible.");
       setAnalysisError(message);
       setQualificationError(message);
       setActivityPlanError(message);
@@ -1370,7 +1403,17 @@ export const DealAnalysisView = ({
       const result = await runDealAnalysisJob(refresh);
       applyBundle(result, cacheKey);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Analyse deal indisponible.";
+      captureAppError(error, {
+        feature: "deal_analysis",
+        operation: "load_page",
+        orgId,
+        prospectId: activeProspect.id,
+        hubspotDealId: activeProspect.hubspotDealId ?? null,
+        provider: selectedAiProvider.id,
+        model: selectedAiProvider.model,
+        refresh,
+      });
+      const message = getErrorMessage(error, "Analyse deal indisponible.");
       setAnalysisError(message);
       setQualificationError(message);
       setActivityPlanError(message);
@@ -1413,7 +1456,16 @@ export const DealAnalysisView = ({
       const result = await createFollowUpTask(activeProspect, orgId);
       setTaskResult(result);
     } catch (error) {
-      setAnalysisError(error instanceof Error ? error.message : "Impossible de creer la tache HubSpot.");
+      captureAppError(error, {
+        feature: "deal_analysis",
+        operation: "create_follow_up_task",
+        orgId,
+        prospectId: activeProspect.id,
+        hubspotDealId: activeProspect.hubspotDealId ?? null,
+        provider: selectedAiProvider.id,
+        model: selectedAiProvider.model,
+      });
+      setAnalysisError(getErrorMessage(error, "Impossible de creer la tache HubSpot."));
     } finally {
       setTaskLoading(false);
     }
@@ -1452,7 +1504,17 @@ export const DealAnalysisView = ({
         applyBundle(result, cacheKey);
         setRefreshMessage(`Deal rafraichi avec l'analyse du ${formatOptionalDateTime(result.page.generatedAt)}.`);
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Erreur inconnue pendant le rafraichissement du deal.";
+        captureAppError(error, {
+          feature: "deal_analysis",
+          operation: "refresh_deal_analysis",
+          orgId,
+          prospectId: activeProspect.id,
+          hubspotDealId: activeProspect.hubspotDealId ?? null,
+          provider: selectedAiProvider.id,
+          model: selectedAiProvider.model,
+          refresh: true,
+        });
+        const message = getErrorMessage(error, "Erreur inconnue pendant le rafraichissement du deal.");
         setAnalysisError(`Impossible de rafraichir le deal complet. Reessaie le rafraichissement. Detail: ${message}`);
       } finally {
         setIsAnalyzing(false);

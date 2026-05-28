@@ -29,13 +29,16 @@ type ForecastPoint = {
   label: string;
   commit: number;
   forecast: number;
-  objective: number;
+  objective: number | null;
+  pipeline: number;
+  dealCount: number;
+  confidenceScore: number;
 };
 
 const getMonthBounds = (): { dateFrom: string; dateTo: string } => {
   const now = new Date();
   const firstDay = new Date(Date.UTC(now.getFullYear(), now.getMonth(), 1));
-  const lastDay = new Date(Date.UTC(now.getFullYear(), now.getMonth() + 1, 0));
+  const lastDay = new Date(Date.UTC(now.getFullYear(), now.getMonth() + 12, 0));
 
   return {
     dateFrom: firstDay.toISOString().slice(0, 10),
@@ -52,39 +55,20 @@ const formatPeriod = (dateFrom: string, dateTo: string): string => {
 };
 
 const buildProjection = (overview: ForecastOverviewResult | null): ForecastPoint[] => {
-  if (!overview || overview.deals.length === 0) {
+  if (!overview || overview.monthlyProjection.length === 0) {
     return [];
   }
 
-  const dateFrom = new Date(`${overview.dateFrom}T00:00:00.000Z`);
-  const dateTo = new Date(`${overview.dateTo}T00:00:00.000Z`);
-  const durationMs = Math.max(1, dateTo.getTime() - dateFrom.getTime());
-  const steps = 6;
-
-  return Array.from({ length: steps }, (_, index) => {
-    const ratio = index / (steps - 1);
-    const cursor = new Date(dateFrom.getTime() + durationMs * ratio);
-    const closeCutoff = cursor.getTime();
-    const scopedDeals = overview.deals.filter((deal) => {
-      if (!deal.closeDate) {
-        return index === steps - 1;
-      }
-
-      const timestamp = new Date(deal.closeDate).getTime();
-
-      return Number.isNaN(timestamp) ? index === steps - 1 : timestamp <= closeCutoff;
-    });
-
-    return {
-      date: cursor.toISOString(),
-      label: new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "short" }).format(cursor),
-      commit: scopedDeals
-        .filter((deal) => (deal.aiProbability ?? 0) >= 70)
-        .reduce((sum, deal) => sum + deal.forecastAmount, 0),
-      forecast: scopedDeals.reduce((sum, deal) => sum + deal.forecastAmount, 0),
-      objective: overview.objectiveAmount ?? overview.pipelineAmount,
-    };
-  });
+  return overview.monthlyProjection.map((month) => ({
+    date: month.month,
+    label: month.label,
+    commit: month.commitAmount,
+    forecast: month.forecastAmount,
+    objective: month.objectiveAmount,
+    pipeline: month.pipelineAmount,
+    dealCount: month.dealCount,
+    confidenceScore: month.confidenceScore,
+  }));
 };
 
 const getScenarioClassName = (scenarioId: string): string =>
@@ -150,7 +134,7 @@ const ProjectionChart = ({
       return undefined;
     }
 
-    const configuration: ChartConfiguration<"line", number[], string> = {
+    const configuration: ChartConfiguration<"line", Array<number | null>, string> = {
       type: "line",
       data: {
         labels: points.map((point) => point.label),
@@ -214,6 +198,11 @@ const ProjectionChart = ({
                 const value = context.parsed.y ?? 0;
 
                 return `${context.dataset.label ?? ""} ${formatAmount(value)}`;
+              },
+              afterBody: (items) => {
+                const point = points[items[0]?.dataIndex ?? -1];
+
+                return point ? [`Pipeline ${formatAmount(point.pipeline)}`, `${point.dealCount} deal(s) | confiance ${point.confidenceScore}%`] : [];
               },
             },
             displayColors: true,
@@ -512,7 +501,7 @@ export const ForecastView = ({ orgId, owners, selectedAiProvider, selectedOwnerI
               <span>Prediction IA</span>
               <strong>
                 {overview
-                  ? `L'IA prevoit un atterrissage a ${formatAmount(overview.forecastAmount)} ce mois-ci, soit ${forecastShare}% du pipeline forecastable.`
+                  ? `Jarvis prevoit un atterrissage a ${formatAmount(overview.forecastAmount)} sur la periode, soit ${forecastShare}% du pipeline forecastable.`
                   : "Chargement du forecast IA depuis Supabase."}
               </strong>
               {overview && overview.missingAnalysisCount > 0 ? (
@@ -549,8 +538,8 @@ export const ForecastView = ({ orgId, owners, selectedAiProvider, selectedOwnerI
           <section className="ae-forecast-layout">
             <article className="ae-forecast-panel large">
               <div className="ae-panel-heading">
-                <span>Projection d'atterrissage</span>
-                <strong>{overview ? `${overview.openDealCount} deals forecast` : "--"}</strong>
+                <span>Projection mois par mois</span>
+                <strong>{overview ? `${overview.monthlyProjection.length} mois` : "--"}</strong>
               </div>
               {projection.length > 0 ? (
                 <ProjectionChart objectiveLabel={formatAmount(objectiveAmount)} points={projection} />
