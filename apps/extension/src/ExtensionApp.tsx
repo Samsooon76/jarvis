@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { QueueView } from "./components/QueueView";
 import { AuthLanding, OnboardingGate } from "./components/auth/AuthLanding";
+import { FirstRunOnboarding } from "./components/dashboard/FirstRunOnboarding";
 import { DEFAULT_ORG_ID, getHubSpotOwnerStorageKey, isAbortError } from "./config/runtime";
 import { useQueue } from "./hooks/useQueue";
 import {
@@ -494,6 +495,31 @@ export const ExtensionApp = () => {
     );
   }
 
+  const isHubSpotConnected = Boolean(data?.hubspotPortalId);
+  const hasInitialSync = Boolean(data?.generatedAt);
+  const shouldShowFirstRunOnboarding =
+    !error &&
+    Boolean(authProfile) &&
+    (!isHubSpotConnected || (!hasInitialSync && (data?.prospects.length ?? 0) === 0));
+
+  if (shouldShowFirstRunOnboarding) {
+    return (
+      <>
+        {hubSpotConnectionError ? <div className="ae-app-error">{hubSpotConnectionError}</div> : null}
+        <FirstRunOnboarding
+          canManageHubSpot={Boolean(authProfile?.canManageHubSpot)}
+          generatedAt={data?.generatedAt}
+          hubspotPortalId={data?.hubspotPortalId}
+          isConnected={isHubSpotConnected}
+          onConnectHubSpot={authProfile?.canManageHubSpot ? handleConnectHubSpot : undefined}
+          onSignOut={handleSignOut}
+          onSyncHubSpot={authProfile?.canManageHubSpot ? handleSyncHubSpot : undefined}
+          prospectCount={data?.prospects.length ?? 0}
+        />
+      </>
+    );
+  }
+
   return (
     <>
       {error && !data ? (
@@ -505,7 +531,7 @@ export const ExtensionApp = () => {
         generatedAt={data?.generatedAt}
         hubspotDealCount={data?.hubspotDealCount}
         hubspotPortalId={data?.hubspotPortalId}
-        isConnected={Boolean(data?.hubspotPortalId)}
+        isConnected={isHubSpotConnected}
         isRefreshing={isRefreshing}
         lastUpdates={liveLastUpdates}
         onConnectHubSpot={authProfile.canManageHubSpot ? handleConnectHubSpot : undefined}
