@@ -83,6 +83,10 @@ const TASK_BATCH_SIZE = 5;
 const TASK_MAX_ATTEMPTS = 3;
 const TASK_LOCAL_CACHE_TTL_MS = 5 * 60 * 1000;
 const TASK_LOCAL_CACHE_VERSION = 4;
+const JARVIS_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const isJarvisUserId = (value: string | null | undefined): value is string =>
+  typeof value === "string" && JARVIS_UUID_PATTERN.test(value.trim());
 
 const priorityLabels: Record<HubSpotTaskPriority, string> = {
   low: "Low",
@@ -500,7 +504,7 @@ export const TasksView = ({
   const tasksRef = useRef<DisplayTask[]>([]);
   const ownerById = useMemo(() => new Map(owners.map((owner) => [owner.ownerId, owner])), [owners]);
   const selectedOwner = selectedOwnerId ? ownerById.get(selectedOwnerId) ?? null : null;
-  const selectedOwnerUserId = selectedOwner?.userId ?? null;
+  const selectedOwnerUserId = isJarvisUserId(selectedOwner?.userId) ? selectedOwner.userId : null;
   const selectedOwnerName = selectedOwnerId ? selectedOwner?.name ?? "Owner actif" : "Tous les reps";
   const usingSalesOperatingQueue = Boolean(selectedOwnerUserId);
 
@@ -511,7 +515,7 @@ export const TasksView = ({
 
   const fetchAndCommitTasks = async (ownerId: string): Promise<DisplayTask[]> => {
     const owner = ownerById.get(ownerId);
-    const localUserId = owner?.userId ?? null;
+    const localUserId = isJarvisUserId(owner?.userId) ? owner.userId : null;
     const nextTasks = localUserId
       ? (await fetchSalesTasksToday(localUserId)).tasks.map((task) => mapSalesTaskToDisplayTask(task, ownerId))
       : await fetchHubSpotTasks(orgId, ownerId);
