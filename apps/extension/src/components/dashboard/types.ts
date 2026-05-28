@@ -20,6 +20,7 @@ export type QueueViewProps = {
   onConnectHubSpot?: () => void;
   onDisconnectHubSpot?: () => Promise<HubSpotDisconnectResult>;
   onOwnerChange?: (ownerId: string) => void;
+  onSignOut?: () => void | Promise<void>;
   onSyncHubSpot?: (onProgress?: (status: HubSpotSyncJobStatus) => void) => Promise<HubSpotSyncResult>;
   owners?: HubSpotOwnerOption[];
   ownerName?: string;

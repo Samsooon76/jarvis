@@ -205,6 +205,7 @@ export const QueueView = ({
   onConnectHubSpot,
   onDisconnectHubSpot,
   onOwnerChange,
+  onSignOut,
   onSyncHubSpot,
   owners = [],
   ownerName,
@@ -287,7 +288,7 @@ export const QueueView = ({
 
   return (
     <main className="ae-inbox">
-      <Sidebar activeView={dashboard.activeView} onViewChange={dashboard.setActiveView} />
+      <Sidebar activeView={dashboard.activeView} onSignOut={onSignOut} onViewChange={dashboard.setActiveView} />
       <section className="ae-main-panel">
         {dashboard.activeView !== "tasks" ? (
           <>

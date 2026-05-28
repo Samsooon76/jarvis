@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   ListFilter,
   ListTodo,
+  LogOut,
   Settings,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -15,6 +16,7 @@ import type { WorkspaceView } from "./types";
 
 type SidebarProps = {
   activeView: WorkspaceView;
+  onSignOut?: () => void | Promise<void>;
   onViewChange: (view: WorkspaceView) => void;
 };
 
@@ -51,7 +53,7 @@ const sidebarNavItems: SidebarNavItem[] = [
   { type: "view", id: "settings", label: "Parametres" },
 ];
 
-export const Sidebar = ({ activeView, onViewChange }: SidebarProps) => (
+export const Sidebar = ({ activeView, onSignOut, onViewChange }: SidebarProps) => (
   <aside className="ae-sidebar" aria-label="Workspace navigation">
     <div className="ae-sidebar-header">
       <div className="ae-sidebar-brand">
@@ -105,5 +107,13 @@ export const Sidebar = ({ activeView, onViewChange }: SidebarProps) => (
         );
       })}
     </nav>
+    {onSignOut ? (
+      <button className="ae-sidebar-signout" onClick={() => void onSignOut()} title="Se deconnecter" type="button">
+        <span aria-hidden="true">
+          <LogOut size={17} strokeWidth={2} />
+        </span>
+        <strong>Se deconnecter</strong>
+      </button>
+    ) : null}
   </aside>
 );

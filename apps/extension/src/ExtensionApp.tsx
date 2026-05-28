@@ -537,6 +537,7 @@ export const ExtensionApp = () => {
         onConnectHubSpot={authProfile.canManageHubSpot ? handleConnectHubSpot : undefined}
         onDisconnectHubSpot={authProfile.canManageHubSpot ? handleDisconnectHubSpot : undefined}
         onOwnerChange={handleOwnerChange}
+        onSignOut={handleSignOut}
         onSyncHubSpot={authProfile.canManageHubSpot ? handleSyncHubSpot : undefined}
         owners={
           authProfile.role === "sales" && authProfile.hubspotOwnerId

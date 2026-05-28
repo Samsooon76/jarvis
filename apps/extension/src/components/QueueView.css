@@ -7371,6 +7371,8 @@ body,
 }
 
 .ae-sidebar {
+  display: flex;
+  flex-direction: column;
   position: sticky;
   top: 0;
   min-height: 100vh;
@@ -7503,12 +7505,16 @@ body,
 }
 
 .ae-sidebar-nav {
+  display: grid;
   gap: 5px;
 }
 
 .ae-sidebar-nav button,
+.ae-sidebar-signout,
 .ae-sidebar:hover .ae-sidebar-nav button,
 .ae-sidebar:has(button:focus-visible) .ae-sidebar-nav button {
+  align-items: center;
+  display: flex;
   justify-content: flex-start;
   gap: 11px;
   min-height: 38px;
@@ -7521,15 +7527,32 @@ body,
   font-weight: 500;
 }
 
+.ae-sidebar-signout {
+  margin-top: auto;
+  width: 100%;
+  cursor: pointer;
+}
+
 .ae-sidebar-nav button:hover {
   border-color: transparent;
   background: var(--ae-sidebar-hover);
   color: var(--ae-sidebar-text);
 }
 
+.ae-sidebar-signout:hover {
+  border-color: transparent;
+  background: var(--ae-red-soft);
+  color: var(--ae-red);
+}
+
 .ae-sidebar-nav button:hover > span {
   background: transparent;
   color: var(--ae-accent);
+}
+
+.ae-sidebar-signout:hover > span {
+  background: transparent;
+  color: var(--ae-red);
 }
 
 .ae-sidebar-nav button.active {
@@ -7553,6 +7576,24 @@ body,
   letter-spacing: 0;
   line-height: 1;
   text-transform: uppercase;
+}
+
+.ae-sidebar-signout span {
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--ae-radius);
+  color: var(--ae-sidebar-muted);
+  display: inline-flex;
+  height: 22px;
+  justify-content: center;
+  width: 22px;
+}
+
+.ae-sidebar-signout strong {
+  font-size: 13px;
+  font-weight: 500;
+  max-width: 148px;
+  opacity: 1;
 }
 
 .ae-main-panel {
@@ -8119,6 +8160,7 @@ body,
   .ae-sidebar:hover .ae-sidebar-brand,
   .ae-sidebar:has(button:focus-visible) .ae-sidebar-brand,
   .ae-sidebar-nav button,
+  .ae-sidebar-signout,
   .ae-sidebar:hover .ae-sidebar-nav button,
   .ae-sidebar:has(button:focus-visible) .ae-sidebar-nav button {
     justify-content: center;
@@ -8128,6 +8170,7 @@ body,
 
   .ae-sidebar-brand div,
   .ae-sidebar-nav button strong,
+  .ae-sidebar-signout strong,
   .ae-sidebar:hover .ae-sidebar-brand div,
   .ae-sidebar:has(button:focus-visible) .ae-sidebar-brand div,
   .ae-sidebar:hover .ae-sidebar-nav button strong,
