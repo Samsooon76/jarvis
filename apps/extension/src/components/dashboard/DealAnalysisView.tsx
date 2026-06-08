@@ -32,6 +32,7 @@ import { captureAppError } from "../../sentry";
 import { formatAmount, formatDate, formatDateTime } from "../../utils/dashboard/formatters";
 import { getInitials } from "../../utils/dashboard/prospects";
 import { MetricIcon } from "./MetricIcon";
+import { DealProbabilityHistoryPanel } from "./DealProbabilityHistoryPanel";
 
 type DealAnalysisViewProps = {
   activeProspect: QueueProspect | null;
@@ -635,7 +636,7 @@ const TrendChart = ({ points }: { points: DealAnalysisTrendPoint[] }) => {
     <div className="ae-deal-chart">
       <div className="ae-deal-panel-heading">
         <h3>Evolution du deal</h3>
-        <button type="button">Probabilite de gain</button>
+        <span className="ae-deal-chart-legend">Probabilite de gain</span>
       </div>
       <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Evolution de la probabilite">
         {[0, 25, 50, 75, 100].map((value) => {
@@ -1128,10 +1129,10 @@ const ActivityRecommendationPanel = ({
       <p>{recommendation.summary}</p>
       <div className="ae-next-best-action">
         <span>Prochaine meilleure action</span>
-        <button type="button">
+        <div className="ae-next-best-action-card">
           <strong>{recommendation.nextBestAction.title}</strong>
           <small>{recommendation.nextBestAction.rationale}</small>
-        </button>
+        </div>
       </div>
       <button disabled={isLoading} onClick={onRefresh} type="button">
         {isLoading ? "Analyse..." : "Relancer l'analyse IA"}
@@ -1722,6 +1723,8 @@ export const DealAnalysisView = ({
                 <article className="ae-deal-panel ae-chart-panel">
                   <TrendChart points={page.probabilityTrend} />
                 </article>
+
+                <DealProbabilityHistoryPanel orgId={orgId} hubspotDealId={activeProspect.hubspotDealId ?? null} />
 
                 <article className="ae-deal-panel">
                   <h3>Risques cles</h3>

@@ -278,6 +278,11 @@ export type HubSpotContactSnapshotItem = HubSpotCrmSyncSnapshot["contacts"][numb
 
 export type DealLifecycleStatus = "pending" | "won" | "lost";
 
+export type HubSpotPropertyHistoryEntry = {
+  value: string | null;
+  timestamp: string;
+};
+
 export type HubSpotDealHistoryItem = {
   id: string;
   type: "deal" | "note" | "call" | "meeting" | "email" | "sms" | "communication" | "task";
@@ -2593,6 +2598,40 @@ export const hubSpotService = {
       contactNames: contacts.map((contact) => buildContactDisplayName(contact)),
       timeline,
     };
+  },
+
+  // Historique date d'une propriete de deal via l'API HubSpot propertiesWithHistory.
+  // Renvoie les versions de la valeur dans l'ordre chronologique croissant.
+  async fetchDealPropertyHistory(
+    accessToken: string,
+    dealId: string,
+    propertyName: string,
+  ): Promise<HubSpotPropertyHistoryEntry[]> {
+    const query = new URLSearchParams();
+    query.set("propertiesWithHistory", propertyName);
+
+    const deal = await hubSpotFetch<{
+      propertiesWithHistory?: Record<string, Array<{ value?: string | null; timestamp?: string | null }>>;
+    }>(`/crm/v3/objects/deals/${dealId}?${query.toString()}`, {
+      accessToken,
+      maxRetries: HUBSPOT_DEFAULT_MAX_RETRIES,
+    }).catch((error: unknown) => {
+      if (error instanceof Error && error.message.includes("(404)")) {
+        return null;
+      }
+
+      throw error;
+    });
+
+    const rawHistory = deal?.propertiesWithHistory?.[propertyName] ?? [];
+
+    return rawHistory
+      .map((entry) => ({
+        value: typeof entry.value === "string" ? entry.value : entry.value == null ? null : String(entry.value),
+        timestamp: entry.timestamp ?? null,
+      }))
+      .filter((entry): entry is HubSpotPropertyHistoryEntry => Boolean(entry.timestamp))
+      .sort((left, right) => new Date(left.timestamp).getTime() - new Date(right.timestamp).getTime());
   },
 
   async fetchDealActivityDebug(accessToken: string, dealId: string): Promise<HubSpotDealActivityDebug> {

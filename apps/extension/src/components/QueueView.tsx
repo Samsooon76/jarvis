@@ -210,6 +210,7 @@ export const QueueView = ({
   owners = [],
   ownerName,
   selectedOwnerId,
+  canViewTeamForecast = false,
   prospects,
 }: QueueViewProps) => {
   const [hubspotTasks, setHubspotTasks] = useState<HubSpotTaskListItem[]>([]);
@@ -233,6 +234,13 @@ export const QueueView = ({
     void import("./dashboard/LeadsView");
   }, []);
 
+  const closeLostOwnerIds = useMemo(() => {
+    const salesAeOwners = owners.filter((owner) => owner.teamName?.toLowerCase().includes("sales ae"));
+
+    return (salesAeOwners.length > 0 ? salesAeOwners : owners).map((owner) => owner.ownerId);
+  }, [owners]);
+
+  // Forecast prefetch depends on the selected owner (scope changes per owner).
   useEffect(() => {
     if (!isConnected || !orgId) {
       return;
@@ -240,9 +248,6 @@ export const QueueView = ({
 
     const forecastDates = getForecastMonthBounds();
     const forecastScope = selectedOwnerId ? "owner" : "all";
-    const closeLostDates = getCloseLostDefaultDateRange();
-    const salesAeOwners = owners.filter((owner) => owner.teamName?.toLowerCase().includes("sales ae"));
-    const closeLostOwnerIds = (salesAeOwners.length > 0 ? salesAeOwners : owners).map((owner) => owner.ownerId);
 
     void fetchForecastOverview({
       orgId,
@@ -252,6 +257,15 @@ export const QueueView = ({
       dateTo: forecastDates.dateTo,
       aiProvider: dashboard.selectedAiProvider,
     }).catch(() => undefined);
+  }, [dashboard.selectedAiProvider, isConnected, orgId, selectedOwnerId]);
+
+  // Close-lost prefetch is owner-independent: it must not refire on owner switch.
+  useEffect(() => {
+    if (!isConnected || !orgId || closeLostOwnerIds.length === 0) {
+      return;
+    }
+
+    const closeLostDates = getCloseLostDefaultDateRange();
 
     void fetchCloseLostOverview({
       orgId,
@@ -262,7 +276,7 @@ export const QueueView = ({
       dateTo: closeLostDates.dateTo,
       aiProvider: dashboard.selectedAiProvider,
     }).catch(() => undefined);
-  }, [dashboard.selectedAiProvider, isConnected, orgId, owners, selectedOwnerId]);
+  }, [closeLostOwnerIds, dashboard.selectedAiProvider, isConnected, orgId]);
 
   useEffect(() => {
     if (!isConnected || !orgId || !selectedOwnerId) {
@@ -317,6 +331,10 @@ export const QueueView = ({
               onHideClosedLostStageChange={dashboard.setHideClosedLostStage}
               overdueCloseProspects={dashboard.overdueCloseProspects}
               stageChart={dashboard.stageChart}
+              orgId={orgId}
+              owners={owners}
+              selectedOwnerId={selectedOwnerId}
+              canViewTeamForecast={canViewTeamForecast}
             />
           ) : null}
 
@@ -386,6 +404,7 @@ export const QueueView = ({
               owners={owners}
               selectedAiProvider={dashboard.selectedAiProvider}
               selectedOwnerId={selectedOwnerId}
+              canViewTeamForecast={canViewTeamForecast}
             />
           ) : null}
 

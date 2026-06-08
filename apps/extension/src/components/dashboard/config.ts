@@ -46,7 +46,7 @@ export const priorityLabels: Record<ProspectPriority, string> = {
 export const dealStatusFilters: Array<SelectOption<DealStatusFilter>> = [
   { id: "open", label: "Ouverts" },
   { id: "all", label: "Tous" },
-  { id: "won", label: "Closed won" },
+  { id: "won", label: "Signes" },
   { id: "lost", label: "Closed lost" },
 ];
 
@@ -78,10 +78,11 @@ export const openStageKeys = new Set([
   "initial proposition",
   "testing",
   "contract sent",
+  "contract validation",
   "negociation",
   "negotiation",
 ]);
-export const wonStageKeys = new Set(["contract validation", "deal signed payment pending", "payment received"]);
+export const wonStageKeys = new Set(["deal signed payment pending", "payment received"]);
 export const lostStageKeys = new Set(["closed lost"]);
 
 export const stageFilterKeys: Partial<Record<StageFilter, string>> = {
@@ -98,7 +99,7 @@ export const stageFilterKeys: Partial<Record<StageFilter, string>> = {
 
 export const dealStatusLabels: Record<DealStatus, string> = {
   open: "Ouvert",
-  won: "Won",
+  won: "Signe",
   lost: "Lost",
   other: "Autre",
 };

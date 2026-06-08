@@ -3,6 +3,11 @@ import { API_BASE_URL, apiPath, getJson, postJson, type ApiRequestOptions } from
 
 const ANALYTICS_OVERVIEW_CACHE_TTL_MS = 60_000;
 const ANALYTICS_DETAIL_CACHE_TTL_MS = 60_000;
+const HUBSPOT_TASKS_CACHE_TTL_MS = 20_000;
+const HUBSPOT_LEADS_CACHE_TTL_MS = 60_000;
+
+const HUBSPOT_TASKS_CACHE_PREFIX = "hubspot-tasks:";
+const HUBSPOT_LEADS_CACHE_PREFIX = "hubspot-leads:";
 
 type CachedApiEntry<T> = {
   expiresAt: number;
@@ -11,14 +16,54 @@ type CachedApiEntry<T> = {
 
 const analyticsGetCache = new Map<string, CachedApiEntry<unknown>>();
 
-const getCachedJson = async <T>(cacheKey: string, path: string, ttlMs: number, forceRefresh = false): Promise<T> => {
+// Wraps a shared (cached) promise so that each caller can still cancel its own
+// awaiting via its AbortSignal without aborting the underlying request that
+// other callers might be sharing.
+const withAbort = <T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> => {
+  if (!signal) {
+    return promise;
+  }
+
+  if (signal.aborted) {
+    return Promise.reject(new DOMException("Aborted", "AbortError"));
+  }
+
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = (): void => {
+      reject(new DOMException("Aborted", "AbortError"));
+    };
+
+    signal.addEventListener("abort", onAbort, { once: true });
+
+    void promise.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      },
+    );
+  });
+};
+
+const getCachedJson = async <T>(
+  cacheKey: string,
+  path: string,
+  ttlMs: number,
+  forceRefresh = false,
+  options: ApiRequestOptions = {},
+): Promise<T> => {
   const now = Date.now();
   const cached = analyticsGetCache.get(cacheKey);
 
   if (!forceRefresh && cached && cached.expiresAt > now) {
-    return cached.promise as Promise<T>;
+    return withAbort(cached.promise as Promise<T>, options.signal);
   }
 
+  // The shared request is intentionally launched without the caller's signal so
+  // that one caller unmounting does not cancel the in-flight fetch for others.
   const promise = getJson<T>(path).catch((error: unknown) => {
     analyticsGetCache.delete(cacheKey);
     throw error;
@@ -29,11 +74,19 @@ const getCachedJson = async <T>(cacheKey: string, path: string, ttlMs: number, f
     promise,
   });
 
-  return promise;
+  return withAbort(promise, options.signal);
 };
 
 const clearAnalyticsCache = (): void => {
   analyticsGetCache.clear();
+};
+
+const clearAnalyticsCacheByPrefix = (prefix: string): void => {
+  for (const key of analyticsGetCache.keys()) {
+    if (key.startsWith(prefix)) {
+      analyticsGetCache.delete(key);
+    }
+  }
 };
 
 export type AiProviderId = "deepseek" | "openai" | "vertex-gemini";
@@ -888,6 +941,7 @@ export type CloseLostDealDetailResult = {
 
 export type ForecastScope = "all" | "owner";
 export type ForecastAnalysisStatus = "fresh" | "stale" | "missing" | "closed_won";
+export type ForecastDealBucket = "signedPaymentPending" | "paymentReceived" | "openForecast";
 
 export type ForecastDeal = {
   hubspotDealId: string;
@@ -900,6 +954,7 @@ export type ForecastDeal = {
   stage: string;
   closeDate: string | null;
   syncedAt: string;
+  forecastBucket: ForecastDealBucket;
   aiProbability: number | null;
   crmProbability: number;
   forecastAmount: number;
@@ -944,15 +999,77 @@ export type ForecastMonthlyProjection = {
   month: string;
   label: string;
   dealCount: number;
+  signedDealCount: number;
+  signedPaymentPendingDealCount: number;
+  paymentReceivedDealCount: number;
+  openDealCount: number;
   wonDealCount: number;
   analyzedDealCount: number;
   missingAnalysisCount: number;
+  signedAmount: number;
+  signedPaymentPendingAmount: number;
+  paymentReceivedAmount: number;
+  openPipelineAmount: number;
+  openForecastAmount: number;
+  landingAmount: number;
   pipelineAmount: number;
   commitAmount: number;
   forecastAmount: number;
   objectiveAmount: number | null;
   gapToObjective: number | null;
   confidenceScore: number;
+};
+
+export type ForecastSynthesisCategory = "commit" | "bestCase" | "atRisk" | "slipping";
+
+export type ForecastSynthesisStatus = "fresh" | "stale";
+
+export type ForecastSynthesisAction = {
+  title: string;
+  rationale: string;
+  priority: "low" | "medium" | "high";
+  relatedDealIds: string[];
+};
+
+export type ForecastSynthesisDeal = {
+  hubspotDealId: string;
+  dealName: string | null;
+  companyName: string;
+  ownerName: string | null;
+  amount: number;
+  forecastAmount: number;
+  aiProbability: number | null;
+  crmProbability: number;
+  stage: string;
+  closeDate: string | null;
+  dealHealth: DealIntelligenceAnalysis["dealHealth"] | null;
+  category: ForecastSynthesisCategory;
+  reason: string;
+  recommendedAction: string | null;
+};
+
+export type ForecastSynthesisCategorySummary = {
+  category: ForecastSynthesisCategory;
+  label: string;
+  dealCount: number;
+  amount: number;
+  weightedAmount: number;
+};
+
+export type ForecastSynthesis = {
+  generatedAt: string;
+  provider: string;
+  model: string;
+  status: ForecastSynthesisStatus;
+  headline: string;
+  confidence: "low" | "medium" | "high";
+  analyzedDealCount: number;
+  objectiveAmount: number | null;
+  gapToObjective: number | null;
+  projectedCloseAmount: number;
+  categories: ForecastSynthesisCategorySummary[];
+  deals: ForecastSynthesisDeal[];
+  actionPlan: ForecastSynthesisAction[];
 };
 
 export type ForecastOverviewResult = {
@@ -967,9 +1084,18 @@ export type ForecastOverviewResult = {
   lastAnalyzedAt: string | null;
   openDealCount: number;
   wonDealCount: number;
+  signedDealCount: number;
+  signedPaymentPendingDealCount: number;
+  paymentReceivedDealCount: number;
   analyzedDealCount: number;
   staleDealCount: number;
   missingAnalysisCount: number;
+  signedAmount: number;
+  signedPaymentPendingAmount: number;
+  paymentReceivedAmount: number;
+  openPipelineAmount: number;
+  openForecastAmount: number;
+  landingAmount: number;
   pipelineAmount: number;
   forecastAmount: number;
   objectiveAmount: number | null;
@@ -981,6 +1107,15 @@ export type ForecastOverviewResult = {
   reliability: ForecastReliabilityDimension[];
   monthlyProjection: ForecastMonthlyProjection[];
   deals: ForecastDeal[];
+  synthesis: ForecastSynthesis | null;
+};
+
+export type ForecastGenerateSynthesisResult = {
+  orgId: string;
+  provider: string;
+  model: string;
+  synthesis: ForecastSynthesis | null;
+  overview: ForecastOverviewResult;
 };
 
 export type ForecastAnalyzeResult = {
@@ -1106,9 +1241,14 @@ export const fetchHubSpotTasks = async (
   hubspotOwnerId: string,
   limit = 500,
   options: ApiRequestOptions = {},
+  forceRefresh = false,
 ): Promise<HubSpotTaskListItem[]> => {
-  const payload = await getJson<HubSpotTasksPayload>(
-    apiPath("/api/hubspot/tasks", { orgId, hubspotOwnerId, limit, includeCompleted: false }),
+  const path = apiPath("/api/hubspot/tasks", { orgId, hubspotOwnerId, limit, includeCompleted: false });
+  const payload = await getCachedJson<HubSpotTasksPayload>(
+    `${HUBSPOT_TASKS_CACHE_PREFIX}${path}`,
+    path,
+    HUBSPOT_TASKS_CACHE_TTL_MS,
+    forceRefresh,
     options,
   );
 
@@ -1120,9 +1260,14 @@ export const fetchHubSpotLeads = async (
   hubspotOwnerId: string,
   limit = 500,
   options: ApiRequestOptions = {},
+  forceRefresh = false,
 ): Promise<HubSpotLeadListItem[]> => {
-  const payload = await getJson<HubSpotLeadsPayload>(
-    apiPath("/api/leads", { orgId, hubspotOwnerId, limit }),
+  const path = apiPath("/api/leads", { orgId, hubspotOwnerId, limit });
+  const payload = await getCachedJson<HubSpotLeadsPayload>(
+    `${HUBSPOT_LEADS_CACHE_PREFIX}${path}`,
+    path,
+    HUBSPOT_LEADS_CACHE_TTL_MS,
+    forceRefresh,
     options,
   );
 
@@ -1134,9 +1279,14 @@ export const fetchHubSpotLeadAccounts = async (
   hubspotOwnerId: string,
   limit = 500,
   options: ApiRequestOptions = {},
+  forceRefresh = false,
 ): Promise<HubSpotLeadAccountItem[]> => {
-  const payload = await getJson<HubSpotLeadAccountsPayload>(
-    apiPath("/api/leads/accounts", { orgId, hubspotOwnerId, limit }),
+  const path = apiPath("/api/leads/accounts", { orgId, hubspotOwnerId, limit });
+  const payload = await getCachedJson<HubSpotLeadAccountsPayload>(
+    `${HUBSPOT_LEADS_CACHE_PREFIX}${path}`,
+    path,
+    HUBSPOT_LEADS_CACHE_TTL_MS,
+    forceRefresh,
     options,
   );
 
@@ -1177,7 +1327,7 @@ export const updateHubSpotTaskPriority = async (
   postJson<HubSpotTaskListItem>(`/api/hubspot/tasks/${encodeURIComponent(taskId)}/priority`, {
     orgId,
     priority,
-  });
+  }).finally(() => clearAnalyticsCacheByPrefix(HUBSPOT_TASKS_CACHE_PREFIX));
 
 export const analyzeAndApplyHubSpotTask = async (
   orgId: string,
@@ -1187,7 +1337,7 @@ export const analyzeAndApplyHubSpotTask = async (
   postJson<TaskAnalyzerApplyResult>(`/api/tasks/${encodeURIComponent(taskId)}/analyze-and-apply`, {
     orgId,
     refresh,
-  });
+  }).finally(() => clearAnalyticsCacheByPrefix(HUBSPOT_TASKS_CACHE_PREFIX));
 
 export const fetchHubSpotQueue = async (
   orgId: string,
@@ -1260,6 +1410,16 @@ const wait = async (durationMs: number): Promise<void> =>
     window.setTimeout(resolve, durationMs);
   });
 
+// Garde-fous pour les boucles de polling : evite les boucles infinies si le
+// backend ne termine jamais le job, et espace progressivement les appels.
+const POLL_BASE_DELAY_MS = 1000;
+const POLL_MAX_DELAY_MS = 5000;
+const POLL_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+
+// Backoff exponentiel plafonne : 1s, 2s, 4s, puis 5s.
+const pollDelayMs = (attempt: number): number =>
+  Math.min(POLL_BASE_DELAY_MS * 2 ** attempt, POLL_MAX_DELAY_MS);
+
 export const fetchHubSpotSyncJob = async (jobId: string): Promise<HubSpotSyncJobStatus> =>
   getJson<HubSpotSyncJobStatus>(`/api/sync/hubspot/jobs/${encodeURIComponent(jobId)}`);
 
@@ -1284,9 +1444,15 @@ const startAndPollHubSpotSync = async (
   onProgress?.(startedJob);
 
   let currentJob = startedJob;
+  let attempt = 0;
+  const deadline = Date.now() + POLL_TIMEOUT_MS;
 
   while (currentJob.status !== "completed" && currentJob.status !== "failed") {
-    await wait(1000);
+    if (Date.now() > deadline) {
+      throw new Error("Delai d'attente depasse pendant la synchronisation HubSpot. Veuillez reessayer.");
+    }
+    await wait(pollDelayMs(attempt));
+    attempt += 1;
     try {
       currentJob = await fetchHubSpotSyncJob(startedJob.jobId);
     } catch (error) {
@@ -1402,9 +1568,15 @@ export const startAndPollDealAnalysisRun = async (
   onProgress?.(startedJob);
 
   let currentJob = startedJob;
+  let attempt = 0;
+  const deadline = Date.now() + POLL_TIMEOUT_MS;
 
   while (currentJob.status !== "completed" && currentJob.status !== "failed") {
-    await wait(1000);
+    if (Date.now() > deadline) {
+      throw new Error("Delai d'attente depasse pendant l'analyse du deal. Veuillez reessayer.");
+    }
+    await wait(pollDelayMs(attempt));
+    attempt += 1;
     currentJob = await fetchDealAnalysisRun(startedJob.jobId);
     onProgress?.(currentJob);
   }
@@ -1473,7 +1645,7 @@ export const createFollowUpTask = async (prospect: QueueProspect, orgId: string)
     dealStage: prospect.dealStage,
     lastContactAt: prospect.lastContactAt,
     nextAction: prospect.nextAction,
-  });
+  }).finally(() => clearAnalyticsCacheByPrefix(HUBSPOT_TASKS_CACHE_PREFIX));
 
 export const fetchCloseLostOverview = async ({
   orgId,
@@ -1658,9 +1830,15 @@ export const startAndPollForecastOpenDealsAnalysis = async ({
   onProgress?.(startedJob);
 
   let currentJob = startedJob;
+  let attempt = 0;
+  const deadline = Date.now() + POLL_TIMEOUT_MS;
 
   while (currentJob.status !== "completed" && currentJob.status !== "failed") {
-    await wait(1000);
+    if (Date.now() > deadline) {
+      throw new Error("Delai d'attente depasse pendant l'analyse forecast. Veuillez reessayer.");
+    }
+    await wait(pollDelayMs(attempt));
+    attempt += 1;
     currentJob = await fetchForecastAnalyzeJob(startedJob.jobId);
     onProgress?.(currentJob);
   }
@@ -1708,6 +1886,31 @@ export const analyzeForecastDeal = async ({
     refresh,
   }).finally(clearAnalyticsCache);
 
+export const generateForecastSynthesis = async ({
+  orgId,
+  scope,
+  hubspotOwnerId,
+  dateFrom,
+  dateTo,
+  aiProvider,
+}: {
+  orgId: string;
+  scope: ForecastScope;
+  hubspotOwnerId: string | null;
+  dateFrom: string;
+  dateTo: string;
+  aiProvider: AiProviderOption;
+}): Promise<ForecastGenerateSynthesisResult> =>
+  postJson<ForecastGenerateSynthesisResult>("/api/forecast/synthesis", {
+    orgId,
+    scope,
+    hubspotOwnerId,
+    dateFrom,
+    dateTo,
+    llmProvider: aiProvider.id,
+    llmModel: aiProvider.model,
+  }).finally(clearAnalyticsCache);
+
 export const fetchMonthlySalesTargets = async (orgId: string, year: number): Promise<MonthlySalesTarget[]> =>
   getJson<MonthlySalesTarget[]>(apiPath("/api/forecast/targets", { orgId, year }));
 
@@ -1719,3 +1922,72 @@ export const saveMonthlySalesTargets = async (
     orgId,
     targets,
   });
+
+export type ProbabilityTimelinePoint = {
+  date: string;
+  averageProbability: number;
+  dealCount: number;
+};
+
+export type AggregatedProbabilityTimeline = {
+  points: ProbabilityTimelinePoint[];
+  dealCount: number;
+  pointCount: number;
+};
+
+export type DealProbabilityPoint = {
+  date: string;
+  probability: number;
+  daysSinceCreation: number | null;
+};
+
+export type DealProbabilityTimeline = {
+  hubspotDealId: string;
+  dealName: string | null;
+  createdAt: string | null;
+  closedAt: string | null;
+  ageDays: number | null;
+  currentProbability: number | null;
+  points: DealProbabilityPoint[];
+};
+
+export const fetchProbabilityTimeline = async ({
+  orgId,
+  scope,
+  hubspotOwnerId,
+  includeClosed,
+  dateFrom,
+  dateTo,
+}: {
+  orgId: string;
+  scope: ForecastScope;
+  hubspotOwnerId: string | null;
+  includeClosed: boolean;
+  dateFrom?: string | null;
+  dateTo?: string | null;
+}): Promise<AggregatedProbabilityTimeline> =>
+  getJson<AggregatedProbabilityTimeline>(
+    apiPath("/api/probability/timeline", {
+      orgId,
+      scope,
+      hubspotOwnerId,
+      includeClosed: includeClosed ? "true" : "false",
+      dateFrom: dateFrom ?? undefined,
+      dateTo: dateTo ?? undefined,
+    }),
+  );
+
+export const fetchDealProbabilityTimeline = async (
+  orgId: string,
+  hubspotDealId: string,
+  options?: ApiRequestOptions,
+): Promise<DealProbabilityTimeline> =>
+  getJson<DealProbabilityTimeline>(
+    apiPath(`/api/probability/deals/${encodeURIComponent(hubspotDealId)}`, { orgId }),
+    options,
+  );
+
+export const backfillProbabilityHistory = async (
+  orgId: string,
+): Promise<{ dealsProcessed: number; pointsInserted: number }> =>
+  postJson<{ dealsProcessed: number; pointsInserted: number }>("/api/probability/backfill", { orgId });

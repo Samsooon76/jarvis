@@ -1,6 +1,10 @@
 import { env } from "../config/env.js";
 import { getSupabaseAdmin } from "../db/client.js";
 import { analyzeDealActivityPlanForProspect } from "./deal-intelligence.service.js";
+import {
+  CLOSING_PROBABILITY_PROPERTY,
+  recordDealProbabilityPoint,
+} from "./deal-probability.service.js";
 import { getHubSpotAccessToken } from "./hubspot-auth.service.js";
 import { resolveLlmProviderPreference } from "./llm/provider-preference.service.js";
 import {
@@ -563,6 +567,7 @@ const applyDealPropertyChangeFromWebhook = async (
   hubspotDealId: string,
   propertyName: string | null,
   propertyValue: string | null,
+  occurredAt: string | null,
 ): Promise<void> => {
   if (
     propertyName !== "amount" &&
@@ -604,6 +609,25 @@ const applyDealPropertyChangeFromWebhook = async (
 
     if (prospectError) {
       throw new Error(`Impossible de mettre a jour la probabilite du prospect HubSpot: ${prospectError.message}`);
+    }
+
+    // On historise uniquement la propriete custom suivie dans les dashboards.
+    if (propertyName === CLOSING_PROBABILITY_PROPERTY) {
+      const { data: ownerData } = await supabase
+        .from("hubspot_deals")
+        .select("hubspot_owner_id")
+        .eq("org_id", orgId)
+        .eq("hubspot_deal_id", hubspotDealId)
+        .maybeSingle();
+
+      await recordDealProbabilityPoint({
+        orgId,
+        hubspotDealId,
+        hubspotOwnerId: (ownerData as { hubspot_owner_id: string | null } | null)?.hubspot_owner_id ?? null,
+        probability: closeProbability,
+        recordedAt: normalizeWebhookDate(occurredAt) ?? syncedAt,
+        source: "webhook",
+      });
     }
 
     return;
@@ -883,6 +907,7 @@ const processHubSpotWebhookEvent = async (eventId: string): Promise<void> => {
         eligibleDealId,
         event.property_name,
         event.property_value,
+        event.occurred_at,
       );
       await scheduleDealReanalysis(event.org_id, eligibleDealId, event.id, "Changement HubSpot sur le deal");
       await updateWebhookEventStatus(event.id, "completed");

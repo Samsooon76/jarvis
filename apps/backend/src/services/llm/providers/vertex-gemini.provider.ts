@@ -6,6 +6,7 @@ import type {
   AnalyzeCloseLostPortfolioInput,
   AnalyzeDealIntelligenceInput,
   AnalyzeDealQualificationInput,
+  AnalyzeForecastSynthesisInput,
   AnalyzeTaskInput,
   CloseLostDealAnalysis,
   CloseLostPortfolioAnalysis,
@@ -14,6 +15,7 @@ import type {
   DealIntelligenceAnalysis,
   DealHistoryAnalysis,
   DealQualificationAnalysis,
+  ForecastSynthesisAnalysis,
   FollowUpTaskRecommendation,
   LeadContactRankingAnalysis,
   LlmProvider,
@@ -28,6 +30,7 @@ import {
   parseCloseLostDealAnalysis,
   parseCloseLostPortfolioAnalysis,
 } from "../close-lost.js";
+import { buildForecastSynthesisPrompt, parseForecastSynthesisAnalysis } from "../forecast-synthesis.js";
 import { buildDealQualificationPrompt, parseDealQualification } from "../qualification.js";
 import { buildLeadContactRankingPrompt, parseLeadContactRanking } from "../lead-contact-ranking.js";
 import { buildTaskAnalysisPrompt, parseTaskAnalysis } from "../task-analysis.js";
@@ -517,6 +520,41 @@ export class VertexGeminiProvider implements LlmProvider {
     const payload = (await response.json()) as GeminiGenerateContentResponse;
 
     return parseCloseLostPortfolioAnalysis(extractText(payload), "Vertex AI");
+  }
+
+  async analyzeForecastSynthesis(input: AnalyzeForecastSynthesisInput): Promise<ForecastSynthesisAnalysis> {
+    const response = await fetch(`${GEMINI_ENDPOINT}/${this.modelName}:generateContent?key=${this.apiKey}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            role: "user",
+            parts: [
+              {
+                text: buildForecastSynthesisPrompt(input),
+              },
+            ],
+          },
+        ],
+        generationConfig: {
+          temperature: 0.1,
+          responseMimeType: "application/json",
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+
+      throw new Error(`Vertex AI error (${response.status}): ${errorText}`);
+    }
+
+    const payload = (await response.json()) as GeminiGenerateContentResponse;
+
+    return parseForecastSynthesisAnalysis(extractText(payload), input.knownDealIds, "Vertex AI");
   }
 
   async recommendFollowUpTask(input: RecommendFollowUpTaskInput): Promise<FollowUpTaskRecommendation> {

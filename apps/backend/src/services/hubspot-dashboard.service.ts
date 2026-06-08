@@ -165,6 +165,18 @@ const getTeamName = (teams: Array<{ name?: string | null; primary?: boolean }> |
 const isSalesAeOwner = (teams: Array<{ name?: string | null }> | undefined): boolean =>
   getTeamName(teams)?.toLowerCase().includes("sales ae") ?? false;
 
+const isProspectOwnedByHubSpotOwner = (
+  prospect: ProspectRow,
+  hubSpotOwnerId: string,
+  ownerUserId: string | null,
+): boolean => {
+  if (getRawString(prospect.raw_data, "hubspotOwnerId") === hubSpotOwnerId) {
+    return true;
+  }
+
+  return Boolean(ownerUserId && prospect.owner_user_id === ownerUserId);
+};
+
 const mapProspect = (prospect: ProspectRow): HubSpotOwnerProspectData => {
   const dealName = getRawString(prospect.raw_data, "dealName");
   const dealStageLabel = getRawString(prospect.raw_data, "dealStageLabel");
@@ -402,9 +414,7 @@ export const loadHubSpotDashboard = async (input: {
 
   const ownerUserId = ownerUserIdByHubSpotId.get(owner.ownerId) ?? null;
   const ownerProspects = prospects
-    .filter((prospect) =>
-      ownerUserId ? prospect.owner_user_id === ownerUserId : getRawString(prospect.raw_data, "hubspotOwnerId") === owner.ownerId,
-    )
+    .filter((prospect) => isProspectOwnedByHubSpotOwner(prospect, owner.ownerId, ownerUserId))
     .map(mapProspect)
     .sort((left, right) => {
       const priorityOrder = { urgent: 0, important: 1, routine: 2 };

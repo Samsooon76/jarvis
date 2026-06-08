@@ -6,7 +6,9 @@ import { getDealStatus } from "../../utils/dashboard/prospects";
 import { ForecastChart } from "./charts/ForecastChart";
 import { StageFunnelChart } from "./charts/StageFunnelChart";
 import { MetricIcon } from "./MetricIcon";
+import { ProbabilityTimelinePanel } from "./ProbabilityTimelinePanel";
 import type { ForecastChartViewModel, MetricCard, StageChartViewModel } from "./types";
+import type { HubSpotOwnerOption } from "../../services/api";
 
 type StatsViewProps = {
   forecastChart: ForecastChartViewModel;
@@ -15,6 +17,10 @@ type StatsViewProps = {
   onHideClosedLostStageChange: (hideClosedLostStage: boolean) => void;
   overdueCloseProspects: QueueProspect[];
   stageChart: StageChartViewModel;
+  orgId: string;
+  owners: HubSpotOwnerOption[];
+  selectedOwnerId?: string;
+  canViewTeamForecast?: boolean;
 };
 
 export const StatsView = ({
@@ -24,6 +30,10 @@ export const StatsView = ({
   onHideClosedLostStageChange,
   overdueCloseProspects,
   stageChart,
+  orgId,
+  owners,
+  selectedOwnerId,
+  canViewTeamForecast = false,
 }: StatsViewProps) => {
   const [selectedStageId, setSelectedStageId] = useState<string | null>(null);
   const selectedStage = useMemo(
@@ -126,6 +136,14 @@ export const StatsView = ({
             </div>
           ) : null}
         </article>
+      </section>
+      <section className="ae-dashboard-grid" aria-label="Probabilite de closing">
+        <ProbabilityTimelinePanel
+          orgId={orgId}
+          owners={owners}
+          selectedOwnerId={selectedOwnerId}
+          canViewTeamForecast={canViewTeamForecast}
+        />
       </section>
     </section>
   );

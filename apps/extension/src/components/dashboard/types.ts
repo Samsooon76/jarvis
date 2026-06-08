@@ -25,6 +25,7 @@ export type QueueViewProps = {
   owners?: HubSpotOwnerOption[];
   ownerName?: string;
   selectedOwnerId?: string;
+  canViewTeamForecast?: boolean;
   prospects: QueueProspect[];
 };
 

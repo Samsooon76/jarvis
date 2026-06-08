@@ -214,6 +214,29 @@ export type CloseLostPortfolioAnalysis = {
   confidence: "low" | "medium" | "high";
 };
 
+export type ForecastSynthesisCategory = "commit" | "bestCase" | "atRisk" | "slipping";
+
+export type ForecastSynthesisDealVerdict = {
+  hubspotDealId: string;
+  category: ForecastSynthesisCategory;
+  reason: string;
+  recommendedAction: string | null;
+};
+
+export type ForecastSynthesisAction = {
+  title: string;
+  rationale: string;
+  priority: "low" | "medium" | "high";
+  relatedDealIds: string[];
+};
+
+export type ForecastSynthesisAnalysis = {
+  headline: string;
+  confidence: "low" | "medium" | "high";
+  dealVerdicts: ForecastSynthesisDealVerdict[];
+  actionPlan: ForecastSynthesisAction[];
+};
+
 export type AnalyzeDealHistoryInput = {
   history: string;
   companyName?: string | null;
@@ -375,6 +398,21 @@ export type AnalyzeCloseLostPortfolioInput = {
   analyzedDealCount: number;
 };
 
+export type AnalyzeForecastSynthesisInput = {
+  dealsSummary: string;
+  knownDealIds: string[];
+  dateFrom: string;
+  dateTo: string;
+  scopeLabel: string;
+  openDealCount: number;
+  totalOpenAmount: number;
+  signedAmount: number;
+  landingAmount: number;
+  objectiveAmount: number | null;
+  gapToObjective: number | null;
+  today: string;
+};
+
 export interface LlmProvider {
   readonly providerName: string;
   readonly modelName: string;
@@ -385,6 +423,7 @@ export interface LlmProvider {
   analyzeDealActivityPlan(input: AnalyzeDealActivityPlanInput): Promise<DealActivityPlanAnalysis>;
   analyzeCloseLostDeal(input: AnalyzeCloseLostDealInput): Promise<CloseLostDealAnalysis>;
   analyzeCloseLostPortfolio(input: AnalyzeCloseLostPortfolioInput): Promise<CloseLostPortfolioAnalysis>;
+  analyzeForecastSynthesis(input: AnalyzeForecastSynthesisInput): Promise<ForecastSynthesisAnalysis>;
   recommendFollowUpTask(input: RecommendFollowUpTaskInput): Promise<FollowUpTaskRecommendation>;
   analyzeTask(input: AnalyzeTaskInput): Promise<TaskAnalysis>;
   rankLeadContacts(input: RankLeadContactsInput): Promise<LeadContactRankingAnalysis>;

@@ -5,10 +5,12 @@ import type { Json } from "../db/database.types.js";
 import {
   analyzeForecastDeal,
   analyzeForecastOpenDeals,
+  generateForecastSynthesis,
   getForecastOverview,
   type ForecastAnalyzeDealResult,
   type ForecastAnalyzeProgressEvent,
   type ForecastAnalyzeResult,
+  type ForecastGenerateSynthesisResult,
   type ForecastOverviewResult,
   type ForecastScope,
 } from "../services/forecast.service.js";
@@ -428,6 +430,53 @@ export const registerForecastRoutes = async (app: FastifyInstance): Promise<void
         return reply.code(500).send({
           success: false,
           error: error instanceof Error ? error.message : "Erreur inconnue pendant l'analyse du deal forecast.",
+        });
+      }
+    },
+  );
+
+  app.post<{ Body: ForecastAnalyzeBody; Reply: ApiResponse<ForecastGenerateSynthesisResult> }>(
+    "/api/forecast/synthesis",
+    async (request, reply) => {
+      const orgId = request.body.orgId;
+
+      if (!isValidOrgId(orgId)) {
+        return reply.code(400).send({
+          success: false,
+          error: "Le champ orgId doit etre un UUID Jarvis valide.",
+        });
+      }
+
+      const scope = parseScope(request.body.scope);
+
+      if (scope === "owner" && !request.body.hubspotOwnerId?.trim()) {
+        return reply.code(400).send({
+          success: false,
+          error: "hubspotOwnerId est obligatoire pour le scope owner.",
+        });
+      }
+
+      try {
+        const result = await generateForecastSynthesis({
+          orgId,
+          scope,
+          hubspotOwnerId: request.body.hubspotOwnerId ?? null,
+          dateFrom: request.body.dateFrom ?? null,
+          dateTo: request.body.dateTo ?? null,
+          llmProvider: request.body.llmProvider ?? null,
+          llmModel: request.body.llmModel ?? null,
+        });
+
+        return reply.send({
+          success: true,
+          data: result,
+        });
+      } catch (error) {
+        request.log.error({ error, orgId }, "Impossible de generer la synthese forecast IA.");
+
+        return reply.code(500).send({
+          success: false,
+          error: error instanceof Error ? error.message : "Erreur inconnue pendant la synthese forecast.",
         });
       }
     },

@@ -6,6 +6,7 @@ import type {
   AnalyzeCloseLostPortfolioInput,
   AnalyzeDealIntelligenceInput,
   AnalyzeDealQualificationInput,
+  AnalyzeForecastSynthesisInput,
   AnalyzeTaskInput,
   CloseLostDealAnalysis,
   CloseLostPortfolioAnalysis,
@@ -15,6 +16,7 @@ import type {
   DealIntelligenceAnalysis,
   DealIntelligenceNextStep,
   DealQualificationAnalysis,
+  ForecastSynthesisAnalysis,
   FollowUpTaskRecommendation,
   LeadContactRankingAnalysis,
   LlmProvider,
@@ -30,6 +32,7 @@ import {
   parseCloseLostDealAnalysis,
   parseCloseLostPortfolioAnalysis,
 } from "../close-lost.js";
+import { buildForecastSynthesisPrompt, parseForecastSynthesisAnalysis } from "../forecast-synthesis.js";
 import { buildDealQualificationPrompt, parseDealQualification } from "../qualification.js";
 import { buildTaskAnalysisPrompt, parseTaskAnalysis } from "../task-analysis.js";
 
@@ -674,6 +677,14 @@ export class OpenAiProvider implements LlmProvider {
   async analyzeCloseLostPortfolio(input: AnalyzeCloseLostPortfolioInput): Promise<CloseLostPortfolioAnalysis> {
     return parseCloseLostPortfolioAnalysis(
       await this.completeJson(buildCloseLostPortfolioPrompt(input), 4_000),
+      "OpenAI",
+    );
+  }
+
+  async analyzeForecastSynthesis(input: AnalyzeForecastSynthesisInput): Promise<ForecastSynthesisAnalysis> {
+    return parseForecastSynthesisAnalysis(
+      await this.completeJson(buildForecastSynthesisPrompt(input), 5_000),
+      input.knownDealIds,
       "OpenAI",
     );
   }

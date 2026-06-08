@@ -379,7 +379,10 @@ export const ExtensionApp = () => {
   };
 
   const handleSyncHubSpot = async (onProgress?: (status: HubSpotSyncJobStatus) => void): Promise<HubSpotSyncResult> => {
-    const hubspotOwnerIds = data?.owners.map((owner) => owner.ownerId) ?? [];
+    const hubspotOwnerIds =
+      authProfile?.role === "sales" && authProfile.hubspotOwnerId
+        ? [authProfile.hubspotOwnerId]
+        : data?.owners.map((owner) => owner.ownerId) ?? [];
     const result = await syncHubSpotToSupabase(activeOrgId, hubspotOwnerIds, onProgress);
     refreshQueue();
 
@@ -538,7 +541,7 @@ export const ExtensionApp = () => {
         onDisconnectHubSpot={authProfile.canManageHubSpot ? handleDisconnectHubSpot : undefined}
         onOwnerChange={handleOwnerChange}
         onSignOut={handleSignOut}
-        onSyncHubSpot={authProfile.canManageHubSpot ? handleSyncHubSpot : undefined}
+        onSyncHubSpot={handleSyncHubSpot}
         owners={
           authProfile.role === "sales" && authProfile.hubspotOwnerId
             ? (data?.owners ?? []).filter((owner) => owner.ownerId === authProfile.hubspotOwnerId)
@@ -546,6 +549,7 @@ export const ExtensionApp = () => {
         }
         ownerName={data?.owner.name}
         selectedOwnerId={activeOwnerId ?? data?.owner.ownerId}
+        canViewTeamForecast={authProfile.role !== "sales"}
         prospects={data?.prospects ?? []}
       />
     </>

@@ -4,7 +4,6 @@ import {
   ChartNoAxesCombined,
   ChevronDown,
   CircleX,
-  CircleHelp,
   LayoutDashboard,
   ListFilter,
   ListTodo,
@@ -65,9 +64,6 @@ export const Sidebar = ({ activeView, onSignOut, onViewChange }: SidebarProps) =
           <small>Sales copilot</small>
         </div>
       </div>
-      <button aria-label="Aide Jarvis" className="ae-sidebar-help" type="button">
-        <CircleHelp size={16} strokeWidth={2} />
-      </button>
     </div>
     <div className="ae-sidebar-space" aria-label="Votre espace">
       <span aria-hidden="true">J</span>
@@ -95,7 +91,6 @@ export const Sidebar = ({ activeView, onSignOut, onViewChange }: SidebarProps) =
             className={activeView === item.id ? "active" : ""}
             key={item.id}
             onClick={() => onViewChange(item.id)}
-            onPointerDown={() => onViewChange(item.id)}
             title={item.label}
             type="button"
           >

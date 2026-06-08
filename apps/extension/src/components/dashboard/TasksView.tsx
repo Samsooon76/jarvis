@@ -516,9 +516,20 @@ export const TasksView = ({
   const fetchAndCommitTasks = async (ownerId: string): Promise<DisplayTask[]> => {
     const owner = ownerById.get(ownerId);
     const localUserId = isJarvisUserId(owner?.userId) ? owner.userId : null;
-    const nextTasks = localUserId
-      ? (await fetchSalesTasksToday(localUserId)).tasks.map((task) => mapSalesTaskToDisplayTask(task, ownerId))
-      : await fetchHubSpotTasks(orgId, ownerId);
+    let nextTasks: DisplayTask[];
+
+    if (localUserId) {
+      try {
+        const salesTasks = (await fetchSalesTasksToday(localUserId)).tasks.map((task) =>
+          mapSalesTaskToDisplayTask(task, ownerId),
+        );
+        nextTasks = salesTasks.length > 0 ? salesTasks : await fetchHubSpotTasks(orgId, ownerId);
+      } catch {
+        nextTasks = await fetchHubSpotTasks(orgId, ownerId);
+      }
+    } else {
+      nextTasks = await fetchHubSpotTasks(orgId, ownerId);
+    }
 
     commitTasks(nextTasks);
     displayedOwnerIdRef.current = ownerId;
@@ -560,15 +571,21 @@ export const TasksView = ({
     }
   };
 
+  // Keep a stable reference to the latest loadTasks so the polling interval
+  // always runs the freshest closure without being torn down/recreated every
+  // time an unrelated dependency (analysis state, owner map) changes.
+  const loadTasksRef = useRef(loadTasks);
+  loadTasksRef.current = loadTasks;
+
   useEffect(() => {
-    void loadTasks();
+    void loadTasksRef.current();
 
     const intervalId = window.setInterval(() => {
-      void loadTasks();
+      void loadTasksRef.current();
     }, 60_000);
 
     return () => window.clearInterval(intervalId);
-  }, [analysisApplyingId, analysisLoadingId, orgId, ownerById, selectedOwnerId]);
+  }, [orgId, selectedOwnerId]);
 
   const dealLabelById = useMemo(() => {
     const labels = new Map<string, string>();
@@ -1273,20 +1290,6 @@ export const TasksView = ({
                           </>
                         ) : (
                           <>
-                            <button
-                              disabled={analysisLoadingId === task.id || analysisApplyingId === task.id || processingTaskIds[task.id]}
-                              onClick={() => handleAnalyzeTask(task.id, Boolean(analysisByTaskId[task.id]))}
-                              type="button"
-                            >
-                              <Brain size={14} />
-                              <span>
-                                {analysisApplyingId === task.id
-                                  ? "Action..."
-                                  : analysisLoadingId === task.id || processingTaskIds[task.id]
-                                    ? "Analyse..."
-                                    : "Analyser"}
-                              </span>
-                            </button>
                             {taskPriorityOptions.map((priority) => (
                           <button
                             aria-pressed={task.priority === priority}

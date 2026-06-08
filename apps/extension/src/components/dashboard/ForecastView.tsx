@@ -5,12 +5,16 @@ import { Bot } from "lucide-react";
 import {
   analyzeForecastDeal,
   fetchForecastOverview,
+  generateForecastSynthesis,
   startAndPollForecastOpenDealsAnalysis,
   type AiProviderOption,
   type ForecastAnalyzeJobStatus,
   type ForecastDeal,
   type ForecastOverviewResult,
   type ForecastScope,
+  type ForecastSynthesis,
+  type ForecastSynthesisCategory,
+  type ForecastSynthesisDeal,
 } from "../../services/api";
 import { formatAmount, formatDate, formatDateTime } from "../../utils/dashboard/formatters";
 import type { HubSpotOwnerOption } from "../../services/api";
@@ -20,9 +24,36 @@ type ForecastViewProps = {
   owners: HubSpotOwnerOption[];
   selectedAiProvider: AiProviderOption;
   selectedOwnerId?: string;
+  /** Managers/admins can switch between the whole team and any individual sales rep. Sales reps stay locked to their own deals. */
+  canViewTeamForecast?: boolean;
 };
 
-type ForecastTab = "overview" | "vs";
+type ForecastTab = "overview" | "synthesis" | "vs";
+
+const FORECAST_SYNTHESIS_CATEGORY_ORDER: ForecastSynthesisCategory[] = ["commit", "bestCase", "atRisk", "slipping"];
+
+const getSynthesisCategoryTone = (category: ForecastSynthesisCategory): string => {
+  if (category === "commit") {
+    return "commit";
+  }
+
+  if (category === "bestCase") {
+    return "best-case";
+  }
+
+  if (category === "atRisk") {
+    return "at-risk";
+  }
+
+  return "slipping";
+};
+
+const getConfidenceLabel = (confidence: ForecastSynthesis["confidence"]): string =>
+  confidence === "high" ? "Confiance elevee" : confidence === "medium" ? "Confiance moyenne" : "Confiance faible";
+
+const getPriorityLabel = (priority: "low" | "medium" | "high"): string =>
+  priority === "high" ? "Prioritaire" : priority === "medium" ? "A suivre" : "Optionnel";
+type ForecastPeriodMode = "currentAndNext" | "currentMonth" | "nextMonth" | "custom";
 
 type ForecastPoint = {
   date: string;
@@ -35,14 +66,29 @@ type ForecastPoint = {
   confidenceScore: number;
 };
 
-const getMonthBounds = (): { dateFrom: string; dateTo: string } => {
+const getMonthBounds = (offsetMonths = 0): { dateFrom: string; dateTo: string } => {
   const now = new Date();
-  const firstDay = new Date(Date.UTC(now.getFullYear(), now.getMonth(), 1));
-  const lastDay = new Date(Date.UTC(now.getFullYear(), now.getMonth() + 12, 0));
+  const firstDay = new Date(Date.UTC(now.getFullYear(), now.getMonth() + offsetMonths, 1));
+  const lastDay = new Date(Date.UTC(now.getFullYear(), now.getMonth() + offsetMonths + 1, 0));
 
   return {
     dateFrom: firstDay.toISOString().slice(0, 10),
     dateTo: lastDay.toISOString().slice(0, 10),
+  };
+};
+
+const getPeriodBounds = (mode: Exclude<ForecastPeriodMode, "custom">): { dateFrom: string; dateTo: string } => {
+  if (mode === "currentMonth") {
+    return getMonthBounds(0);
+  }
+
+  if (mode === "nextMonth") {
+    return getMonthBounds(1);
+  }
+
+  return {
+    dateFrom: getMonthBounds(0).dateFrom,
+    dateTo: getMonthBounds(1).dateTo,
   };
 };
 
@@ -63,7 +109,7 @@ const buildProjection = (overview: ForecastOverviewResult | null): ForecastPoint
     date: month.month,
     label: month.label,
     commit: month.commitAmount,
-    forecast: month.forecastAmount,
+    forecast: month.landingAmount,
     objective: month.objectiveAmount,
     pipeline: month.pipelineAmount,
     dealCount: month.dealCount,
@@ -76,18 +122,24 @@ const getScenarioClassName = (scenarioId: string): string =>
 
 const getRiskClassName = (severity: string): string => `ae-forecast-risk-pill ${severity}`;
 
-const sortInfluentialDeals = (deals: ForecastDeal[]): ForecastDeal[] =>
-  [...deals].sort((left, right) => right.impactAmount - left.impactAmount).slice(0, 6);
+const sortDealsByImpact = (deals: ForecastDeal[]): ForecastDeal[] =>
+  [...deals].sort((left, right) => right.impactAmount - left.impactAmount);
+
+const sortSignedDeals = (deals: ForecastDeal[]): ForecastDeal[] =>
+  [...deals].sort((left, right) => right.amount - left.amount);
 
 const isTechnicalOwnerFallback = (ownerName: string | null | undefined): boolean => /^Owner \d+$/i.test(ownerName ?? "");
 
 const getProbabilityLabel = (deal: ForecastDeal): string => {
   if (deal.analysisStatus === "closed_won") {
-    return "Gagne";
+    return "100% factuel";
   }
 
   return deal.aiProbability === null ? "A analyser" : `${deal.aiProbability}%`;
 };
+
+const getSignedBucketLabel = (deal: ForecastDeal): string =>
+  deal.forecastBucket === "paymentReceived" ? "Paiement recu" : "Signe, paiement pending";
 
 const getDelta = (deal: ForecastDeal): number | null => (deal.aiProbability === null ? null : deal.aiProbability - deal.crmProbability);
 
@@ -153,7 +205,7 @@ const ProjectionChart = ({
             tension: 0.28,
           },
           {
-            label: "Forecast IA",
+            label: "Atterrissage",
             data: points.map((point) => point.forecast),
             borderColor: "#007a59",
             backgroundColor: "rgba(0, 128, 96, 0.12)",
@@ -262,7 +314,7 @@ const ProjectionChart = ({
     <div className="ae-forecast-chart-card">
       <div className="ae-forecast-chart-legend" aria-label="Legende">
         <span><i className="commit" /> Commit</span>
-        <span><i className="forecast" /> Forecast IA</span>
+        <span><i className="forecast" /> Atterrissage</span>
         <span><i className="objective" /> Objectif</span>
       </div>
       <div
@@ -276,9 +328,16 @@ const ProjectionChart = ({
   );
 };
 
-export const ForecastView = ({ orgId, owners, selectedAiProvider, selectedOwnerId }: ForecastViewProps) => {
-  const defaultDates = useMemo(getMonthBounds, []);
+export const ForecastView = ({
+  orgId,
+  owners,
+  selectedAiProvider,
+  selectedOwnerId,
+  canViewTeamForecast = false,
+}: ForecastViewProps) => {
+  const defaultDates = useMemo(() => getPeriodBounds("currentAndNext"), []);
   const [ownerId, setOwnerId] = useState(selectedOwnerId ?? "");
+  const [periodMode, setPeriodMode] = useState<ForecastPeriodMode>("currentAndNext");
   const [dateFrom, setDateFrom] = useState(defaultDates.dateFrom);
   const [dateTo, setDateTo] = useState(defaultDates.dateTo);
   const [overview, setOverview] = useState<ForecastOverviewResult | null>(null);
@@ -286,6 +345,7 @@ export const ForecastView = ({ orgId, owners, selectedAiProvider, selectedOwnerI
   const [isLoading, setIsLoading] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analyzingDealId, setAnalyzingDealId] = useState<string | null>(null);
+  const [isGeneratingSynthesis, setIsGeneratingSynthesis] = useState(false);
   const [forecastJob, setForecastJob] = useState<ForecastAnalyzeJobStatus | null>(null);
   const [logsOpen, setLogsOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -293,6 +353,10 @@ export const ForecastView = ({ orgId, owners, selectedAiProvider, selectedOwnerI
 
   const scope: ForecastScope = ownerId ? "owner" : "all";
   const resolvedOwnerId = ownerId || null;
+
+  useEffect(() => {
+    setOwnerId(selectedOwnerId ?? "");
+  }, [selectedOwnerId]);
 
   useEffect(() => {
     let isMounted = true;
@@ -332,18 +396,43 @@ export const ForecastView = ({ orgId, owners, selectedAiProvider, selectedOwnerI
   }, [dateFrom, dateTo, orgId, resolvedOwnerId, scope, selectedAiProvider]);
 
   const projection = useMemo(() => buildProjection(overview), [overview]);
-  const influentialDeals = useMemo(() => sortInfluentialDeals(overview?.deals ?? []), [overview?.deals]);
+  const synthesis: ForecastSynthesis | null = overview?.synthesis ?? null;
+  const signedDeals = useMemo(
+    () => sortSignedDeals((overview?.deals ?? []).filter((deal) => deal.forecastBucket !== "openForecast")),
+    [overview?.deals],
+  );
   const openDeals = useMemo(
-    () => sortInfluentialDeals((overview?.deals ?? []).filter((deal) => deal.analysisStatus !== "closed_won")),
+    () => sortDealsByImpact((overview?.deals ?? []).filter((deal) => deal.forecastBucket === "openForecast")),
     [overview?.deals],
   );
   const ownersById = useMemo(() => new Map(owners.map((owner) => [owner.ownerId, owner.name])), [owners]);
   const analyzedRatio = overview && overview.openDealCount > 0 ? Math.round((overview.analyzedDealCount / overview.openDealCount) * 100) : 0;
   const forecastShare =
-    overview && overview.pipelineAmount > 0 ? Math.round((overview.forecastAmount / overview.pipelineAmount) * 100) : 0;
-  const objectiveAmount = overview?.objectiveAmount ?? overview?.pipelineAmount ?? 0;
-  const gapAmount = overview ? objectiveAmount - overview.forecastAmount : 0;
+    overview && overview.openPipelineAmount > 0 ? Math.round((overview.openForecastAmount / overview.openPipelineAmount) * 100) : 0;
+  const objectiveAmount = overview && overview.objectiveAmount && overview.objectiveAmount > 0 ? overview.objectiveAmount : null;
+  const landingAmount = overview?.landingAmount ?? overview?.forecastAmount ?? 0;
+  const gapToFill = objectiveAmount === null ? null : Math.max(0, objectiveAmount - landingAmount);
   const trend = projection.length > 1 ? getTrend(projection[projection.length - 1].forecast, projection[0].forecast) : { value: 0, className: "flat" };
+
+  const setPeriod = (nextMode: ForecastPeriodMode) => {
+    setPeriodMode(nextMode);
+
+    if (nextMode !== "custom") {
+      const nextDates = getPeriodBounds(nextMode);
+      setDateFrom(nextDates.dateFrom);
+      setDateTo(nextDates.dateTo);
+    }
+  };
+
+  const handleDateFromChange = (value: string) => {
+    setPeriodMode("custom");
+    setDateFrom(value);
+  };
+
+  const handleDateToChange = (value: string) => {
+    setPeriodMode("custom");
+    setDateTo(value);
+  };
 
   const handleAnalyze = async (refresh: boolean) => {
     try {
@@ -401,6 +490,33 @@ export const ForecastView = ({ orgId, owners, selectedAiProvider, selectedOwnerI
     }
   };
 
+  const handleGenerateSynthesis = async () => {
+    try {
+      setIsGeneratingSynthesis(true);
+      setError(null);
+      setMessage(null);
+      const result = await generateForecastSynthesis({
+        orgId,
+        scope,
+        hubspotOwnerId: resolvedOwnerId,
+        dateFrom,
+        dateTo,
+        aiProvider: selectedAiProvider,
+      });
+
+      setOverview(result.overview);
+      setMessage(
+        result.synthesis
+          ? `Synthese IA generee: ${result.synthesis.deals.length} deal(s) classe(s).`
+          : "Aucun deal ouvert analyse: lance d'abord l'analyse des deals ouverts.",
+      );
+    } catch (synthesisError) {
+      setError(synthesisError instanceof Error ? synthesisError.message : "Erreur inconnue pendant la synthese forecast.");
+    } finally {
+      setIsGeneratingSynthesis(false);
+    }
+  };
+
   const getOwnerDisplayName = (deal: ForecastDeal): string => {
     if (deal.ownerHubSpotId) {
       const ownerNameFromHubSpot = ownersById.get(deal.ownerHubSpotId);
@@ -416,30 +532,17 @@ export const ForecastView = ({ orgId, owners, selectedAiProvider, selectedOwnerI
   return (
     <section className="ae-view-panel ae-forecast-page" aria-label="Forecast IA">
       <div className="ae-forecast-header">
-        <div>
-          <h2>Forecast IA</h2>
-          <span>Analysez les deals ouverts, integrez les close won et anticipez votre atterrissage de fin de periode.</span>
-        </div>
+        <span className="ae-forecast-last-update">
+          Derniere mise a jour IA : {overview?.lastAnalyzedAt ? formatDateTime(overview.lastAnalyzedAt) : "aucune analyse"}
+        </span>
         <div className="ae-forecast-header-meta">
-          <span>
-            Derniere mise a jour : {overview?.lastAnalyzedAt ? formatDateTime(overview.lastAnalyzedAt) : "aucune analyse IA"}
-          </span>
-          <button disabled={isAnalyzing} onClick={() => void handleAnalyze(false)} type="button">
+          <button disabled={isAnalyzing || openDeals.length === 0} onClick={() => void handleAnalyze(false)} type="button">
             {isAnalyzing ? "Analyse..." : "Analyser les deals ouverts"}
           </button>
-          <button disabled={isAnalyzing} onClick={() => void handleAnalyze(true)} type="button">
+          <button disabled={isAnalyzing || openDeals.length === 0} onClick={() => void handleAnalyze(true)} type="button">
             Recalculer les deals ouverts
           </button>
         </div>
-      </div>
-
-      <div className="ae-forecast-tabs" aria-label="Forecast sections">
-        <button className={activeTab === "overview" ? "active" : ""} onClick={() => setActiveTab("overview")} type="button">
-          Vue d'ensemble
-        </button>
-        <button className={activeTab === "vs" ? "active" : ""} onClick={() => setActiveTab("vs")} type="button">
-          VS
-        </button>
       </div>
 
       {forecastJob ? (
@@ -470,22 +573,53 @@ export const ForecastView = ({ orgId, owners, selectedAiProvider, selectedOwnerI
       <div className="ae-forecast-filters">
         <label>
           Periode
-          <span>
-            <input onChange={(event) => setDateFrom(event.target.value)} type="date" value={dateFrom} />
-            <input onChange={(event) => setDateTo(event.target.value)} type="date" value={dateTo} />
+          <span className="ae-forecast-period-toggle">
+            <button className={periodMode === "currentAndNext" ? "active" : ""} onClick={() => setPeriod("currentAndNext")} type="button">
+              Ce mois + prochain
+            </button>
+            <button className={periodMode === "currentMonth" ? "active" : ""} onClick={() => setPeriod("currentMonth")} type="button">
+              Ce mois
+            </button>
+            <button className={periodMode === "nextMonth" ? "active" : ""} onClick={() => setPeriod("nextMonth")} type="button">
+              Mois prochain
+            </button>
+            <button className={periodMode === "custom" ? "active" : ""} onClick={() => setPeriod("custom")} type="button">
+              Personnalise
+            </button>
           </span>
         </label>
         <label>
-          Proprietaire
-          <select disabled={owners.length === 0} onChange={(event) => setOwnerId(event.target.value)} value={ownerId}>
-            <option value="">Tous</option>
-            {owners.map((owner) => (
-              <option key={owner.ownerId} value={owner.ownerId}>
-                {owner.name}
-              </option>
-            ))}
-          </select>
+          Dates
+          <span>
+            <input onChange={(event) => handleDateFromChange(event.target.value)} type="date" value={dateFrom} />
+            <input onChange={(event) => handleDateToChange(event.target.value)} type="date" value={dateTo} />
+          </span>
         </label>
+        {canViewTeamForecast ? (
+          <label>
+            Forecast
+            <select disabled={owners.length === 0} onChange={(event) => setOwnerId(event.target.value)} value={ownerId}>
+              <option value="">Equipe (tous les sales)</option>
+              {owners.map((owner) => (
+                <option key={owner.ownerId} value={owner.ownerId}>
+                  {owner.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+      </div>
+
+      <div className="ae-forecast-tabs" aria-label="Forecast sections">
+        <button className={activeTab === "overview" ? "active" : ""} onClick={() => setActiveTab("overview")} type="button">
+          Vue d'ensemble
+        </button>
+        <button className={activeTab === "synthesis" ? "active" : ""} onClick={() => setActiveTab("synthesis")} type="button">
+          Synthese IA
+        </button>
+        <button className={activeTab === "vs" ? "active" : ""} onClick={() => setActiveTab("vs")} type="button">
+          CRM vs IA
+        </button>
       </div>
 
       {error ? <p className="ae-admin-feedback error">{error}</p> : null}
@@ -498,40 +632,54 @@ export const ForecastView = ({ orgId, owners, selectedAiProvider, selectedOwnerI
               <Bot size={21} strokeWidth={2.3} />
             </div>
             <div>
-              <span>Prediction IA</span>
+              <span>Atterrissage forecast</span>
               <strong>
                 {overview
-                  ? `Jarvis prevoit un atterrissage a ${formatAmount(overview.forecastAmount)} sur la periode, soit ${forecastShare}% du pipeline forecastable.`
+                  ? `${formatAmount(overview.signedAmount)} deja signe + ${formatAmount(overview.openForecastAmount)} de forecast ouvert = ${formatAmount(landingAmount)} prevus sur la periode.`
                   : "Chargement du forecast IA depuis Supabase."}
               </strong>
               {overview && overview.missingAnalysisCount > 0 ? (
                 <small>{overview.missingAnalysisCount} deal(s) ouverts doivent encore etre analyses par l'IA.</small>
               ) : null}
-              {overview && overview.wonDealCount > 0 ? <small>{overview.wonDealCount} close won deja integre(s) a 100%.</small> : null}
+              {overview && overview.signedDealCount > 0 ? <small>{overview.signedDealCount} deal(s) signe(s) integre(s) a 100%.</small> : null}
             </div>
-            <button type="button">Voir les leviers {"->"}</button>
+            <button disabled={openDeals.length === 0 || isAnalyzing} onClick={() => void handleAnalyze(false)} type="button">
+              Actualiser l'IA
+            </button>
           </article>
 
           <section className="ae-forecast-kpis">
             <article>
-              <span>Forecast IA</span>
-              <strong>{overview ? formatAmount(overview.forecastAmount) : "--"}</strong>
-              <small className={trend.className}>{overview ? `${trend.value}% vs debut periode` : "Supabase"}</small>
+              <span>Deja signe</span>
+              <strong>{overview ? formatAmount(overview.signedAmount) : "--"}</strong>
+              <small>{overview ? `${overview.signedDealCount} deal(s) a 100%` : "HubSpot"}</small>
+            </article>
+            <article>
+              <span>Paiement pending</span>
+              <strong>{overview ? formatAmount(overview.signedPaymentPendingAmount) : "--"}</strong>
+              <small>{overview ? `${overview.signedPaymentPendingDealCount} deal(s) signe(s)` : "HubSpot"}</small>
+            </article>
+            <article>
+              <span>Paiement recu</span>
+              <strong>{overview ? formatAmount(overview.paymentReceivedAmount) : "--"}</strong>
+              <small>{overview ? `${overview.paymentReceivedDealCount} deal(s) paye(s)` : "HubSpot"}</small>
+            </article>
+            <article>
+              <span>Atterrissage</span>
+              <strong>{overview ? formatAmount(landingAmount) : "--"}</strong>
+              <small className={trend.className}>{overview ? `${forecastShare}% du pipeline ouvert pondere` : "Supabase"}</small>
             </article>
             <article>
               <span>Objectif</span>
-              <strong>{overview ? formatAmount(objectiveAmount) : "--"}</strong>
+              <strong>{!overview ? "--" : objectiveAmount === null ? "Non defini" : formatAmount(objectiveAmount)}</strong>
               <small>{formatPeriod(dateFrom, dateTo)}</small>
             </article>
             <article>
-              <span>Gap a l'objectif</span>
-              <strong>{overview ? formatAmount(Math.max(0, gapAmount)) : "--"}</strong>
-              <small className={gapAmount > 0 ? "negative" : "positive"}>{gapAmount > 0 ? "A combler" : "Objectif couvert"}</small>
-            </article>
-            <article>
-              <span>Confiance</span>
-              <strong>{overview ? `${overview.confidenceScore}%` : "--"}</strong>
-              <small className="positive">{analyzedRatio}% de couverture IA</small>
+              <span>Gap objectif</span>
+              <strong>{!overview || objectiveAmount === null ? "--" : formatAmount(gapToFill ?? 0)}</strong>
+              <small className={gapToFill && gapToFill > 0 ? "negative" : "positive"}>
+                {objectiveAmount === null ? "Objectif non defini" : gapToFill && gapToFill > 0 ? "A combler" : "Objectif couvert"}
+              </small>
             </article>
           </section>
 
@@ -542,7 +690,7 @@ export const ForecastView = ({ orgId, owners, selectedAiProvider, selectedOwnerI
                 <strong>{overview ? `${overview.monthlyProjection.length} mois` : "--"}</strong>
               </div>
               {projection.length > 0 ? (
-                <ProjectionChart objectiveLabel={formatAmount(objectiveAmount)} points={projection} />
+                <ProjectionChart objectiveLabel={objectiveAmount === null ? "non defini" : formatAmount(objectiveAmount)} points={projection} />
               ) : (
                 <p className="ae-empty">{isLoading ? "Chargement Supabase..." : "Aucun deal forecastable sur cette periode."}</p>
               )}
@@ -565,6 +713,54 @@ export const ForecastView = ({ orgId, owners, selectedAiProvider, selectedOwnerI
             </article>
           </section>
 
+          {projection.length > 0 ? (
+            <section className="ae-forecast-months" aria-label="Detail par mois">
+              {(overview?.monthlyProjection ?? []).map((month) => {
+                const toFill = month.objectiveAmount === null ? null : Math.max(0, month.objectiveAmount - month.landingAmount);
+
+                return (
+                  <article className="ae-forecast-month-card" key={month.month}>
+                    <header>
+                      <strong>{month.label}</strong>
+                      <span>{month.dealCount} deal(s)</span>
+                    </header>
+                    <dl>
+                      <div>
+                        <dt>Deja signe</dt>
+                        <dd>
+                          {formatAmount(month.signedAmount)}
+                          <small>{month.signedDealCount} deal(s) a 100%</small>
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Reste a closer (pondere)</dt>
+                        <dd>
+                          {formatAmount(month.openForecastAmount)}
+                          <small>{month.openDealCount} ouvert(s) | {formatAmount(month.openPipelineAmount)} brut</small>
+                        </dd>
+                      </div>
+                      <div className="highlight">
+                        <dt>Atterrissage</dt>
+                        <dd>{formatAmount(month.landingAmount)}</dd>
+                      </div>
+                      <div>
+                        <dt>Objectif</dt>
+                        <dd>{month.objectiveAmount === null ? "--" : formatAmount(month.objectiveAmount)}</dd>
+                      </div>
+                      <div className={toFill === null ? "" : toFill > 0 ? "negative" : "positive"}>
+                        <dt>Gap objectif</dt>
+                        <dd>
+                          {toFill === null ? "--" : toFill > 0 ? formatAmount(toFill) : "Couvert"}
+                          {toFill !== null ? <small>{toFill > 0 ? "a combler" : "objectif atteint"}</small> : null}
+                        </dd>
+                      </div>
+                    </dl>
+                  </article>
+                );
+              })}
+            </section>
+          ) : null}
+
           <section className="ae-forecast-layout three">
             <article className="ae-forecast-panel">
               <div className="ae-panel-heading">
@@ -581,7 +777,6 @@ export const ForecastView = ({ orgId, owners, selectedAiProvider, selectedOwnerI
                   </div>
                 ))}
               </div>
-              <button className="ae-forecast-link" type="button">Voir tous les risques {"->"}</button>
             </article>
 
             <article className="ae-forecast-panel">
@@ -597,7 +792,6 @@ export const ForecastView = ({ orgId, owners, selectedAiProvider, selectedOwnerI
                   </div>
                 ))}
               </div>
-              <button className="ae-forecast-link" type="button">Voir tous les leviers {"->"}</button>
             </article>
 
             <article className="ae-forecast-panel">
@@ -607,7 +801,7 @@ export const ForecastView = ({ orgId, owners, selectedAiProvider, selectedOwnerI
               </div>
               <div className="ae-forecast-confidence-ring" style={{ "--score": `${overview?.confidenceScore ?? 0}%` } as CSSProperties}>
                 <strong>{overview ? `${overview.confidenceScore}%` : "--"}</strong>
-                <span>Confiance globale</span>
+                <span>{overview ? `${analyzedRatio}% couverture IA` : "Confiance globale"}</span>
               </div>
               <div className="ae-forecast-reliability">
                 {(overview?.reliability ?? []).map((item) => (
@@ -623,45 +817,191 @@ export const ForecastView = ({ orgId, owners, selectedAiProvider, selectedOwnerI
 
           <article className="ae-forecast-panel">
             <div className="ae-panel-heading">
-              <span>Deals cles influencant le forecast</span>
-              <strong>{influentialDeals.length} deal(s)</strong>
+              <span>Deals signes</span>
+              <strong>{signedDeals.length} deal(s)</strong>
             </div>
-            <div className="ae-forecast-deal-table" role="table">
+            <div className="ae-forecast-deal-table signed" role="table">
+              <div className="header" role="row">
+                <span>Deal</span>
+                <span>Compte</span>
+                <span>Statut</span>
+                <span>Proprietaire</span>
+                <span>Montant</span>
+                <span>Close prevue</span>
+                <span>Sync CRM</span>
+              </div>
+              {signedDeals.length > 0 ? (
+                signedDeals.map((deal) => (
+                  <div key={deal.hubspotDealId} role="row">
+                    <span>{deal.dealName ?? deal.hubspotDealId}</span>
+                    <span>{deal.companyName}</span>
+                    <span>{getSignedBucketLabel(deal)}</span>
+                    <span>{getOwnerDisplayName(deal)}</span>
+                    <span>{formatAmount(deal.amount)}</span>
+                    <span>{deal.closeDate ? formatDate(deal.closeDate) : "Sans date"}</span>
+                    <span>{formatDateTime(deal.syncedAt)}</span>
+                  </div>
+                ))
+              ) : (
+                <p className="ae-empty">{isLoading ? "Chargement Supabase..." : "Aucun deal signe sur cette periode."}</p>
+              )}
+            </div>
+          </article>
+
+          <article className="ae-forecast-panel">
+            <div className="ae-panel-heading">
+              <span>Deals ouverts a closer</span>
+              <strong>{openDeals.length} deal(s)</strong>
+            </div>
+            <div className="ae-forecast-deal-table open" role="table">
               <div className="header" role="row">
                 <span>Deal</span>
                 <span>Compte</span>
                 <span>Etape</span>
                 <span>Proprietaire</span>
                 <span>Montant</span>
-                <span>Probabilite IA</span>
-                <span>Impact</span>
+                <span>% CRM</span>
+                <span>% IA</span>
+                <span>Pondere</span>
                 <span>Close prevue</span>
                 <span>Action</span>
               </div>
-              {influentialDeals.map((deal) => (
-                <div key={deal.hubspotDealId} role="row">
-                  <span>{deal.dealName ?? deal.hubspotDealId}</span>
-                  <span>{deal.companyName}</span>
-                  <span>{deal.stage}</span>
-                  <span>{getOwnerDisplayName(deal)}</span>
-                  <span>{formatAmount(deal.amount)}</span>
-                  <span>{getProbabilityLabel(deal)}</span>
-                  <span>{formatAmount(deal.impactAmount)}</span>
-                  <span>{deal.closeDate ? formatDate(deal.closeDate) : "Sans date"}</span>
-                  <span>
-                    <button
-                      className="ae-forecast-row-action"
-                      disabled={isAnalyzing || analyzingDealId !== null || deal.analysisStatus === "closed_won"}
-                      onClick={() => void handleAnalyzeDeal(deal)}
-                      type="button"
-                    >
-                      {analyzingDealId === deal.hubspotDealId ? "Analyse..." : deal.aiProbability === null ? "Analyser" : "Recalculer"}
-                    </button>
-                  </span>
-                </div>
-              ))}
+              {openDeals.length > 0 ? (
+                openDeals.map((deal) => (
+                  <div key={deal.hubspotDealId} role="row">
+                    <span>{deal.dealName ?? deal.hubspotDealId}</span>
+                    <span>{deal.companyName}</span>
+                    <span>{deal.stage}</span>
+                    <span>{getOwnerDisplayName(deal)}</span>
+                    <span>{formatAmount(deal.amount)}</span>
+                    <span>{deal.crmProbability}%</span>
+                    <span>{getProbabilityLabel(deal)}</span>
+                    <span>{formatAmount(deal.forecastAmount)}</span>
+                    <span>{deal.closeDate ? formatDate(deal.closeDate) : "Sans date"}</span>
+                    <span>
+                      <button
+                        className="ae-forecast-row-action"
+                        disabled={isAnalyzing || analyzingDealId !== null}
+                        onClick={() => void handleAnalyzeDeal(deal)}
+                        type="button"
+                      >
+                        {analyzingDealId === deal.hubspotDealId ? "Analyse..." : deal.aiProbability === null ? "Analyser" : "Recalculer"}
+                      </button>
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <p className="ae-empty">{isLoading ? "Chargement Supabase..." : "Aucun deal ouvert a closer sur cette periode."}</p>
+              )}
             </div>
           </article>
+        </>
+      ) : activeTab === "synthesis" ? (
+        <>
+          <article className="ae-forecast-banner">
+            <div className="ae-forecast-spark" aria-label="AI" role="img">
+              <Bot size={21} strokeWidth={2.3} />
+            </div>
+            <div>
+              <span>Synthese IA du portefeuille</span>
+              <strong>
+                {synthesis
+                  ? synthesis.headline
+                  : "L'IA classe tes deals ouverts (commit / best case / a risque / slipping) et te donne le plan pour atteindre l'objectif."}
+              </strong>
+              {synthesis ? (
+                <small>
+                  {getConfidenceLabel(synthesis.confidence)} · {synthesis.analyzedDealCount} deal(s) analyse(s) · l'IA estime closer {formatAmount(synthesis.projectedCloseAmount)}
+                  {synthesis.status === "stale" ? " · synthese a regenerer (deals modifies)" : ""}
+                </small>
+              ) : overview && overview.analyzedDealCount === 0 ? (
+                <small>Lance d'abord « Analyser les deals ouverts » pour nourrir la synthese IA.</small>
+              ) : null}
+            </div>
+            <button disabled={isGeneratingSynthesis} onClick={() => void handleGenerateSynthesis()} type="button">
+              {isGeneratingSynthesis ? "Synthese..." : synthesis ? "Regenerer la synthese" : "Generer la synthese IA"}
+            </button>
+          </article>
+
+          {synthesis ? (
+            <>
+              <section className="ae-forecast-synthesis-board" aria-label="Classement des deals par l'IA">
+                {FORECAST_SYNTHESIS_CATEGORY_ORDER.map((category) => {
+                  const summary = synthesis.categories.find((item) => item.category === category);
+                  const categoryDeals: ForecastSynthesisDeal[] = synthesis.deals.filter((deal) => deal.category === category);
+
+                  return (
+                    <article className={`ae-forecast-synthesis-column ${getSynthesisCategoryTone(category)}`} key={category}>
+                      <header>
+                        <span>{summary?.label ?? category}</span>
+                        <strong>{formatAmount(summary?.amount ?? 0)}</strong>
+                        <small>{categoryDeals.length} deal(s) · {formatAmount(summary?.weightedAmount ?? 0)} pondere</small>
+                      </header>
+                      <div className="ae-forecast-synthesis-deals">
+                        {categoryDeals.length > 0 ? (
+                          categoryDeals.map((deal) => (
+                            <div className="ae-forecast-synthesis-deal" key={deal.hubspotDealId}>
+                              <div className="ae-forecast-synthesis-deal-head">
+                                <strong>{deal.companyName}</strong>
+                                <span>{formatAmount(deal.amount)}</span>
+                              </div>
+                              <div className="ae-forecast-synthesis-deal-meta">
+                                <span>{deal.dealName ?? deal.hubspotDealId}</span>
+                                <em>{deal.aiProbability === null ? "% IA n/a" : `${deal.aiProbability}% IA`}</em>
+                              </div>
+                              <p>{deal.reason}</p>
+                              {deal.recommendedAction ? (
+                                <p className="ae-forecast-synthesis-deal-action">→ {deal.recommendedAction}</p>
+                              ) : null}
+                            </div>
+                          ))
+                        ) : (
+                          <p className="ae-empty">Aucun deal</p>
+                        )}
+                      </div>
+                    </article>
+                  );
+                })}
+              </section>
+
+              <article className="ae-forecast-panel">
+                <div className="ae-panel-heading">
+                  <span>Plan d'action pour atteindre l'objectif</span>
+                  <strong>{synthesis.actionPlan.length}</strong>
+                </div>
+                <div className="ae-forecast-synthesis-plan">
+                  {synthesis.actionPlan.length > 0 ? (
+                    synthesis.actionPlan.map((action, index) => {
+                      const relatedDeals = action.relatedDealIds
+                        .map((id) => synthesis.deals.find((deal) => deal.hubspotDealId === id)?.companyName)
+                        .filter((name): name is string => Boolean(name));
+
+                      return (
+                        <div className="ae-forecast-synthesis-plan-item" key={`${action.title}-${index}`}>
+                          <div className="ae-forecast-synthesis-plan-head">
+                            <strong>{action.title}</strong>
+                            <em className={`ae-forecast-risk-pill ${action.priority}`}>{getPriorityLabel(action.priority)}</em>
+                          </div>
+                          <p>{action.rationale}</p>
+                          {relatedDeals.length > 0 ? <small>Deals : {relatedDeals.join(", ")}</small> : null}
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <p className="ae-empty">Aucune action proposee par l'IA.</p>
+                  )}
+                </div>
+              </article>
+            </>
+          ) : (
+            <p className="ae-empty">
+              {isGeneratingSynthesis
+                ? "Generation de la synthese IA..."
+                : isLoading
+                  ? "Chargement Supabase..."
+                  : "Aucune synthese IA pour cette periode. Genere-la a partir des deals ouverts analyses."}
+            </p>
+          )}
         </>
       ) : (
         <>

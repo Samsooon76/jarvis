@@ -1,11 +1,19 @@
+import { createHash } from "node:crypto";
 import { getSupabaseAdmin } from "../db/client.js";
 import { buildDealAnalysisBundleForProspect, type DealIntelligenceResult } from "./deal-intelligence.service.js";
 import { createLlmProvider } from "./llm/provider.factory.js";
-import type { DealIntelligenceAnalysis } from "./llm/llm.provider.js";
+import type {
+  DealIntelligenceAnalysis,
+  ForecastSynthesisAction,
+  ForecastSynthesisAnalysis,
+  ForecastSynthesisCategory,
+} from "./llm/llm.provider.js";
 import { getObjectiveAmountForForecast } from "./sales-targets.service.js";
 
 export type ForecastScope = "all" | "owner";
 export type ForecastAnalysisStatus = "fresh" | "stale" | "missing" | "closed_won";
+export type ForecastDealBucket = "signedPaymentPending" | "paymentReceived" | "openForecast";
+export type ForecastDealStatus = ForecastDealBucket | "closedLost" | "excluded";
 export type ForecastRiskSeverity = "low" | "medium" | "high";
 
 export type ForecastOverviewOptions = {
@@ -44,6 +52,7 @@ export type ForecastDeal = {
   stage: string;
   closeDate: string | null;
   syncedAt: string;
+  forecastBucket: ForecastDealBucket;
   aiProbability: number | null;
   crmProbability: number;
   forecastAmount: number;
@@ -88,15 +97,69 @@ export type ForecastMonthlyProjection = {
   month: string;
   label: string;
   dealCount: number;
+  signedDealCount: number;
+  signedPaymentPendingDealCount: number;
+  paymentReceivedDealCount: number;
+  openDealCount: number;
   wonDealCount: number;
   analyzedDealCount: number;
   missingAnalysisCount: number;
+  signedAmount: number;
+  signedPaymentPendingAmount: number;
+  paymentReceivedAmount: number;
+  openPipelineAmount: number;
+  openForecastAmount: number;
+  landingAmount: number;
   pipelineAmount: number;
   commitAmount: number;
   forecastAmount: number;
   objectiveAmount: number | null;
   gapToObjective: number | null;
   confidenceScore: number;
+};
+
+export type ForecastSynthesisStatus = "fresh" | "stale";
+
+export type ForecastSynthesisDeal = {
+  hubspotDealId: string;
+  dealName: string | null;
+  companyName: string;
+  ownerName: string | null;
+  amount: number;
+  forecastAmount: number;
+  aiProbability: number | null;
+  crmProbability: number;
+  stage: string;
+  closeDate: string | null;
+  dealHealth: DealIntelligenceAnalysis["dealHealth"] | null;
+  category: ForecastSynthesisCategory;
+  reason: string;
+  recommendedAction: string | null;
+};
+
+export type ForecastSynthesisCategorySummary = {
+  category: ForecastSynthesisCategory;
+  label: string;
+  dealCount: number;
+  amount: number;
+  weightedAmount: number;
+};
+
+export type ForecastSynthesis = {
+  generatedAt: string;
+  provider: string;
+  model: string;
+  status: ForecastSynthesisStatus;
+  headline: string;
+  confidence: "low" | "medium" | "high";
+  analyzedDealCount: number;
+  objectiveAmount: number | null;
+  gapToObjective: number | null;
+  /** Deja signe + montant des deals classes "commit" par l'IA : ce que l'IA pense closer sur la periode. */
+  projectedCloseAmount: number;
+  categories: ForecastSynthesisCategorySummary[];
+  deals: ForecastSynthesisDeal[];
+  actionPlan: ForecastSynthesisAction[];
 };
 
 export type ForecastOverviewResult = {
@@ -111,9 +174,18 @@ export type ForecastOverviewResult = {
   lastAnalyzedAt: string | null;
   openDealCount: number;
   wonDealCount: number;
+  signedDealCount: number;
+  signedPaymentPendingDealCount: number;
+  paymentReceivedDealCount: number;
   analyzedDealCount: number;
   staleDealCount: number;
   missingAnalysisCount: number;
+  signedAmount: number;
+  signedPaymentPendingAmount: number;
+  paymentReceivedAmount: number;
+  openPipelineAmount: number;
+  openForecastAmount: number;
+  landingAmount: number;
   pipelineAmount: number;
   forecastAmount: number;
   objectiveAmount: number | null;
@@ -125,6 +197,15 @@ export type ForecastOverviewResult = {
   reliability: ForecastReliabilityDimension[];
   monthlyProjection: ForecastMonthlyProjection[];
   deals: ForecastDeal[];
+  synthesis: ForecastSynthesis | null;
+};
+
+export type ForecastGenerateSynthesisResult = {
+  orgId: string;
+  provider: string;
+  model: string;
+  synthesis: ForecastSynthesis | null;
+  overview: ForecastOverviewResult;
 };
 
 export type ForecastAnalyzeResult = {
@@ -207,6 +288,27 @@ type ForecastDealContext = {
   contact: HubSpotContactRow | null;
   company: HubSpotCompanyRow | null;
   ownerName: string | null;
+};
+
+type ForecastDealStatusInput = {
+  deal_stage: string | null;
+  deal_stage_label: string | null;
+  deal_lifecycle_status: "pending" | "won" | "lost" | null;
+  is_closed_deal: boolean | null;
+};
+
+type ForecastDealSummary = {
+  signedDeals: ForecastDeal[];
+  signedPaymentPendingDeals: ForecastDeal[];
+  paymentReceivedDeals: ForecastDeal[];
+  openDeals: ForecastDeal[];
+  signedAmount: number;
+  signedPaymentPendingAmount: number;
+  paymentReceivedAmount: number;
+  openPipelineAmount: number;
+  openForecastAmount: number;
+  landingAmount: number;
+  pipelineAmount: number;
 };
 
 const MAX_OPEN_DEALS = 250;
@@ -304,48 +406,85 @@ const normalizeText = (value: string | null | undefined): string =>
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase();
 
-const getDealStageText = (row: HubSpotDealRow): string => normalizeText(`${row.deal_stage_label ?? ""} ${row.deal_stage ?? ""}`);
+const normalizeStageText = (value: string | null | undefined): string =>
+  normalizeText(value)
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
 
-const isWonDeal = (row: HubSpotDealRow): boolean => {
-  if (row.deal_lifecycle_status === "won") {
-    return true;
-  }
+const compactStageText = (value: string | null | undefined): string => normalizeStageText(value).replace(/\s+/g, "");
 
-  const stage = getDealStageText(row);
+const getDealStageText = (row: ForecastDealStatusInput): string => normalizeStageText(`${row.deal_stage_label ?? ""} ${row.deal_stage ?? ""}`);
 
-  return stage.includes("won") || stage.includes("gagn");
+const getDealStageCompactText = (row: ForecastDealStatusInput): string => compactStageText(`${row.deal_stage_label ?? ""} ${row.deal_stage ?? ""}`);
+
+const isStage = (row: ForecastDealStatusInput, readableStage: string): boolean => getDealStageCompactText(row).includes(compactStageText(readableStage));
+
+const isSignedPaymentPendingStage = (row: ForecastDealStatusInput): boolean => {
+  const stage = getDealStageCompactText(row);
+
+  return (
+    stage.includes(compactStageText("deal signed payment pending")) ||
+    stage.includes(compactStageText("deal signe payment pending")) ||
+    stage.includes(compactStageText("deal signes payment pending"))
+  );
 };
 
-const isLostDeal = (row: HubSpotDealRow): boolean => {
-  if (row.deal_lifecycle_status === "lost") {
-    return true;
+const isPaymentReceivedStage = (row: ForecastDealStatusInput): boolean => isStage(row, "payment received");
+
+const isExplicitOpenForecastStage = (row: ForecastDealStatusInput): boolean => {
+  const stage = getDealStageCompactText(row);
+
+  return [
+    "discovery",
+    "initialproposition",
+    "testing",
+    "contractsent",
+    "negociation",
+    "negotiation",
+    "contractvalidation",
+  ].some((knownStage) => stage.includes(knownStage));
+};
+
+const isSignedDealStatus = (status: ForecastDealStatus): status is "signedPaymentPending" | "paymentReceived" =>
+  status === "signedPaymentPending" || status === "paymentReceived";
+
+const isLostDeal = (row: ForecastDealStatusInput): boolean => {
+  const stage = getDealStageText(row);
+
+  return row.deal_lifecycle_status === "lost" || stage.includes("closed lost") || stage.includes("lost") || stage.includes("perdu");
+};
+
+export const getForecastDealStatus = (row: ForecastDealStatusInput): ForecastDealStatus => {
+  if (isSignedPaymentPendingStage(row)) {
+    return "signedPaymentPending";
+  }
+
+  if (isPaymentReceivedStage(row)) {
+    return "paymentReceived";
+  }
+
+  if (isLostDeal(row)) {
+    return "closedLost";
+  }
+
+  if (isExplicitOpenForecastStage(row)) {
+    return "openForecast";
   }
 
   const stage = getDealStageText(row);
 
-  return stage.includes("lost") || stage.includes("perdu");
+  if (row.deal_lifecycle_status === "won" || row.is_closed_deal === true || stage.includes("closed")) {
+    return "excluded";
+  }
+
+  return "openForecast";
 };
 
 const isForecastableDeal = (row: HubSpotDealRow): boolean => {
-  if (isLostDeal(row)) {
-    return false;
-  }
+  const status = getForecastDealStatus(row);
 
-  if (isWonDeal(row)) {
-    return true;
-  }
-
-  if (row.deal_lifecycle_status === "pending") {
-    return true;
-  }
-
-  if (row.is_closed_deal === true) {
-    return false;
-  }
-
-  const stage = getDealStageText(row);
-
-  return !stage.includes("closed");
+  return status !== "closedLost" && status !== "excluded";
 };
 
 const getAnalysisStatus = (deal: HubSpotDealRow, analysis: DealAiAnalysisRow | null): ForecastAnalysisStatus => {
@@ -369,40 +508,70 @@ const getAnalysisStatus = (deal: HubSpotDealRow, analysis: DealAiAnalysisRow | n
   return "fresh";
 };
 
+const FORECAST_DEAL_SELECT =
+  "hubspot_deal_id, hubspot_owner_id, primary_contact_id, primary_company_id, deal_name, amount, pipeline_label, deal_stage, deal_stage_label, deal_lifecycle_status, is_closed_deal, close_probability, closed_at, hubspot_updated_at, properties, synced_at";
+
 const loadOpenDealContexts = async (options: Required<Pick<ForecastOverviewOptions, "orgId">> & {
   scope: ForecastScope;
   hubspotOwnerId: string | null;
   dateFrom: string;
   dateTo: string;
 }): Promise<ForecastDealContext[]> => {
+  if (options.scope === "owner" && !options.hubspotOwnerId) {
+    return [];
+  }
+
   const supabase = getSupabaseAdmin();
   const dateToExclusive = addDays(new Date(`${options.dateTo}T00:00:00.000Z`), 1).toISOString();
-  let query = supabase
-    .from("hubspot_deals")
-    .select(
-      "hubspot_deal_id, hubspot_owner_id, primary_contact_id, primary_company_id, deal_name, amount, pipeline_label, deal_stage, deal_stage_label, deal_lifecycle_status, is_closed_deal, close_probability, closed_at, hubspot_updated_at, properties, synced_at",
-    )
-    .eq("org_id", options.orgId)
+
+  const scopedQuery = () => {
+    let query = supabase.from("hubspot_deals").select(FORECAST_DEAL_SELECT).eq("org_id", options.orgId);
+
+    if (options.scope === "owner" && options.hubspotOwnerId) {
+      query = query.eq("hubspot_owner_id", options.hubspotOwnerId);
+    }
+
+    return query;
+  };
+
+  // 1) Fenetre temporelle : deals ouverts (close date prevue) + paiements recus dans la periode.
+  const windowedQuery = scopedQuery()
     .gte("closed_at", `${options.dateFrom}T00:00:00.000Z`)
     .lt("closed_at", dateToExclusive)
     .order("amount", { ascending: false })
     .limit(MAX_OPEN_DEALS);
 
-  if (options.scope === "owner") {
-    if (!options.hubspotOwnerId) {
-      return [];
+  // 2) Backlog signe : "Deal Signed/Payment Pending" toujours visible, quelle que soit la date de signature.
+  const backlogQuery = scopedQuery()
+    .or("deal_stage_label.ilike.%payment pending%,deal_stage_label.ilike.%signed%")
+    .order("amount", { ascending: false })
+    .limit(MAX_OPEN_DEALS);
+
+  const [windowedResult, backlogResult] = await Promise.all([windowedQuery, backlogQuery]);
+
+  if (windowedResult.error) {
+    throw new Error(`Impossible de charger les deals forecast Supabase: ${windowedResult.error.message}`);
+  }
+
+  if (backlogResult.error) {
+    throw new Error(`Impossible de charger le backlog signe du forecast: ${backlogResult.error.message}`);
+  }
+
+  const dealRowsById = new Map<string, HubSpotDealRow>();
+
+  for (const row of (windowedResult.data ?? []) as HubSpotDealRow[]) {
+    dealRowsById.set(row.hubspot_deal_id, row);
+  }
+
+  // On n'ajoute du backlog que les deals reellement en "signed / payment pending" (les paiements recus
+  // hors periode restent exclus, conformement au rattachement par mois civil).
+  for (const row of (backlogResult.data ?? []) as HubSpotDealRow[]) {
+    if (isSignedPaymentPendingStage(row) && !dealRowsById.has(row.hubspot_deal_id)) {
+      dealRowsById.set(row.hubspot_deal_id, row);
     }
-
-    query = query.eq("hubspot_owner_id", options.hubspotOwnerId);
   }
 
-  const { data: dealRows, error: dealsError } = await query;
-
-  if (dealsError) {
-    throw new Error(`Impossible de charger les deals forecast Supabase: ${dealsError.message}`);
-  }
-
-  const deals = ((dealRows ?? []) as HubSpotDealRow[]).filter(isForecastableDeal);
+  const deals = Array.from(dealRowsById.values()).filter(isForecastableDeal);
   const contactIds = Array.from(new Set(deals.map((deal) => deal.primary_contact_id).filter((value): value is string => Boolean(value))));
   const companyIds = Array.from(new Set(deals.map((deal) => deal.primary_company_id).filter((value): value is string => Boolean(value))));
   const ownerIds = Array.from(new Set(deals.map((deal) => deal.hubspot_owner_id).filter((value): value is string => Boolean(value))));
@@ -533,10 +702,12 @@ const isFreshAnalysisMetadata = (row: DealAiAnalysisMetadataRow | null | undefin
 const buildForecastDeal = (context: ForecastDealContext, analysisRow: DealAiAnalysisRow | null): ForecastDeal => {
   const amount = parseNumber(context.row.amount) ?? 0;
   const crmProbability = clamp(Math.round(parseNumber(context.row.close_probability) ?? 0), 0, 100);
-  const isWon = isWonDeal(context.row);
+  const dealStatus = getForecastDealStatus(context.row);
+  const isSigned = isSignedDealStatus(dealStatus);
   const analysis = analysisRow?.analysis ?? null;
-  const status = isWon ? "closed_won" : getAnalysisStatus(context.row, analysisRow);
-  const aiProbability = isWon ? 100 : status === "fresh" && analysis ? clamp(Math.round(analysis.closeWonProbability), 0, 100) : null;
+  const forecastBucket: ForecastDealBucket = isSigned ? dealStatus : "openForecast";
+  const status = isSigned ? "closed_won" : getAnalysisStatus(context.row, analysisRow);
+  const aiProbability = isSigned ? 100 : status === "fresh" && analysis ? clamp(Math.round(analysis.closeWonProbability), 0, 100) : null;
   const probability = aiProbability ?? crmProbability;
   const dealName = context.row.deal_name;
   const companyName = context.company?.name ?? context.contact?.company_name ?? dealName ?? "Entreprise inconnue";
@@ -552,6 +723,7 @@ const buildForecastDeal = (context: ForecastDealContext, analysisRow: DealAiAnal
     stage: context.row.deal_stage_label ?? context.row.deal_stage ?? "Stage HubSpot non renseigne",
     closeDate: context.row.closed_at,
     syncedAt: context.row.synced_at,
+    forecastBucket,
     aiProbability,
     crmProbability,
     forecastAmount: Math.round(amount * (probability / 100)),
@@ -564,6 +736,32 @@ const buildForecastDeal = (context: ForecastDealContext, analysisRow: DealAiAnal
     suggestedMove: analysis?.suggestedMove ?? null,
     risks: analysis?.risks ?? [],
     positiveSignals: analysis?.positiveSignals ?? [],
+  };
+};
+
+export const summarizeForecastDeals = (deals: ForecastDeal[]): ForecastDealSummary => {
+  const signedPaymentPendingDeals = deals.filter((deal) => deal.forecastBucket === "signedPaymentPending");
+  const paymentReceivedDeals = deals.filter((deal) => deal.forecastBucket === "paymentReceived");
+  const signedDeals = [...signedPaymentPendingDeals, ...paymentReceivedDeals];
+  const openDeals = deals.filter((deal) => deal.forecastBucket === "openForecast");
+  const signedPaymentPendingAmount = signedPaymentPendingDeals.reduce((sum, deal) => sum + deal.amount, 0);
+  const paymentReceivedAmount = paymentReceivedDeals.reduce((sum, deal) => sum + deal.amount, 0);
+  const signedAmount = signedPaymentPendingAmount + paymentReceivedAmount;
+  const openPipelineAmount = openDeals.reduce((sum, deal) => sum + deal.amount, 0);
+  const openForecastAmount = openDeals.reduce((sum, deal) => sum + deal.forecastAmount, 0);
+
+  return {
+    signedDeals,
+    signedPaymentPendingDeals,
+    paymentReceivedDeals,
+    openDeals,
+    signedAmount,
+    signedPaymentPendingAmount,
+    paymentReceivedAmount,
+    openPipelineAmount,
+    openForecastAmount,
+    landingAmount: signedAmount + openForecastAmount,
+    pipelineAmount: signedAmount + openPipelineAmount,
   };
 };
 
@@ -757,9 +955,20 @@ const buildMonthlyProjection = async ({
   dateTo: string;
   deals: ForecastDeal[];
 }): Promise<ForecastMonthlyProjection[]> => {
+  const monthsInRange = getMonthsBetween(dateFrom, dateTo);
+  const firstMonth = monthsInRange[0] ?? getMonthKey(new Date(`${dateFrom}T00:00:00.000Z`));
+  const lastMonth = monthsInRange[monthsInRange.length - 1] ?? getMonthKey(new Date(`${dateTo}T00:00:00.000Z`));
+  const monthsInRangeSet = new Set(monthsInRange);
   const dealsByMonth = deals.reduce<Map<string, ForecastDeal[]>>((months, deal) => {
     const closeDate = deal.closeDate ? new Date(deal.closeDate) : null;
-    const month = closeDate && !Number.isNaN(closeDate.getTime()) ? getMonthKey(closeDate) : getMonthKey(new Date(`${dateTo}T00:00:00.000Z`));
+    let month = closeDate && !Number.isNaN(closeDate.getTime()) ? getMonthKey(closeDate) : lastMonth;
+
+    // Backlog signe (signe, paiement en attente) : la date de signature est souvent passee.
+    // On le rattache au premier mois de la periode pour qu'il reste visible comme acquis.
+    if (deal.forecastBucket === "signedPaymentPending" && !monthsInRangeSet.has(month)) {
+      month = firstMonth;
+    }
+
     const currentDeals = months.get(month) ?? [];
 
     currentDeals.push(deal);
@@ -769,11 +978,10 @@ const buildMonthlyProjection = async ({
   }, new Map());
 
   return Promise.all(
-    getMonthsBetween(dateFrom, dateTo).map(async (month) => {
+    monthsInRange.map(async (month) => {
       const monthStart = new Date(`${month}T00:00:00.000Z`);
       const monthEnd = getMonthEnd(monthStart).toISOString().slice(0, 10);
       const monthDeals = dealsByMonth.get(month) ?? [];
-      const reliability = buildReliability(monthDeals);
       const objectiveAmount = await getObjectiveAmountForForecast({
         orgId,
         scope,
@@ -782,24 +990,35 @@ const buildMonthlyProjection = async ({
         dateTo: monthEnd,
       });
       const wonDeals = monthDeals.filter((deal) => deal.analysisStatus === "closed_won");
-      const analyzedDeals = monthDeals.filter((deal) => deal.analysisStatus === "fresh" || deal.analysisStatus === "closed_won");
-      const missingDeals = monthDeals.filter((deal) => deal.analysisStatus === "missing" || deal.analysisStatus === "stale");
-      const forecastAmount = monthDeals.reduce((sum, deal) => sum + deal.forecastAmount, 0);
+      const summary = summarizeForecastDeals(monthDeals);
+      const reliability = buildReliability(summary.openDeals);
+      const analyzedDeals = summary.openDeals.filter((deal) => deal.analysisStatus === "fresh");
+      const missingDeals = summary.openDeals.filter((deal) => deal.analysisStatus === "missing" || deal.analysisStatus === "stale");
 
       return {
         month,
         label: getMonthLabel(month),
         dealCount: monthDeals.length,
+        signedDealCount: summary.signedDeals.length,
+        signedPaymentPendingDealCount: summary.signedPaymentPendingDeals.length,
+        paymentReceivedDealCount: summary.paymentReceivedDeals.length,
+        openDealCount: summary.openDeals.length,
         wonDealCount: wonDeals.length,
         analyzedDealCount: analyzedDeals.length,
         missingAnalysisCount: missingDeals.length,
-        pipelineAmount: monthDeals.reduce((sum, deal) => sum + deal.amount, 0),
+        signedAmount: summary.signedAmount,
+        signedPaymentPendingAmount: summary.signedPaymentPendingAmount,
+        paymentReceivedAmount: summary.paymentReceivedAmount,
+        openPipelineAmount: summary.openPipelineAmount,
+        openForecastAmount: summary.openForecastAmount,
+        landingAmount: summary.landingAmount,
+        pipelineAmount: summary.pipelineAmount,
         commitAmount: monthDeals
           .filter((deal) => deal.analysisStatus === "closed_won" || (deal.aiProbability ?? deal.crmProbability) >= 70 || deal.dealHealth === "strong")
           .reduce((sum, deal) => sum + deal.forecastAmount, 0),
-        forecastAmount,
+        forecastAmount: summary.landingAmount,
         objectiveAmount,
-        gapToObjective: objectiveAmount === null ? null : forecastAmount - objectiveAmount,
+        gapToObjective: objectiveAmount === null ? null : summary.landingAmount - objectiveAmount,
         confidenceScore: averageScore(reliability),
       };
     }),
@@ -811,6 +1030,353 @@ const getProvider = (providerId?: string | null, modelId?: string | null) =>
     provider: providerId,
     model: modelId,
   });
+
+const FORECAST_SYNTHESIS_CACHE_TTL_HOURS = 12;
+const MAX_SYNTHESIS_DEALS = 60;
+
+const FORECAST_SYNTHESIS_CATEGORY_LABELS: Record<ForecastSynthesisCategory, string> = {
+  commit: "Commit",
+  bestCase: "Best case",
+  atRisk: "A risque",
+  slipping: "Va slipper",
+};
+
+const FORECAST_SYNTHESIS_CATEGORY_ORDER: ForecastSynthesisCategory[] = ["commit", "bestCase", "atRisk", "slipping"];
+
+type ForecastSynthesisRow = {
+  analysis: ForecastSynthesis;
+  input_hash: string;
+  generated_at: string;
+};
+
+const isMissingForecastSynthesisTableError = (error: unknown): boolean => {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const typedError = error as { code?: string; message?: string };
+  const message = typedError.message ?? "";
+
+  return typedError.code === "42P01" || typedError.code === "PGRST205" || message.includes("forecast_synthesis");
+};
+
+const buildSynthesisScopeLabel = (scope: ForecastScope, deals: ForecastDeal[]): string => {
+  if (scope !== "owner") {
+    return "Equipe (tous les sales)";
+  }
+
+  const ownerName = deals.find((deal) => deal.ownerName && !/^Owner \d+$/i.test(deal.ownerName))?.ownerName;
+
+  return ownerName ? `Owner ${ownerName}` : "Owner";
+};
+
+const isDateAfter = (closeDate: string | null, dateTo: string): boolean => {
+  if (!closeDate) {
+    return false;
+  }
+
+  const closeTimestamp = new Date(closeDate).getTime();
+  const periodEnd = new Date(`${dateTo}T23:59:59.999Z`).getTime();
+
+  return !Number.isNaN(closeTimestamp) && !Number.isNaN(periodEnd) && closeTimestamp > periodEnd;
+};
+
+// Fallback deterministe pour les deals que l'IA n'a pas explicitement classes.
+const fallbackCategory = (deal: ForecastDeal, dateTo: string): ForecastSynthesisCategory => {
+  const probability = deal.aiProbability ?? deal.crmProbability;
+
+  if (isDateAfter(deal.closeDate, dateTo)) {
+    return "slipping";
+  }
+
+  if (deal.dealHealth === "blocked" || deal.dealHealth === "at_risk") {
+    return "atRisk";
+  }
+
+  if (probability >= 70 || deal.dealHealth === "strong") {
+    return "commit";
+  }
+
+  if (probability >= 40) {
+    return "bestCase";
+  }
+
+  return "atRisk";
+};
+
+export const buildForecastSynthesisInputHash = (
+  deals: ForecastDeal[],
+  objectiveAmount: number | null,
+  dateFrom: string,
+  dateTo: string,
+): string => {
+  const dealSignature = deals
+    .map((deal) => `${deal.hubspotDealId}:${deal.analyzedAt ?? ""}`)
+    .sort()
+    .join("|");
+
+  return createHash("sha256").update(`${dateFrom}|${dateTo}|${objectiveAmount ?? "null"}|${dealSignature}`).digest("hex");
+};
+
+export const enrichForecastSynthesis = ({
+  analysis,
+  analyzedOpenDeals,
+  objectiveAmount,
+  gapToObjective,
+  signedAmount,
+  dateTo,
+  provider,
+  model,
+  generatedAt,
+  status,
+}: {
+  analysis: ForecastSynthesisAnalysis;
+  analyzedOpenDeals: ForecastDeal[];
+  objectiveAmount: number | null;
+  gapToObjective: number | null;
+  signedAmount: number;
+  dateTo: string;
+  provider: string;
+  model: string;
+  generatedAt: string;
+  status: ForecastSynthesisStatus;
+}): ForecastSynthesis => {
+  const verdictByDealId = new Map(analysis.dealVerdicts.map((verdict) => [verdict.hubspotDealId, verdict]));
+  const deals: ForecastSynthesisDeal[] = analyzedOpenDeals.map((deal) => {
+    const verdict = verdictByDealId.get(deal.hubspotDealId);
+    const category = verdict?.category ?? fallbackCategory(deal, dateTo);
+
+    return {
+      hubspotDealId: deal.hubspotDealId,
+      dealName: deal.dealName,
+      companyName: deal.companyName,
+      ownerName: deal.ownerName,
+      amount: deal.amount,
+      forecastAmount: deal.forecastAmount,
+      aiProbability: deal.aiProbability,
+      crmProbability: deal.crmProbability,
+      stage: deal.stage,
+      closeDate: deal.closeDate,
+      dealHealth: deal.dealHealth,
+      category,
+      reason: verdict?.reason ?? "Classement automatique (deal non couvert par la synthese IA).",
+      recommendedAction: verdict?.recommendedAction ?? deal.suggestedMove,
+    };
+  });
+
+  const categories: ForecastSynthesisCategorySummary[] = FORECAST_SYNTHESIS_CATEGORY_ORDER.map((category) => {
+    const categoryDeals = deals.filter((deal) => deal.category === category);
+
+    return {
+      category,
+      label: FORECAST_SYNTHESIS_CATEGORY_LABELS[category],
+      dealCount: categoryDeals.length,
+      amount: categoryDeals.reduce((sum, deal) => sum + deal.amount, 0),
+      weightedAmount: categoryDeals.reduce((sum, deal) => sum + deal.forecastAmount, 0),
+    };
+  });
+
+  const commitAmount = categories.find((category) => category.category === "commit")?.amount ?? 0;
+
+  return {
+    generatedAt,
+    provider,
+    model,
+    status,
+    headline: analysis.headline,
+    confidence: analysis.confidence,
+    analyzedDealCount: deals.length,
+    objectiveAmount,
+    gapToObjective,
+    projectedCloseAmount: signedAmount + commitAmount,
+    categories,
+    deals,
+    actionPlan: analysis.actionPlan,
+  };
+};
+
+const buildSynthesisDealsSummary = (deals: ForecastDeal[]): string =>
+  deals
+    .map((deal) =>
+      [
+        `id=${deal.hubspotDealId}`,
+        deal.companyName,
+        `montant=${deal.amount}`,
+        `stage=${deal.stage}`,
+        `closeDate=${deal.closeDate ? deal.closeDate.slice(0, 10) : "sans date"}`,
+        `probaIA=${deal.aiProbability ?? deal.crmProbability}%`,
+        `sante=${deal.dealHealth ?? "inconnue"}`,
+        `risques=${deal.risks.slice(0, 3).join("; ") || "aucun"}`,
+        `move=${deal.suggestedMove ?? "n/a"}`,
+        `resume=${deal.summary ?? "n/a"}`,
+      ].join(" | "),
+    )
+    .join("\n");
+
+const loadLatestForecastSynthesis = async (params: {
+  orgId: string;
+  scope: ForecastScope;
+  hubspotOwnerId: string;
+  dateFrom: string;
+  dateTo: string;
+  provider: string;
+  model: string;
+}): Promise<ForecastSynthesisRow | null> => {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("forecast_synthesis")
+    .select("analysis, input_hash, generated_at")
+    .eq("org_id", params.orgId)
+    .eq("scope", params.scope)
+    .eq("hubspot_owner_id", params.hubspotOwnerId)
+    .eq("date_from", params.dateFrom)
+    .eq("date_to", params.dateTo)
+    .eq("provider", params.provider)
+    .eq("model", params.model)
+    .order("generated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    if (isMissingForecastSynthesisTableError(error)) {
+      return null;
+    }
+
+    throw new Error(`Impossible de charger la synthese forecast IA: ${error.message}`);
+  }
+
+  return (data as ForecastSynthesisRow | null) ?? null;
+};
+
+const persistForecastSynthesis = async (params: {
+  orgId: string;
+  scope: ForecastScope;
+  hubspotOwnerId: string;
+  dateFrom: string;
+  dateTo: string;
+  provider: string;
+  model: string;
+  inputHash: string;
+  synthesis: ForecastSynthesis;
+}): Promise<void> => {
+  const supabase = getSupabaseAdmin();
+  const expiresAt = new Date();
+  expiresAt.setUTCHours(expiresAt.getUTCHours() + FORECAST_SYNTHESIS_CACHE_TTL_HOURS);
+  const { error } = await supabase.from("forecast_synthesis").upsert(
+    {
+      org_id: params.orgId,
+      scope: params.scope,
+      hubspot_owner_id: params.hubspotOwnerId,
+      date_from: params.dateFrom,
+      date_to: params.dateTo,
+      provider: params.provider,
+      model: params.model,
+      input_hash: params.inputHash,
+      analysis: params.synthesis,
+      generated_at: params.synthesis.generatedAt,
+      expires_at: expiresAt.toISOString(),
+    },
+    {
+      onConflict: "org_id,scope,hubspot_owner_id,date_from,date_to,provider,model",
+    },
+  );
+
+  if (error && !isMissingForecastSynthesisTableError(error)) {
+    throw new Error(`Impossible de sauvegarder la synthese forecast IA: ${error.message}`);
+  }
+};
+
+const loadStoredForecastSynthesis = async (params: {
+  orgId: string;
+  scope: ForecastScope;
+  hubspotOwnerId: string;
+  dateFrom: string;
+  dateTo: string;
+  provider: string;
+  model: string;
+  freshOpenDeals: ForecastDeal[];
+  objectiveAmount: number | null;
+}): Promise<ForecastSynthesis | null> => {
+  const stored = await loadLatestForecastSynthesis(params);
+
+  if (!stored) {
+    return null;
+  }
+
+  const currentHash = buildForecastSynthesisInputHash(
+    params.freshOpenDeals,
+    params.objectiveAmount,
+    params.dateFrom,
+    params.dateTo,
+  );
+
+  return {
+    ...stored.analysis,
+    status: stored.input_hash === currentHash ? "fresh" : "stale",
+  };
+};
+
+// Genere la synthese forecast IA a partir des deals ouverts deja analyses (1 appel LLM).
+// Renvoie null si aucun deal ouvert frais n'est disponible. Best-effort sur la persistance.
+const runForecastSynthesis = async (
+  overview: ForecastOverviewResult,
+  provider: ReturnType<typeof getProvider>,
+): Promise<ForecastSynthesis | null> => {
+  const analyzedOpenDeals = overview.deals
+    .filter((deal) => deal.forecastBucket === "openForecast" && deal.analysisStatus === "fresh")
+    .slice(0, MAX_SYNTHESIS_DEALS);
+
+  if (analyzedOpenDeals.length === 0) {
+    return null;
+  }
+
+  const analysis = await provider.analyzeForecastSynthesis({
+    dealsSummary: buildSynthesisDealsSummary(analyzedOpenDeals),
+    knownDealIds: analyzedOpenDeals.map((deal) => deal.hubspotDealId),
+    dateFrom: overview.dateFrom,
+    dateTo: overview.dateTo,
+    scopeLabel: buildSynthesisScopeLabel(overview.scope, analyzedOpenDeals),
+    openDealCount: analyzedOpenDeals.length,
+    totalOpenAmount: overview.openPipelineAmount,
+    signedAmount: overview.signedAmount,
+    landingAmount: overview.landingAmount,
+    objectiveAmount: overview.objectiveAmount,
+    gapToObjective: overview.gapToObjective,
+    today: new Date().toISOString(),
+  });
+
+  const synthesis = enrichForecastSynthesis({
+    analysis,
+    analyzedOpenDeals,
+    objectiveAmount: overview.objectiveAmount,
+    gapToObjective: overview.gapToObjective,
+    signedAmount: overview.signedAmount,
+    dateTo: overview.dateTo,
+    provider: provider.providerName,
+    model: provider.modelName,
+    generatedAt: new Date().toISOString(),
+    status: "fresh",
+  });
+
+  await persistForecastSynthesis({
+    orgId: overview.orgId,
+    scope: overview.scope,
+    hubspotOwnerId: overview.scope === "owner" ? overview.hubspotOwnerId ?? "" : "",
+    dateFrom: overview.dateFrom,
+    dateTo: overview.dateTo,
+    provider: provider.providerName,
+    model: provider.modelName,
+    inputHash: buildForecastSynthesisInputHash(
+      analyzedOpenDeals,
+      overview.objectiveAmount,
+      overview.dateFrom,
+      overview.dateTo,
+    ),
+    synthesis,
+  });
+
+  return synthesis;
+};
 
 export const getForecastOverview = async (options: ForecastOverviewOptions): Promise<ForecastOverviewResult> => {
   const { dateFrom, dateTo } = getDefaultDateRange(options.dateFrom, options.dateTo);
@@ -832,16 +1398,15 @@ export const getForecastOverview = async (options: ForecastOverviewOptions): Pro
   const deals = contexts
     .map((context) => buildForecastDeal(context, latestAnalyses.get(context.row.hubspot_deal_id) ?? null))
     .sort((left, right) => right.impactAmount - left.impactAmount);
-  const reliability = buildReliability(deals);
-  const freshDeals = deals.filter((deal) => deal.analysisStatus === "fresh");
-  const wonDeals = deals.filter((deal) => deal.analysisStatus === "closed_won");
-  const staleDeals = deals.filter((deal) => deal.analysisStatus === "stale");
-  const missingDeals = deals.filter((deal) => deal.analysisStatus === "missing");
+  const summary = summarizeForecastDeals(deals);
+  const reliability = buildReliability(summary.openDeals);
+  const freshDeals = summary.openDeals.filter((deal) => deal.analysisStatus === "fresh");
+  const staleDeals = summary.openDeals.filter((deal) => deal.analysisStatus === "stale");
+  const missingDeals = summary.openDeals.filter((deal) => deal.analysisStatus === "missing");
   const lastAnalyzedAt = freshDeals
     .map((deal) => deal.analyzedAt)
     .filter((value): value is string => Boolean(value))
     .sort((left, right) => new Date(right).getTime() - new Date(left).getTime())[0] ?? null;
-  const forecastAmount = deals.reduce((sum, deal) => sum + deal.forecastAmount, 0);
   const objectiveAmount = await getObjectiveAmountForForecast({
     orgId: options.orgId,
     scope,
@@ -857,6 +1422,17 @@ export const getForecastOverview = async (options: ForecastOverviewOptions): Pro
     dateTo,
     deals,
   });
+  const synthesis = await loadStoredForecastSynthesis({
+    orgId: options.orgId,
+    scope,
+    hubspotOwnerId: scope === "owner" ? options.hubspotOwnerId ?? "" : "",
+    dateFrom,
+    dateTo,
+    provider: provider.providerName,
+    model: provider.modelName,
+    freshOpenDeals: freshDeals,
+    objectiveAmount,
+  });
 
   return {
     orgId: options.orgId,
@@ -868,15 +1444,24 @@ export const getForecastOverview = async (options: ForecastOverviewOptions): Pro
     model: provider.modelName,
     generatedAt: new Date().toISOString(),
     lastAnalyzedAt,
-    openDealCount: deals.length,
-    wonDealCount: wonDeals.length,
-    analyzedDealCount: freshDeals.length + wonDeals.length,
+    openDealCount: summary.openDeals.length,
+    wonDealCount: summary.signedDeals.length,
+    signedDealCount: summary.signedDeals.length,
+    signedPaymentPendingDealCount: summary.signedPaymentPendingDeals.length,
+    paymentReceivedDealCount: summary.paymentReceivedDeals.length,
+    analyzedDealCount: freshDeals.length,
     staleDealCount: staleDeals.length,
     missingAnalysisCount: missingDeals.length,
-    pipelineAmount: deals.reduce((sum, deal) => sum + deal.amount, 0),
-    forecastAmount,
+    signedAmount: summary.signedAmount,
+    signedPaymentPendingAmount: summary.signedPaymentPendingAmount,
+    paymentReceivedAmount: summary.paymentReceivedAmount,
+    openPipelineAmount: summary.openPipelineAmount,
+    openForecastAmount: summary.openForecastAmount,
+    landingAmount: summary.landingAmount,
+    pipelineAmount: summary.pipelineAmount,
+    forecastAmount: summary.landingAmount,
     objectiveAmount,
-    gapToObjective: objectiveAmount === null ? null : forecastAmount - objectiveAmount,
+    gapToObjective: objectiveAmount === null ? null : summary.landingAmount - objectiveAmount,
     confidenceScore: averageScore(reliability),
     scenarios: buildScenarios(deals),
     risks: buildRisks(freshDeals),
@@ -884,6 +1469,7 @@ export const getForecastOverview = async (options: ForecastOverviewOptions): Pro
     reliability,
     monthlyProjection,
     deals,
+    synthesis,
   };
 };
 
@@ -900,7 +1486,7 @@ export const analyzeForecastOpenDeals = async (options: AnalyzeForecastOptions):
     0,
     MAX_RETRY_FAILED_COUNT,
   );
-  const openDeals = overview.deals.filter((deal) => deal.analysisStatus !== "closed_won");
+  const openDeals = overview.deals.filter((deal) => deal.forecastBucket === "openForecast");
   const [qualificationCoverage, activityPlanCoverage] = await Promise.all([
     loadLatestDealAnalysisMetadata(
       options.orgId,
@@ -918,7 +1504,7 @@ export const analyzeForecastOpenDeals = async (options: AnalyzeForecastOptions):
     ),
   ]);
   const candidates = overview.deals
-    .filter((deal) => deal.analysisStatus !== "closed_won")
+    .filter((deal) => deal.forecastBucket === "openForecast")
     .filter(
       (deal) =>
         options.refresh ||
@@ -1019,10 +1605,44 @@ export const analyzeForecastOpenDeals = async (options: AnalyzeForecastOptions):
   }
 
   options.onProgress?.({
-    progress: 92,
+    progress: 88,
     step: "Rechargement du forecast",
     message: "Lecture des analyses stockees depuis Supabase.",
   });
+
+  const reloadedOverview = await getForecastOverview({
+    ...options,
+    llmProvider: provider.providerName,
+    llmModel: provider.modelName,
+  });
+
+  options.onProgress?.({
+    progress: 94,
+    step: "Synthese forecast IA",
+    message: "Classement des deals et plan d'action par l'IA.",
+  });
+
+  let finalOverview = reloadedOverview;
+
+  try {
+    const synthesis = await runForecastSynthesis(reloadedOverview, provider);
+    finalOverview = { ...reloadedOverview, synthesis: synthesis ?? reloadedOverview.synthesis };
+    options.onProgress?.({
+      progress: 99,
+      step: "Synthese forecast IA prete",
+      level: "success",
+      message: synthesis
+        ? `Synthese generee: ${synthesis.deals.length} deal(s) classe(s).`
+        : "Aucun deal ouvert frais a synthetiser.",
+    });
+  } catch (synthesisError) {
+    options.onProgress?.({
+      progress: 99,
+      step: "Synthese forecast IA",
+      level: "warning",
+      message: `Synthese non generee: ${synthesisError instanceof Error ? synthesisError.message : "erreur inconnue"}.`,
+    });
+  }
 
   return {
     orgId: options.orgId,
@@ -1034,11 +1654,27 @@ export const analyzeForecastOpenDeals = async (options: AnalyzeForecastOptions):
     reusedCount,
     failedCount,
     errors,
-    overview: await getForecastOverview({
-      ...options,
-      llmProvider: provider.providerName,
-      llmModel: provider.modelName,
-    }),
+    overview: finalOverview,
+  };
+};
+
+export const generateForecastSynthesis = async (
+  options: ForecastOverviewOptions,
+): Promise<ForecastGenerateSynthesisResult> => {
+  const provider = getProvider(options.llmProvider, options.llmModel);
+  const overview = await getForecastOverview({
+    ...options,
+    llmProvider: provider.providerName,
+    llmModel: provider.modelName,
+  });
+  const synthesis = await runForecastSynthesis(overview, provider);
+
+  return {
+    orgId: options.orgId,
+    provider: provider.providerName,
+    model: provider.modelName,
+    synthesis: synthesis ?? overview.synthesis,
+    overview: { ...overview, synthesis: synthesis ?? overview.synthesis },
   };
 };
 
@@ -1058,7 +1694,7 @@ export const analyzeForecastDeal = async (
     throw new Error("Deal HubSpot introuvable dans le forecast courant.");
   }
 
-  if (deal.analysisStatus === "closed_won") {
+  if (deal.forecastBucket !== "openForecast") {
     throw new Error("Un deal close won est deja integre a 100% et ne necessite pas d'analyse IA forecast.");
   }
 

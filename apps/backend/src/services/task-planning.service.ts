@@ -110,6 +110,38 @@ export type TaskPlanningResult = {
   tasks: SalesTaskListItem[];
 };
 
+const isSupabaseSchemaUnavailableError = (error: unknown): boolean => {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const candidate = error as { code?: unknown; message?: unknown };
+  const code = typeof candidate.code === "string" ? candidate.code : "";
+  const message = typeof candidate.message === "string" ? candidate.message.toLowerCase() : "";
+
+  return (
+    code === "42P01" ||
+    code === "42703" ||
+    code === "PGRST205" ||
+    message.includes("sales_tasks") && (message.includes("could not find") || message.includes("does not exist"))
+  );
+};
+
+const buildEmptySalesTasksTodayPayload = (userId: string, orgId: string, generatedAt = new Date().toISOString()): SalesTasksTodayPayload => ({
+  userId,
+  orgId,
+  generatedAt,
+  tasks: [],
+  nowTask: null,
+  nextTask: null,
+  counts: {
+    pending: 0,
+    snoozed: 0,
+    skipped: 0,
+    done: 0,
+  },
+});
+
 export type AcceptedSalesActivityEvent = {
   event: SalesActivityEvent;
   planning: TaskPlanningResult;
@@ -1574,6 +1606,10 @@ export const getTodaySalesTasks = async (userId: string): Promise<SalesTasksToda
     .limit(500);
 
   if (error) {
+    if (isSupabaseSchemaUnavailableError(error)) {
+      return buildEmptySalesTasksTodayPayload(userId, user.org_id, now.toISOString());
+    }
+
     throw new Error(`Impossible de charger les taches du jour: ${error.message}`);
   }
 

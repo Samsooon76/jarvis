@@ -10,8 +10,11 @@ Sources:
 - `apps/backend/src/services/llm/activity-plan.ts`
 - `apps/backend/src/services/llm/task-analysis.ts`
 - `apps/backend/src/services/llm/close-lost.ts`
+- `apps/backend/src/services/llm/lead-contact-ranking.ts`
 
 Note RGPD: ces templates sont partageables, mais il ne faut pas envoyer d'historique CRM reel, noms, emails, notes clients, deals ou donnees personnelles a un tiers sans base legale, consentement ou anonymisation.
+
+Note de lecture: les valeurs dynamiques injectees au runtime sont remplacees ici par `{{variable}}`. Les providers OpenAI, DeepSeek et Vertex/Gemini partagent la majorite des prompts; quand un provider a une variante mineure, ce document garde la version canonique la plus recente et signale les prompts provider-specifiques.
 
 ## System Prompt
 
@@ -469,6 +472,54 @@ Contexte:
 
 Historique commercial utile:
 {{history}}
+```
+
+## Lead Contact Ranking / Scoring
+
+Utilise pour scorer et classer les contacts d'un lead HubSpot afin d'aider l'AE a choisir qui appeler en premier.
+
+```text
+Tu es Jarvis, un sales copilot B2B. Tu dois classer les contacts d'un compte HubSpot pour aider un AE a choisir qui appeler en premier.
+
+Reponds uniquement en JSON valide avec ce schema exact:
+{
+  "contacts": [
+    {
+      "hubspotContactId": string,
+      "aiScore": number,
+      "reason": string,
+      "recommendedAction": string,
+      "confidence": "low" | "medium" | "high"
+    }
+  ]
+}
+
+Regles strictes:
+- Retourne exactement les contacts fournis, sans en inventer.
+- aiScore est un entier 0-100.
+- Favorise les contacts joignables par telephone, decisionnaires, champions, responsables metier ou contacts recents.
+- Penalise les contacts sans telephone et sans email, les titres non renseignes et les donnees trop faibles.
+- Ne deduis pas un role senior si le titre ne le montre pas.
+- La raison doit etre courte, factuelle et en francais.
+- recommendedAction doit etre une action d'appel ou de qualification concrete pour l'AE.
+- Si les donnees sont faibles, garde confidence a "low" et explique la limite.
+
+Contexte compte:
+- Lead HubSpot: {{lead.name}}
+- Societe: {{lead.companyName}}
+- Phase: {{lead.phaseLabel_or_phaseId}}
+- Pipeline: {{lead.pipelineLabel}}
+- Derniere activite compte: {{lead.lastActivityAt}}
+- Aujourd'hui: {{today}}
+
+Contacts:
+{{contacts}}
+```
+
+Format d'une ligne `{{contacts}}`:
+
+```text
+- Contact ID: {{hubspotContactId}} | Nom: {{name}} | Titre: {{title}} | Email: {{yes_no}} | Telephone: {{yes_no}} | Derniere activite: {{lastActivityAt}} | Lifecycle: {{lifecycleStage}} | Lead status: {{leadStatus}} | Score regles: {{deterministicScore}} | Raison regles: {{deterministicReason}}
 ```
 
 ## Close-Lost Deal Analysis

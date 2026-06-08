@@ -248,9 +248,7 @@ const loadLocalContactsById = async (
   }
 
   const supabase = getSupabaseAdmin();
-  const contacts: HubSpotLeadRow[] = [];
-
-  for (const batch of createBatches(Array.from(new Set(contactIds)), SUPABASE_IN_BATCH_SIZE)) {
+  const contactBatches = await Promise.all(createBatches(Array.from(new Set(contactIds)), SUPABASE_IN_BATCH_SIZE).map(async (batch) => {
     const { data, error } = await supabase
       .from("hubspot_contacts")
       .select("hubspot_contact_id, hubspot_owner_id, email, name, phone, title, company_name, properties, synced_at, updated_at")
@@ -261,8 +259,9 @@ const loadLocalContactsById = async (
       throw new Error(`Impossible de charger les contacts associes aux leads: ${error.message}`);
     }
 
-    contacts.push(...((data ?? []) as HubSpotLeadRow[]));
-  }
+    return (data ?? []) as HubSpotLeadRow[];
+  }));
+  const contacts = contactBatches.flat();
 
   return new Map(contacts.map((contact) => [contact.hubspot_contact_id, contact]));
 };
@@ -276,9 +275,7 @@ const loadLocalCompaniesById = async (
   }
 
   const supabase = getSupabaseAdmin();
-  const companies: HubSpotCompanyRow[] = [];
-
-  for (const batch of createBatches(Array.from(new Set(companyIds)), SUPABASE_IN_BATCH_SIZE)) {
+  const companyBatches = await Promise.all(createBatches(Array.from(new Set(companyIds)), SUPABASE_IN_BATCH_SIZE).map(async (batch) => {
     const { data, error } = await supabase
       .from("hubspot_companies")
       .select("hubspot_company_id, name")
@@ -289,8 +286,9 @@ const loadLocalCompaniesById = async (
       throw new Error(`Impossible de charger les societes associees aux leads: ${error.message}`);
     }
 
-    companies.push(...((data ?? []) as HubSpotCompanyRow[]));
-  }
+    return (data ?? []) as HubSpotCompanyRow[];
+  }));
+  const companies = companyBatches.flat();
 
   return new Map(companies.map((company) => [company.hubspot_company_id, company]));
 };
@@ -409,7 +407,7 @@ const upsertLiveContacts = async (
 const loadHydratedContactsById = async (
   orgId: string,
   contactIds: string[],
-  accessToken: string,
+  accessToken: string | (() => Promise<string>),
 ): Promise<Map<string, HubSpotLeadRow>> => {
   const contactById = await loadLocalContactsById(orgId, contactIds);
   const missingContactIds = Array.from(new Set(contactIds.filter((contactId) => !contactById.has(contactId))));
@@ -418,7 +416,8 @@ const loadHydratedContactsById = async (
     return contactById;
   }
 
-  const fetchedContacts = await hubSpotService.fetchContactsByIds(accessToken, missingContactIds);
+  const resolvedAccessToken = typeof accessToken === "string" ? accessToken : await accessToken();
+  const fetchedContacts = await hubSpotService.fetchContactsByIds(resolvedAccessToken, missingContactIds);
   await upsertLiveContacts(orgId, fetchedContacts);
 
   return loadLocalContactsById(orgId, contactIds);
@@ -692,15 +691,14 @@ export const registerLeadRoutes = async (app: FastifyInstance): Promise<void> =>
         ) {
           const contactIds = storedContactIds;
           const companyIds = Array.from(new Set(storedLeads.flatMap((lead) => lead.associated_company_ids)));
-          const accessToken = await getHubSpotAccessToken(orgId);
-          const [contactById, companyById] = await Promise.all([
-            loadHydratedContactsById(orgId, contactIds, accessToken),
+          const [contactById, companyById, scoreCacheByLeadId] = await Promise.all([
+            loadHydratedContactsById(orgId, contactIds, () => getHubSpotAccessToken(orgId)),
             loadLocalCompaniesById(orgId, companyIds),
+            loadLeadContactScoreCacheForLeads(
+              orgId,
+              storedLeads.map((lead) => lead.hubspot_lead_id),
+            ),
           ]);
-          const scoreCacheByLeadId = await loadLeadContactScoreCacheForLeads(
-            orgId,
-            storedLeads.map((lead) => lead.hubspot_lead_id),
-          );
           const accounts: Array<HubSpotLeadAccountItem | null> = [];
 
           for (const lead of storedLeads) {
@@ -724,14 +722,14 @@ export const registerLeadRoutes = async (app: FastifyInstance): Promise<void> =>
         const liveLeads = fetchedLiveLeads.filter(isOpenLead);
         const contactIds = Array.from(new Set(liveLeads.flatMap((lead) => lead.associatedContactIds)));
         const companyIds = Array.from(new Set(liveLeads.flatMap((lead) => lead.associatedCompanyIds)));
-        const [contactById, companyById] = await Promise.all([
+        const [contactById, companyById, scoreCacheByLeadId] = await Promise.all([
           loadHydratedContactsById(orgId, contactIds, accessToken),
           loadLocalCompaniesById(orgId, companyIds),
+          loadLeadContactScoreCacheForLeads(
+            orgId,
+            liveLeads.map((lead) => lead.id),
+          ),
         ]);
-        const scoreCacheByLeadId = await loadLeadContactScoreCacheForLeads(
-          orgId,
-          liveLeads.map((lead) => lead.id),
-        );
         const accounts: Array<HubSpotLeadAccountItem | null> = [];
 
         for (const lead of liveLeads) {
@@ -791,9 +789,8 @@ export const registerLeadRoutes = async (app: FastifyInstance): Promise<void> =>
         ) {
           const contactIds = storedContactIds;
           const companyIds = Array.from(new Set(storedLeads.flatMap((lead) => lead.associated_company_ids)));
-          const accessToken = await getHubSpotAccessToken(orgId);
           const [contactById, companyById] = await Promise.all([
-            loadHydratedContactsById(orgId, contactIds, accessToken),
+            loadHydratedContactsById(orgId, contactIds, () => getHubSpotAccessToken(orgId)),
             loadLocalCompaniesById(orgId, companyIds),
           ]);
           const leads = storedLeads.map((lead) => mapStoredLead(lead, contactById, companyById)).filter(isOpenLeadListItem);

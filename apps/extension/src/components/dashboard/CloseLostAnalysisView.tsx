@@ -56,6 +56,10 @@ const wait = async (durationMs: number): Promise<void> =>
     window.setTimeout(resolve, durationMs);
   });
 
+// Plafond de securite pour le polling du run close-lost (evite une boucle infinie
+// si le backend ne termine jamais le run).
+const CLOSE_LOST_POLL_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+
 const formatInputDate = (date: Date): string => {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -123,8 +127,6 @@ const severityLabels: Record<string, string> = {
   low: "Faible",
   medium: "Moyen",
 };
-
-const tabs = ["Vue d'ensemble", "Raisons de perte", "Concurrence", "Analyse par etape", "Equipe"];
 
 const getDateRangeLabel = (dateFrom: string, dateTo: string): string => {
   const from = dateFrom ? formatDate(dateFrom) : "Debut";
@@ -1130,7 +1132,12 @@ export const CloseLostAnalysisView = ({
       let lastProcessedDealCount =
         startedRun.analyzedCount + startedRun.reusedCount + startedRun.failedCount;
 
+      const deadline = Date.now() + CLOSE_LOST_POLL_TIMEOUT_MS;
+
       while (currentRun.status !== "completed" && currentRun.status !== "failed") {
+        if (Date.now() > deadline) {
+          throw new Error("Delai d'attente depasse pendant l'analyse close-lost. Veuillez reessayer.");
+        }
         await wait(1200);
         currentRun = await fetchCloseLostAnalysisRun(startedRun.id);
         setActiveRun(currentRun);
@@ -1183,14 +1190,6 @@ export const CloseLostAnalysisView = ({
         </div>
         <span>Derniere mise a jour : {overview?.generatedAt ? formatDateTime(overview.generatedAt) : getDateRangeLabel(dateFrom, dateTo)}</span>
       </div>
-
-      <nav className="ae-close-lost-tabs" aria-label="Close lost sections">
-        {tabs.map((tab, index) => (
-          <button className={index === 0 ? "active" : ""} key={tab} type="button">
-            {tab}
-          </button>
-        ))}
-      </nav>
 
       <FilterToolbar
         dateFrom={dateFrom}

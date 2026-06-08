@@ -63,10 +63,10 @@ export const HubSpotIntegrationView = ({
             {integrationStatusLabel}
           </strong>
           <div className="ae-admin-actions">
-            <button onClick={onConnectHubSpot} type="button">
+            <button disabled={!onConnectHubSpot} onClick={onConnectHubSpot} type="button">
               {isConnected ? "Reconnecter" : "Connecter"}
             </button>
-            <button disabled={!isConnected || syncLoading || isRefreshing} onClick={onSyncHubSpot} type="button">
+            <button disabled={!isConnected || !onSyncHubSpot || syncLoading || isRefreshing} onClick={onSyncHubSpot} type="button">
               {syncLoading ? "Sync..." : "Sync Supabase"}
             </button>
             <button disabled={!isConnected || disconnectLoading} onClick={onDisconnectHubSpot} type="button">

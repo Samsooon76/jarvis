@@ -150,7 +150,6 @@ export const buildStageChart = (
       };
     });
   const wonStageFilterIds = new Set<StageFilter>([
-    "contractValidation",
     "dealSignedPaymentPending",
     "paymentReceived",
   ]);
@@ -167,7 +166,7 @@ export const buildStageChart = (
             secondProspect.closeProbability - firstProspect.closeProbability,
         ),
       }),
-      { id: "won", label: "Gagné", count: 0, amount: 0, prospects: [] },
+      { id: "won", label: "Signe", count: 0, amount: 0, prospects: [] },
     );
   const rows = stageDashboardRows.reduce<StageDashboardRow[]>(
     (chartRows, row) => {
@@ -268,7 +267,7 @@ export const buildMetricCards = ({
   { id: "open", label: "Deals ouverts", value: openProspectCount, icon: "pulse", tone: "green" },
   { id: "pipeline", label: "Pipeline ouvert", value: formatAmount(openPipeline), icon: "money", tone: "green" },
   { id: "weighted", label: "Pipeline pondere", value: formatAmount(weightedOpenPipeline), icon: "clock", tone: "green" },
-  { id: "won", label: "Closed won", value: formatAmount(wonPipeline), icon: "check", tone: "green" },
+  { id: "won", label: "Signe", value: formatAmount(wonPipeline), icon: "check", tone: "green" },
   { id: "lost", label: "Closed lost", value: formatAmount(lostPipeline), icon: "x", tone: "red" },
   { id: "rate", label: "Win rate", value: `${winRate}%`, icon: "trend", tone: "green" },
 ];
