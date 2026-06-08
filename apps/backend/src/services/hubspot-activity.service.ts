@@ -500,6 +500,81 @@ const upsertCallFromActivity = async (
   }
 };
 
+const parseWebhookAmount = (value: string | null): number | null => {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = Number(value.trim());
+
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const normalizeWebhookDate = (value: string | null): string | null => {
+  const trimmed = value?.trim();
+
+  if (!trimmed) {
+    return null;
+  }
+
+  // HubSpot envoie les dates de propriete sous forme d'epoch en millisecondes.
+  const timestamp = /^\d+$/.test(trimmed) ? Number(trimmed) : new Date(trimmed).getTime();
+
+  return Number.isFinite(timestamp) && !Number.isNaN(timestamp) ? new Date(timestamp).toISOString() : null;
+};
+
+// Applique directement la nouvelle valeur portee par le webhook HubSpot
+// (property_name / property_value) sur la base Jarvis, sans rappeler l'API.
+const applyDealPropertyChangeFromWebhook = async (
+  orgId: string,
+  hubspotDealId: string,
+  propertyName: string | null,
+  propertyValue: string | null,
+): Promise<void> => {
+  if (propertyName !== "amount" && propertyName !== "closedate") {
+    return;
+  }
+
+  const supabase = getSupabaseAdmin();
+  const syncedAt = new Date().toISOString();
+
+  if (propertyName === "amount") {
+    const amount = parseWebhookAmount(propertyValue);
+    const { error: dealError } = await supabase
+      .from("hubspot_deals")
+      .update({ amount, synced_at: syncedAt })
+      .eq("org_id", orgId)
+      .eq("hubspot_deal_id", hubspotDealId);
+
+    if (dealError) {
+      throw new Error(`Impossible de mettre a jour le montant du deal HubSpot: ${dealError.message}`);
+    }
+
+    const { error: prospectError } = await supabase
+      .from("prospects")
+      .update({ deal_amount: amount, synced_at: syncedAt })
+      .eq("org_id", orgId)
+      .eq("hubspot_deal_id", hubspotDealId);
+
+    if (prospectError) {
+      throw new Error(`Impossible de mettre a jour le montant du prospect HubSpot: ${prospectError.message}`);
+    }
+
+    return;
+  }
+
+  const closedAt = normalizeWebhookDate(propertyValue);
+  const { error: closedError } = await supabase
+    .from("hubspot_deals")
+    .update({ closed_at: closedAt, synced_at: syncedAt })
+    .eq("org_id", orgId)
+    .eq("hubspot_deal_id", hubspotDealId);
+
+  if (closedError) {
+    throw new Error(`Impossible de mettre a jour la date de closing du deal HubSpot: ${closedError.message}`);
+  }
+};
+
 const scheduleDealReanalysis = async (
   orgId: string,
   hubspotDealId: string,
@@ -732,6 +807,12 @@ const processHubSpotWebhookEvent = async (eventId: string): Promise<void> => {
         return;
       }
 
+      await applyDealPropertyChangeFromWebhook(
+        event.org_id,
+        eligibleDealId,
+        event.property_name,
+        event.property_value,
+      );
       await scheduleDealReanalysis(event.org_id, eligibleDealId, event.id, "Changement HubSpot sur le deal");
       await updateWebhookEventStatus(event.id, "completed");
       return;
