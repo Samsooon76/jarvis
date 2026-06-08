@@ -510,6 +510,23 @@ const parseWebhookAmount = (value: string | null): number | null => {
   return Number.isFinite(parsed) ? parsed : null;
 };
 
+const parseWebhookProbability = (value: string | null): number | null => {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = Number(value.trim().replace("%", ""));
+
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+
+  // HubSpot envoie la probabilite en 0-1; Jarvis la stocke en 0-100.
+  const percentage = parsed >= 0 && parsed <= 1 ? parsed * 100 : parsed;
+
+  return Math.max(0, Math.min(100, Math.round(percentage)));
+};
+
 const normalizeWebhookDate = (value: string | null): string | null => {
   const trimmed = value?.trim();
 
@@ -531,12 +548,42 @@ const applyDealPropertyChangeFromWebhook = async (
   propertyName: string | null,
   propertyValue: string | null,
 ): Promise<void> => {
-  if (propertyName !== "amount" && propertyName !== "closedate") {
+  if (propertyName !== "amount" && propertyName !== "closedate" && propertyName !== "hs_deal_stage_probability") {
     return;
   }
 
   const supabase = getSupabaseAdmin();
   const syncedAt = new Date().toISOString();
+
+  if (propertyName === "hs_deal_stage_probability") {
+    const closeProbability = parseWebhookProbability(propertyValue);
+
+    if (closeProbability === null) {
+      return;
+    }
+
+    const { error: dealError } = await supabase
+      .from("hubspot_deals")
+      .update({ close_probability: closeProbability, synced_at: syncedAt })
+      .eq("org_id", orgId)
+      .eq("hubspot_deal_id", hubspotDealId);
+
+    if (dealError) {
+      throw new Error(`Impossible de mettre a jour la probabilite du deal HubSpot: ${dealError.message}`);
+    }
+
+    const { error: prospectError } = await supabase
+      .from("prospects")
+      .update({ close_probability: closeProbability, synced_at: syncedAt })
+      .eq("org_id", orgId)
+      .eq("hubspot_deal_id", hubspotDealId);
+
+    if (prospectError) {
+      throw new Error(`Impossible de mettre a jour la probabilite du prospect HubSpot: ${prospectError.message}`);
+    }
+
+    return;
+  }
 
   if (propertyName === "amount") {
     const amount = parseWebhookAmount(propertyValue);
