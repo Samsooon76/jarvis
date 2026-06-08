@@ -173,6 +173,7 @@ const isInterestingDealProperty = (propertyName: string | null): boolean =>
     "closedate",
     "dealstage",
     "hs_deal_stage_probability",
+    "probabilite_de__closing",
     "hubspot_owner_id",
     "pipeline",
   ].includes(propertyName);
@@ -527,6 +528,21 @@ const parseWebhookProbability = (value: string | null): number | null => {
   return Math.max(0, Math.min(100, Math.round(percentage)));
 };
 
+const parseManualProbability = (value: string | null): number | null => {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = Number(value.trim().replace("%", ""));
+
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+
+  // Propriete custom saisie manuellement: deja exprimee en pourcentage (0-100).
+  return Math.max(0, Math.min(100, Math.round(parsed)));
+};
+
 const normalizeWebhookDate = (value: string | null): string | null => {
   const trimmed = value?.trim();
 
@@ -548,15 +564,23 @@ const applyDealPropertyChangeFromWebhook = async (
   propertyName: string | null,
   propertyValue: string | null,
 ): Promise<void> => {
-  if (propertyName !== "amount" && propertyName !== "closedate" && propertyName !== "hs_deal_stage_probability") {
+  if (
+    propertyName !== "amount" &&
+    propertyName !== "closedate" &&
+    propertyName !== "hs_deal_stage_probability" &&
+    propertyName !== "probabilite_de__closing"
+  ) {
     return;
   }
 
   const supabase = getSupabaseAdmin();
   const syncedAt = new Date().toISOString();
 
-  if (propertyName === "hs_deal_stage_probability") {
-    const closeProbability = parseWebhookProbability(propertyValue);
+  if (propertyName === "hs_deal_stage_probability" || propertyName === "probabilite_de__closing") {
+    const closeProbability =
+      propertyName === "probabilite_de__closing"
+        ? parseManualProbability(propertyValue)
+        : parseWebhookProbability(propertyValue);
 
     if (closeProbability === null) {
       return;

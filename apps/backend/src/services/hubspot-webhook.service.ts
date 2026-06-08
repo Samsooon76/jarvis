@@ -112,6 +112,7 @@ const INTERESTING_DEAL_PROPERTIES = new Set([
   "closedate",
   "dealstage",
   "hs_deal_stage_probability",
+  "probabilite_de__closing",
   "hubspot_owner_id",
   "pipeline",
 ]);
