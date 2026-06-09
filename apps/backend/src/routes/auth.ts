@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import type { ApiResponse } from "@jarvis/shared";
+import type { ApiResponse, AppUserRole, OrgUser } from "@jarvis/shared";
 import { getSupabaseAdmin } from "../db/client.js";
 import {
   getAuthenticatedAuthUser,
@@ -323,4 +323,149 @@ export const registerAuthRoutes = async (app: FastifyInstance): Promise<void> =>
       });
     }
   });
+
+  app.get<{ Reply: ApiResponse<OrgUser[]> }>(
+    "/api/auth/users",
+    async (request, reply) => {
+      try {
+        const authUser = await getAuthenticatedAuthUser(request);
+        const profile = await loadAppUserProfile(authUser);
+
+        if (profile.role !== "admin" && profile.role !== "manager") {
+          return reply.code(403).send({
+            success: false,
+            error: "Accès refusé. Réservé aux administrateurs et managers.",
+          });
+        }
+
+        const supabase = getSupabaseAdmin();
+        const { data, error } = await supabase
+          .from("users")
+          .select("id, name, email, role, hubspot_owner_id, auth_user_id, created_at")
+          .eq("org_id", profile.orgId)
+          .order("name", { ascending: true });
+
+        if (error) {
+          throw new Error(`Impossible de charger les utilisateurs de l'organisation: ${error.message}`);
+        }
+
+        const mappedUsers: OrgUser[] = (data || []).map((row: any) => ({
+          id: row.id,
+          name: row.name,
+          email: row.email,
+          role: row.role as AppUserRole,
+          hubspotOwnerId: row.hubspot_owner_id,
+          authUserId: row.auth_user_id,
+          createdAt: row.created_at,
+        }));
+
+        return reply.send({
+          success: true,
+          data: mappedUsers,
+        });
+      } catch (error) {
+        request.log.error({ error }, "Impossible de récupérer les utilisateurs.");
+        return reply.code(500).send({
+          success: false,
+          error: error instanceof Error ? error.message : "Erreur inconnue.",
+        });
+      }
+    }
+  );
+
+  app.put<{ Params: { userId: string }; Body: { role: string }; Reply: ApiResponse<{ id: string; role: AppUserRole }> }>(
+    "/api/auth/users/:userId/role",
+    async (request, reply) => {
+      try {
+        const authUser = await getAuthenticatedAuthUser(request);
+        const profile = await loadAppUserProfile(authUser);
+
+        if (profile.role !== "admin" && profile.role !== "manager") {
+          return reply.code(403).send({
+            success: false,
+            error: "Accès refusé. Réservé aux administrateurs et managers.",
+          });
+        }
+
+        const { userId } = request.params;
+        const { role } = request.body;
+
+        if (role !== "sales" && role !== "manager" && role !== "admin") {
+          return reply.code(400).send({
+            success: false,
+            error: "Rôle invalide. Les rôles possibles sont 'sales', 'manager', et 'admin'.",
+          });
+        }
+
+        const supabase = getSupabaseAdmin();
+
+        // 1. Fetch user to confirm they belong to the same organization
+        const { data: targetUser, error: fetchError } = await supabase
+          .from("users")
+          .select("id, org_id, auth_user_id, role")
+          .eq("id", userId)
+          .maybeSingle();
+
+        if (fetchError || !targetUser) {
+          return reply.code(404).send({
+            success: false,
+            error: fetchError ? fetchError.message : "Utilisateur introuvable.",
+          });
+        }
+
+        if (targetUser.org_id !== profile.orgId) {
+          return reply.code(403).send({
+            success: false,
+            error: "Vous ne pouvez pas modifier un utilisateur d'une autre organisation.",
+          });
+        }
+
+        // Prevent self-demotion or self-change if it might leave the organization with no admins.
+        if (targetUser.role === "admin" && role !== "admin") {
+          const { count, error: countError } = await supabase
+            .from("users")
+            .select("id", { count: "exact", head: true })
+            .eq("org_id", profile.orgId)
+            .eq("role", "admin");
+
+          if (!countError && count !== null && count <= 1) {
+            return reply.code(400).send({
+              success: false,
+              error: "Impossible de modifier le rôle du dernier administrateur de l'organisation.",
+            });
+          }
+        }
+
+        // 2. Update user role in public.users table
+        const { error: updateError } = await supabase
+          .from("users")
+          .update({ role })
+          .eq("id", userId);
+
+        if (updateError) {
+          throw new Error(`Impossible de mettre à jour le rôle de l'utilisateur: ${updateError.message}`);
+        }
+
+        // 3. Update Supabase Auth app_metadata if target user has signed up
+        if (targetUser.auth_user_id) {
+          const { data: authRecord, error: authGetUserError } = await supabase.auth.admin.getUserById(targetUser.auth_user_id);
+          
+          if (!authGetUserError && authRecord?.user) {
+            await upsertAuthUserAppMetadata(authRecord.user, { role });
+          }
+        }
+
+        return reply.send({
+          success: true,
+          data: { id: userId, role: role as AppUserRole },
+        });
+      } catch (error) {
+        request.log.error({ error }, "Impossible de modifier le rôle de l'utilisateur.");
+        return reply.code(500).send({
+          success: false,
+          error: error instanceof Error ? error.message : "Erreur inconnue.",
+        });
+      }
+    }
+  );
 };

@@ -53,7 +53,7 @@ const getConfidenceLabel = (confidence: ForecastSynthesis["confidence"]): string
 
 const getPriorityLabel = (priority: "low" | "medium" | "high"): string =>
   priority === "high" ? "Prioritaire" : priority === "medium" ? "A suivre" : "Optionnel";
-type ForecastPeriodMode = "currentAndNext" | "currentMonth" | "nextMonth" | "custom";
+type ForecastPeriodMode = "currentMonth" | "nextMonth" | "custom";
 
 type ForecastPoint = {
   date: string;
@@ -78,18 +78,11 @@ const getMonthBounds = (offsetMonths = 0): { dateFrom: string; dateTo: string } 
 };
 
 const getPeriodBounds = (mode: Exclude<ForecastPeriodMode, "custom">): { dateFrom: string; dateTo: string } => {
-  if (mode === "currentMonth") {
-    return getMonthBounds(0);
-  }
-
   if (mode === "nextMonth") {
     return getMonthBounds(1);
   }
 
-  return {
-    dateFrom: getMonthBounds(0).dateFrom,
-    dateTo: getMonthBounds(1).dateTo,
-  };
+  return getMonthBounds(0);
 };
 
 const formatPeriod = (dateFrom: string, dateTo: string): string => {
@@ -335,9 +328,9 @@ export const ForecastView = ({
   selectedOwnerId,
   canViewTeamForecast = false,
 }: ForecastViewProps) => {
-  const defaultDates = useMemo(() => getPeriodBounds("currentAndNext"), []);
+  const defaultDates = useMemo(() => getPeriodBounds("currentMonth"), []);
   const [ownerId, setOwnerId] = useState(selectedOwnerId ?? "");
-  const [periodMode, setPeriodMode] = useState<ForecastPeriodMode>("currentAndNext");
+  const [periodMode, setPeriodMode] = useState<ForecastPeriodMode>("currentMonth");
   const [dateFrom, setDateFrom] = useState(defaultDates.dateFrom);
   const [dateTo, setDateTo] = useState(defaultDates.dateTo);
   const [overview, setOverview] = useState<ForecastOverviewResult | null>(null);
@@ -574,9 +567,6 @@ export const ForecastView = ({
         <label>
           Periode
           <span className="ae-forecast-period-toggle">
-            <button className={periodMode === "currentAndNext" ? "active" : ""} onClick={() => setPeriod("currentAndNext")} type="button">
-              Ce mois + prochain
-            </button>
             <button className={periodMode === "currentMonth" ? "active" : ""} onClick={() => setPeriod("currentMonth")} type="button">
               Ce mois
             </button>

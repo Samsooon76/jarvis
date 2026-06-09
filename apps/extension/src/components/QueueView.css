@@ -10644,6 +10644,37 @@ body,
   cursor: default;
 }
 
+.pulse-filter-bar {
+  display: flex;
+  gap: 6px;
+  padding: 10px 16px;
+  border-bottom: 1px solid rgba(17, 25, 31, 0.08);
+  overflow-x: auto;
+}
+
+.pulse-filter-chip {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  border: 1px solid rgba(17, 25, 31, 0.1);
+  border-radius: 999px;
+  background: #ffffff;
+  color: #4a554e;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.pulse-filter-chip.is-active {
+  border-color: rgba(15, 111, 92, 0.35);
+  background: rgba(15, 111, 92, 0.08);
+  color: #0f6f5c;
+}
+
+.pulse-filter-chip:hover {
+  background: rgba(17, 25, 31, 0.04);
+}
+
 .pulse-panel-empty,
 .pulse-panel-error {
   margin: 0;

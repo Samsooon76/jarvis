@@ -3,17 +3,21 @@ import {
   aiProviderOptions,
   fetchMonthlySalesTargets,
   saveMonthlySalesTargets,
+  fetchOrgUsers,
+  updateOrgUserRole,
   type AiProviderId,
   type AiProviderOption,
   type HubSpotOwnerOption,
   type HubSpotSyncJobStatus,
   type MonthlySalesTargetInput,
+  type OrgUser,
+  type AppUserRole,
 } from "../../services/api";
 import { formatAmount } from "../../utils/dashboard/formatters";
 import { HubSpotIntegrationView } from "./HubSpotIntegrationView";
 import { PulseSettingsView } from "./PulseSettingsView";
 
-type SettingsTab = "hubspot" | "ai" | "targets" | "pulse";
+type SettingsTab = "hubspot" | "ai" | "targets" | "pulse" | "team";
 
 type HubSpotSettingsProps = {
   disconnectLoading: boolean;
@@ -69,6 +73,64 @@ export const SettingsView = ({
   const [targetsSaving, setTargetsSaving] = useState(false);
   const [targetsError, setTargetsError] = useState<string | null>(null);
   const [targetsMessage, setTargetsMessage] = useState<string | null>(null);
+
+  const [users, setUsers] = useState<OrgUser[]>([]);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [usersError, setUsersError] = useState<string | null>(null);
+  const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (activeSettingsTab !== "team") {
+      return;
+    }
+
+    let isMounted = true;
+    const loadUsers = async () => {
+      try {
+        setUsersLoading(true);
+        setUsersError(null);
+        setSuccessMessage(null);
+        const data = await fetchOrgUsers();
+        if (isMounted) {
+          setUsers(data);
+        }
+      } catch (err) {
+        if (isMounted) {
+          setUsersError(err instanceof Error ? err.message : "Erreur lors du chargement des utilisateurs.");
+        }
+      } finally {
+        if (isMounted) {
+          setUsersLoading(false);
+        }
+      }
+    };
+
+    void loadUsers();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activeSettingsTab]);
+
+  const handleRoleChange = async (userId: string, newRole: AppUserRole) => {
+    try {
+      setUpdatingUserId(userId);
+      setUsersError(null);
+      setSuccessMessage(null);
+      
+      await updateOrgUserRole(userId, newRole);
+      
+      setUsers((prev) =>
+        prev.map((u) => (u.id === userId ? { ...u, role: newRole } : u))
+      );
+      setSuccessMessage("Role mis a jour avec succes.");
+    } catch (err) {
+      setUsersError(err instanceof Error ? err.message : "Erreur lors de la mise a jour du role.");
+    } finally {
+      setUpdatingUserId(null);
+    }
+  };
 
   const forecastOwners = useMemo(
     () => owners.filter((owner) => owner.ownerId.trim()).sort((left, right) => left.name.localeCompare(right.name)),
@@ -209,6 +271,17 @@ export const SettingsView = ({
             Pulse
           </button>
         ) : null}
+        {canManagePulse ? (
+          <button
+            aria-selected={activeSettingsTab === "team"}
+            className={activeSettingsTab === "team" ? "active" : ""}
+            onClick={() => setActiveSettingsTab("team")}
+            role="tab"
+            type="button"
+          >
+            Equipe
+          </button>
+        ) : null}
       </div>
 
       {activeSettingsTab === "hubspot" ? (
@@ -340,6 +413,75 @@ export const SettingsView = ({
       ) : null}
 
       {activeSettingsTab === "pulse" && canManagePulse ? <PulseSettingsView /> : null}
+
+      {activeSettingsTab === "team" && canManagePulse ? (
+        <section className="ae-target-settings compact" aria-label="Gestion de l'equipe">
+          <div className="ae-settings-section-heading">
+            <div>
+              <h3>Gestion de l'equipe</h3>
+              <p>Visualisez les membres de votre organisation et gerez leurs roles dans Jarvis.</p>
+            </div>
+          </div>
+
+          {usersError ? <p className="ae-admin-feedback error">{usersError}</p> : null}
+          {successMessage ? <p className="ae-admin-feedback success">{successMessage}</p> : null}
+
+          {usersLoading && users.length === 0 ? (
+            <p className="ae-empty">Chargement des membres de l'equipe...</p>
+          ) : (
+            <div className="ae-team-table-wrapper" style={{ marginTop: "14px", border: "1px solid #e4e8e1", borderRadius: "8px", overflow: "hidden" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", color: "#17201b", fontSize: "13px" }}>
+                <thead>
+                  <tr style={{ background: "#fbfcfa", borderBottom: "1px solid #e4e8e1", textAlign: "left" }}>
+                    <th style={{ padding: "10px 14px", fontWeight: "600" }}>Nom</th>
+                    <th style={{ padding: "10px 14px", fontWeight: "600" }}>Email</th>
+                    <th style={{ padding: "10px 14px", fontWeight: "600" }}>Date d'inscription</th>
+                    <th style={{ padding: "10px 14px", fontWeight: "600", width: "180px" }}>Role</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {users.map((user) => (
+                    <tr key={user.id} style={{ borderBottom: "1px solid #e4e8e1" }}>
+                      <td style={{ padding: "10px 14px" }}>
+                        <strong>{user.name}</strong>
+                      </td>
+                      <td style={{ padding: "10px 14px", color: "#647068" }}>{user.email}</td>
+                      <td style={{ padding: "10px 14px", color: "#647068" }}>
+                        {user.createdAt ? new Intl.DateTimeFormat("fr-FR", { dateStyle: "short" }).format(new Date(user.createdAt)) : "-"}
+                      </td>
+                      <td style={{ padding: "10px 14px" }}>
+                        <select
+                          value={user.role}
+                          disabled={updatingUserId === user.id}
+                          onChange={(e) => void handleRoleChange(user.id, e.target.value as AppUserRole)}
+                          style={{
+                            padding: "4px 8px",
+                            borderRadius: "6px",
+                            border: "1px solid #d7ddd5",
+                            background: "#fbfcfa",
+                            color: "#17201b",
+                            font: "inherit",
+                            width: "100%",
+                            cursor: "pointer"
+                          }}
+                        >
+                          <option value="sales">Commercial (sales)</option>
+                          <option value="manager">Manager</option>
+                          <option value="admin">Administrateur</option>
+                        </select>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {users.length === 0 && !usersLoading ? (
+            <p className="ae-empty">Aucun utilisateur trouve.</p>
+          ) : null}
+        </section>
+      ) : null}
     </section>
   );
 };

@@ -186,7 +186,7 @@ type HubSpotActivityRecord = {
   associations?: HubSpotActivityAssociations;
 };
 
-type HubSpotOwner = {
+export type HubSpotOwner = {
   id: string;
   email?: string | null;
   firstName?: string | null;

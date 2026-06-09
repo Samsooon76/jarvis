@@ -7,6 +7,7 @@ import { getSupabaseAdmin } from "../db/client.js";
 export type PulseRecipientProfile = {
   userId: string;
   orgId: string;
+  role: "manager" | "admin";
 };
 
 export type PulseDealWebhookEventInput = {
@@ -56,6 +57,8 @@ type PulseRecipientRow = {
 
 type PulseNotificationRow = {
   id: string;
+  user_id: string;
+  source_event_id: string;
   event_type: PulseEventType;
   hubspot_deal_id: string;
   deal_name: string | null;
@@ -508,24 +511,65 @@ const toPulseNotification = (row: PulseNotificationRow): PulseNotification => ({
   createdAt: row.created_at,
 });
 
+const deduplicatePulseNotificationRows = (
+  rows: PulseNotificationRow[],
+  preferredUserId: string,
+): PulseNotificationRow[] => {
+  const rowBySourceEventId = new Map<string, PulseNotificationRow>();
+
+  for (const row of rows) {
+    const existingRow = rowBySourceEventId.get(row.source_event_id);
+
+    if (!existingRow || row.user_id === preferredUserId) {
+      rowBySourceEventId.set(row.source_event_id, row);
+    }
+  }
+
+  return Array.from(rowBySourceEventId.values());
+};
+
+type ListPulseNotificationsOptions = {
+  unreadOnly?: boolean;
+  limit?: number;
+  offset?: number;
+  eventTypes?: PulseEventType[];
+  scope?: "user" | "organization";
+};
+
 export const listPulseNotifications = async (
   recipient: PulseRecipientProfile,
-  options: { unreadOnly?: boolean; limit?: number; offset?: number } = {},
+  options: ListPulseNotificationsOptions = {},
 ): Promise<PulseNotificationList> => {
   const supabase = getSupabaseAdmin();
   const limit = Math.min(Math.max(options.limit ?? PULSE_NOTIFICATIONS_DEFAULT_LIMIT, 1), PULSE_NOTIFICATIONS_MAX_LIMIT);
   const offset = Math.max(options.offset ?? 0, 0);
 
+  // Par defaut Pulse montre le flux de l'utilisateur. Un admin peut ouvrir
+  // la vue organisation pour suivre les modifications de tous les managers.
+  const scope = options.scope ?? "user";
+  const queryLimit = scope === "organization" ? Math.min(limit * 10, PULSE_NOTIFICATIONS_MAX_LIMIT * 10) : limit;
+
+  if (scope === "organization" && recipient.role !== "admin") {
+    throw new Error("La vue Pulse organisation est reservee aux administrateurs.");
+  }
+
   let query = supabase
     .from("pulse_notifications")
-    .select("id, event_type, hubspot_deal_id, deal_name, title, message, previous_value, new_value, occurred_at, read_at, created_at")
+    .select("id, user_id, source_event_id, event_type, hubspot_deal_id, deal_name, title, message, previous_value, new_value, occurred_at, read_at, created_at")
     .eq("org_id", recipient.orgId)
-    .eq("user_id", recipient.userId)
     .order("created_at", { ascending: false })
-    .range(offset, offset + limit - 1);
+    .range(offset, offset + queryLimit - 1);
+
+  if (scope === "user") {
+    query = query.eq("user_id", recipient.userId);
+  }
 
   if (options.unreadOnly) {
     query = query.is("read_at", null);
+  }
+
+  if (options.eventTypes && options.eventTypes.length > 0) {
+    query = query.in("event_type", options.eventTypes);
   }
 
   const [{ data, error }, unreadResult] = await Promise.all([
@@ -546,8 +590,11 @@ export const listPulseNotifications = async (
     throw new Error(`Impossible de compter les notifications Jarvis Pulse non lues: ${unreadResult.error.message}`);
   }
 
+  const rows = (data ?? []) as PulseNotificationRow[];
+  const visibleRows = scope === "organization" ? deduplicatePulseNotificationRows(rows, recipient.userId).slice(0, limit) : rows;
+
   return {
-    notifications: ((data ?? []) as PulseNotificationRow[]).map(toPulseNotification),
+    notifications: visibleRows.map(toPulseNotification),
     unreadCount: unreadResult.count ?? 0,
   };
 };

@@ -1,6 +1,8 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { env } from "../config/env.js";
 import { getSupabaseAdmin } from "../db/client.js";
+import { getHubSpotAccessToken } from "./hubspot-auth.service.js";
+import { hubSpotService, type HubSpotOwner } from "./hubspot.service.js";
 import { enqueueHubSpotRealtimeJob } from "./hubspot-realtime-queue.service.js";
 
 export type HubSpotWebhookSubscriptionType =
@@ -97,6 +99,7 @@ type OrganizationPortalRow = {
 
 type HubSpotDealScopeRow = {
   hubspot_deal_id: string;
+  hubspot_owner_id: string | null;
 };
 
 export type AcceptedHubSpotWebhookBatch = {
@@ -483,6 +486,23 @@ const loadOrgIdByPortalId = async (portalIds: string[]): Promise<Map<string, str
   return orgIdByPortalId;
 };
 
+const getDisplayTeamName = (teams: HubSpotOwner["teams"] | undefined): string | null =>
+  teams?.find((team) => team.primary)?.name ?? teams?.[0]?.name ?? null;
+
+const isSalesAeOwner = (owner: HubSpotOwner): boolean =>
+  getDisplayTeamName(owner.teams)?.trim().toLowerCase().includes("sales ae") ?? false;
+
+const loadHubSpotSalesAeOwnerIdsByOrg = async (orgId: string): Promise<Set<string>> => {
+  try {
+    const accessToken = await getHubSpotAccessToken(orgId);
+    const owners = await hubSpotService.fetchOwners(accessToken);
+
+    return new Set(owners.filter((owner) => !owner.archived).filter(isSalesAeOwner).map((owner) => owner.id));
+  } catch {
+    return new Set();
+  }
+};
+
 const loadSalesAeOwnerIdsByOrg = async (orgIds: string[]): Promise<Map<string, Set<string>>> => {
   if (orgIds.length === 0) {
     return new Map();
@@ -531,7 +551,14 @@ const loadSalesAeOwnerIdsByOrg = async (orgIds: string[]): Promise<Map<string, S
   }
 
   for (const orgId of uncachedOrgIds) {
-    const ownerIds = loadedOwnerIdsByOrg.get(orgId) ?? new Set<string>();
+    let ownerIds = loadedOwnerIdsByOrg.get(orgId) ?? new Set<string>();
+
+    // Si aucun user Jarvis n'est mappe a un owner HubSpot, on ne bloque pas Pulse:
+    // on retombe sur les owners HubSpot live de l'equipe Sales AE.
+    if (ownerIds.size === 0) {
+      ownerIds = await loadHubSpotSalesAeOwnerIdsByOrg(orgId);
+    }
+
     setCachedValue(salesAeOwnerIdsCache, orgId, new Set(ownerIds), now);
     ownerIdsByOrg.set(orgId, ownerIds);
   }
@@ -554,9 +581,9 @@ const loadEligibleOpenDealIdsByOrg = async (
   const supabase = getSupabaseAdmin();
 
   for (const [orgId, dealIds] of dealIdsByOrg.entries()) {
-    const salesAeOwnerIds = ownerIdsByOrg.get(orgId);
+    const selectedOwnerIds = ownerIdsByOrg.get(orgId) ?? new Set<string>();
 
-    if (!salesAeOwnerIds?.size || dealIds.size === 0) {
+    if (dealIds.size === 0) {
       continue;
     }
 
@@ -564,7 +591,7 @@ const loadEligibleOpenDealIdsByOrg = async (
     const uncachedDealIds = uncachedDealIdsByOrg.get(orgId) ?? new Set<string>();
 
     for (const dealId of dealIds) {
-      const cacheKey = getEligibleOpenDealIdCacheKey(orgId, dealId, salesAeOwnerIds);
+      const cacheKey = getEligibleOpenDealIdCacheKey(orgId, dealId, selectedOwnerIds);
       const cachedEligibleDealIds = getCachedValue(eligibleOpenDealIdsCache, cacheKey, now);
 
       if (cachedEligibleDealIds) {
@@ -585,21 +612,29 @@ const loadEligibleOpenDealIdsByOrg = async (
   }
 
   for (const [orgId, dealIds] of uncachedDealIdsByOrg.entries()) {
-    const salesAeOwnerIds = ownerIdsByOrg.get(orgId);
-
-    const { data, error } = await supabase
+    const selectedOwnerIds = ownerIdsByOrg.get(orgId) ?? new Set<string>();
+    let query = supabase
       .from("hubspot_deals")
-      .select("hubspot_deal_id")
+      .select("hubspot_deal_id, hubspot_owner_id")
       .eq("org_id", orgId)
       .eq("deal_lifecycle_status", "pending")
-      .in("hubspot_deal_id", Array.from(dealIds))
-      .in("hubspot_owner_id", Array.from(salesAeOwnerIds ?? []));
+      .in("hubspot_deal_id", Array.from(dealIds));
+
+    if (selectedOwnerIds.size > 0) {
+      query = query.in("hubspot_owner_id", Array.from(selectedOwnerIds));
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       throw new Error(`Impossible de filtrer les deals HubSpot realtime: ${error.message}`);
     }
 
-    const loadedEligibleDealIds = new Set(((data ?? []) as HubSpotDealScopeRow[]).map((row) => row.hubspot_deal_id));
+    const loadedEligibleDealIds = new Set(
+      ((data ?? []) as HubSpotDealScopeRow[])
+        .filter((row) => selectedOwnerIds.size === 0 || (row.hubspot_owner_id && selectedOwnerIds.has(row.hubspot_owner_id)))
+        .map((row) => row.hubspot_deal_id),
+    );
     const eligibleDealIds = eligibleDealIdsByOrg.get(orgId) ?? new Set<string>();
 
     for (const dealId of dealIds) {

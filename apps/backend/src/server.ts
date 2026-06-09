@@ -34,7 +34,7 @@ const registerCorsHook = (app: FastifyInstance): void => {
       reply.header("Access-Control-Allow-Origin", allowedOrigin);
     }
 
-    reply.header("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+    reply.header("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
     reply.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
     reply.header("Vary", "Origin");
 

@@ -3,6 +3,7 @@ import {
   fetchPulseNotifications,
   markAllPulseNotificationsRead,
   markPulseNotificationRead,
+  type PulseEventType,
   type PulseNotification,
 } from "../services/api";
 
@@ -20,7 +21,7 @@ export type UsePulseNotificationsResult = {
 };
 
 // Polling court (~30s): le webhook HubSpot garantit deja la fraicheur cote serveur.
-export const usePulseNotifications = (enabled: boolean): UsePulseNotificationsResult => {
+export const usePulseNotifications = (enabled: boolean, eventTypes: PulseEventType[] = []): UsePulseNotificationsResult => {
   const [notifications, setNotifications] = useState<PulseNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
@@ -41,7 +42,7 @@ export const usePulseNotifications = (enabled: boolean): UsePulseNotificationsRe
     }
 
     try {
-      const result = await fetchPulseNotifications({ limit: PULSE_PAGE_SIZE });
+      const result = await fetchPulseNotifications({ limit: PULSE_PAGE_SIZE, eventTypes });
 
       if (!isMountedRef.current) {
         return;
@@ -61,7 +62,7 @@ export const usePulseNotifications = (enabled: boolean): UsePulseNotificationsRe
         setIsLoading(false);
       }
     }
-  }, [enabled]);
+  }, [enabled, eventTypes]);
 
   useEffect(() => {
     if (!enabled) {

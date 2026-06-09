@@ -1,13 +1,16 @@
 import type {
   ProspectPriority,
+  PulseEventType,
   PulseNotificationList,
   PulsePreferences,
   QueueData,
   QueueProspect,
+  OrgUser,
+  AppUserRole,
 } from "@jarvis/shared";
 import { API_BASE_URL, apiPath, getJson, postJson, putJson, type ApiRequestOptions } from "./api/client";
 
-export type { PulseEventType, PulseNotification, PulseNotificationList, PulsePreferences } from "@jarvis/shared";
+export type { PulseEventType, PulseNotification, PulseNotificationList, PulsePreferences, OrgUser, AppUserRole } from "@jarvis/shared";
 
 const ANALYTICS_OVERVIEW_CACHE_TTL_MS = 60_000;
 const ANALYTICS_DETAIL_CACHE_TTL_MS = 60_000;
@@ -2063,10 +2066,12 @@ export const fetchPulseNotifications = async (
     unreadOnly = false,
     limit,
     offset,
+    eventTypes,
   }: {
     unreadOnly?: boolean;
     limit?: number;
     offset?: number;
+    eventTypes?: PulseEventType[];
   } = {},
   options: ApiRequestOptions = {},
 ): Promise<PulseNotificationList> =>
@@ -2075,6 +2080,7 @@ export const fetchPulseNotifications = async (
       unreadOnly: unreadOnly ? "true" : undefined,
       limit,
       offset,
+      eventTypes: eventTypes && eventTypes.length > 0 ? eventTypes.join(",") : undefined,
     }),
     options,
   );
@@ -2090,3 +2096,12 @@ export const fetchPulsePreferences = async (options: ApiRequestOptions = {}): Pr
 
 export const savePulsePreferences = async (preferences: PulsePreferences): Promise<PulsePreferences> =>
   putJson<PulsePreferences>("/api/pulse/preferences", preferences);
+
+export const fetchOrgUsers = async (options: ApiRequestOptions = {}): Promise<OrgUser[]> =>
+  getJson<OrgUser[]>("/api/auth/users", options);
+
+export const updateOrgUserRole = async (
+  userId: string,
+  role: AppUserRole,
+): Promise<{ id: string; role: AppUserRole }> =>
+  putJson<{ id: string; role: AppUserRole }>(`/api/auth/users/${userId}/role`, { role });

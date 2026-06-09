@@ -58,3 +58,15 @@ export type PulsePreferences = {
   pulseEnabled: boolean;
   events: PulseEventPreferences;
 };
+
+export type AppUserRole = "sales" | "manager" | "admin";
+
+export type OrgUser = {
+  id: string;
+  name: string;
+  email: string;
+  role: AppUserRole;
+  hubspotOwnerId: string | null;
+  authUserId: string | null;
+  createdAt: string;
+};

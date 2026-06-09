@@ -1,7 +1,8 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import type { ApiResponse, PulseNotificationList, PulsePreferences } from "@jarvis/shared";
+import type { ApiResponse, PulseEventType, PulseNotificationList, PulsePreferences } from "@jarvis/shared";
 import { loadAuthenticatedAppUserProfile, type AppUserProfile } from "../services/app-auth.service.js";
 import {
+  PULSE_EVENT_TYPES,
   getPulsePreferences,
   listPulseNotifications,
   markAllPulseNotificationsRead,
@@ -15,6 +16,7 @@ type ListPulseNotificationsQuery = {
   unreadOnly?: string;
   limit?: string;
   offset?: string;
+  eventTypes?: string;
 };
 
 type PulseNotificationParams = {
@@ -32,6 +34,24 @@ const parsePositiveInteger = (value: string | undefined): number | undefined => 
   const parsed = Number(value);
 
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : undefined;
+};
+
+const parsePulseEventTypes = (value: string | undefined): PulseEventType[] | undefined => {
+  if (!value) {
+    return undefined;
+  }
+
+  const allowedEventTypes = new Set<string>(PULSE_EVENT_TYPES);
+  const eventTypes = value
+    .split(",")
+    .map((eventType) => eventType.trim())
+    .filter((eventType) => eventType.length > 0);
+
+  if (eventTypes.length === 0 || eventTypes.some((eventType) => !allowedEventTypes.has(eventType))) {
+    return undefined;
+  }
+
+  return [...new Set(eventTypes)] as PulseEventType[];
 };
 
 // Jarvis Pulse est reserve aux admins/managers: un profil sales recoit un 403.
@@ -70,6 +90,7 @@ const resolvePulseRecipient = async (
   return {
     userId: profile.id,
     orgId: profile.orgId,
+    role: profile.role,
   };
 };
 
@@ -83,11 +104,22 @@ export const registerPulseRoutes = async (app: FastifyInstance): Promise<void> =
         return reply;
       }
 
+      const eventTypes = parsePulseEventTypes(request.query.eventTypes);
+
+      if (request.query.eventTypes && !eventTypes) {
+        return reply.code(400).send({
+          success: false,
+          error: "Le filtre d'evenements Jarvis Pulse est invalide.",
+        });
+      }
+
       try {
         const result = await listPulseNotifications(recipient, {
           unreadOnly: request.query.unreadOnly === "true",
           limit: parsePositiveInteger(request.query.limit),
           offset: parsePositiveInteger(request.query.offset),
+          eventTypes,
+          scope: recipient.role === "admin" ? "organization" : "user",
         });
 
         return reply.send({ success: true, data: result });

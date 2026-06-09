@@ -44,7 +44,6 @@ export const PulseSettingsView = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -76,13 +75,11 @@ export const PulseSettingsView = () => {
 
   const persist = async (next: PulsePreferences): Promise<void> => {
     setPreferences(next);
-    setMessage(null);
     setError(null);
 
     try {
       setIsSaving(true);
       await savePulsePreferences(next);
-      setMessage("Preferences Jarvis Pulse enregistrees.");
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Impossible d'enregistrer les preferences Pulse.");
     } finally {
@@ -111,7 +108,6 @@ export const PulseSettingsView = () => {
       </div>
 
       {error ? <p className="ae-admin-feedback error">{error}</p> : null}
-      {message ? <p className="ae-admin-feedback">{message}</p> : null}
 
       <label className="pulse-settings-toggle pulse-settings-master">
         <input

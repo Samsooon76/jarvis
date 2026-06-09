@@ -13,6 +13,8 @@ const eventTypeLabels: Record<PulseEventType, string> = {
   pipeline: "Pipeline",
 };
 
+const pulseEventFilters = Object.entries(eventTypeLabels) as Array<[PulseEventType, string]>;
+
 const NotificationRow = ({
   notification,
   onMarkRead,
@@ -43,9 +45,18 @@ const NotificationRow = ({
 
 export const PulseNotificationCenter = () => {
   const [isOpen, setIsOpen] = useState(false);
+  const [selectedEventTypes, setSelectedEventTypes] = useState<PulseEventType[]>([]);
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const { notifications, unreadCount, isLoading, error, markRead, markAllRead, refresh } =
-    usePulseNotifications(true);
+  const { notifications, unreadCount, isLoading, error, markRead, markAllRead, refresh } = usePulseNotifications(
+    true,
+    selectedEventTypes,
+  );
+
+  const toggleEventType = (eventType: PulseEventType): void => {
+    setSelectedEventTypes((current) =>
+      current.includes(eventType) ? current.filter((selected) => selected !== eventType) : [...current, eventType],
+    );
+  };
 
   useEffect(() => {
     if (!isOpen) {
@@ -101,6 +112,26 @@ export const PulseNotificationCenter = () => {
             </button>
           </header>
 
+          <div className="pulse-filter-bar" aria-label="Filtrer Jarvis Pulse par type d'evenement">
+            <button
+              type="button"
+              className={`pulse-filter-chip ${selectedEventTypes.length === 0 ? "is-active" : ""}`}
+              onClick={() => setSelectedEventTypes([])}
+            >
+              Tous
+            </button>
+            {pulseEventFilters.map(([eventType, label]) => (
+              <button
+                key={eventType}
+                type="button"
+                className={`pulse-filter-chip ${selectedEventTypes.includes(eventType) ? "is-active" : ""}`}
+                onClick={() => toggleEventType(eventType)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
           {error ? <p className="pulse-panel-error">{error}</p> : null}
 
           {isLoading && notifications.length === 0 ? (
@@ -108,7 +139,11 @@ export const PulseNotificationCenter = () => {
           ) : null}
 
           {!isLoading && notifications.length === 0 && !error ? (
-            <p className="pulse-panel-empty">Aucune notification pour le moment. Jarvis surveille vos deals.</p>
+            <p className="pulse-panel-empty">
+              {selectedEventTypes.length > 0
+                ? "Aucune notification pour ces evenements."
+                : "Aucune notification pour le moment. Jarvis surveille vos deals."}
+            </p>
           ) : null}
 
           {notifications.length > 0 ? (
