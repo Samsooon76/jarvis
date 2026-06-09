@@ -17,6 +17,7 @@ import {
   enqueueHubSpotRealtimeJob,
   type HubSpotRealtimeJob,
 } from "./hubspot-realtime-queue.service.js";
+import { loadHubSpotRealtimeOwnerIds } from "./hubspot-owner-scope.service.js";
 import { generatePulseNotificationsForDealWebhookEvent } from "./pulse.service.js";
 
 type HubSpotWebhookEventRow = {
@@ -297,23 +298,8 @@ const queryOpenDealsByArrayField = async (
   return results;
 };
 
-const loadSalesAeOwnerIds = async (orgId: string): Promise<Set<string>> => {
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("users")
-    .select("hubspot_owner_id")
-    .eq("org_id", orgId)
-    .not("hubspot_owner_id", "is", null);
-
-  if (error) {
-    throw new Error(`Impossible de charger les owners Sales AE: ${error.message}`);
-  }
-
-  return new Set(
-    ((data ?? []) as Array<{ hubspot_owner_id: string | null }>)
-      .map((row) => row.hubspot_owner_id)
-      .filter((ownerId): ownerId is string => Boolean(ownerId)),
-  );
+const loadRealtimeOwnerIds = async (orgId: string): Promise<Set<string>> => {
+  return loadHubSpotRealtimeOwnerIds(orgId);
 };
 
 const filterEligibleRealtimeDealIds = async (orgId: string, dealIds: string[]): Promise<string[]> => {
@@ -323,20 +309,21 @@ const filterEligibleRealtimeDealIds = async (orgId: string, dealIds: string[]): 
     return [];
   }
 
-  const salesAeOwnerIds = await loadSalesAeOwnerIds(orgId);
-
-  if (salesAeOwnerIds.size === 0) {
-    return [];
-  }
+  const realtimeOwnerIds = await loadRealtimeOwnerIds(orgId);
 
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
+  let query = supabase
     .from("hubspot_deals")
     .select("hubspot_deal_id, hubspot_owner_id")
     .eq("org_id", orgId)
     .eq("deal_lifecycle_status", "pending")
-    .in("hubspot_deal_id", uniqueDealIds)
-    .in("hubspot_owner_id", Array.from(salesAeOwnerIds));
+    .in("hubspot_deal_id", uniqueDealIds);
+
+  if (realtimeOwnerIds.size > 0) {
+    query = query.in("hubspot_owner_id", Array.from(realtimeOwnerIds));
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     throw new Error(`Impossible de filtrer les deals realtime eligibles: ${error.message}`);

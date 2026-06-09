@@ -1,8 +1,7 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { env } from "../config/env.js";
 import { getSupabaseAdmin } from "../db/client.js";
-import { getHubSpotAccessToken } from "./hubspot-auth.service.js";
-import { hubSpotService, type HubSpotOwner } from "./hubspot.service.js";
+import { loadHubSpotRealtimeOwnerIds } from "./hubspot-owner-scope.service.js";
 import { enqueueHubSpotRealtimeJob } from "./hubspot-realtime-queue.service.js";
 
 export type HubSpotWebhookSubscriptionType =
@@ -126,7 +125,7 @@ type CacheEntry<T> = {
   value: T;
 };
 
-const salesAeOwnerIdsCache = new Map<string, CacheEntry<Set<string>>>();
+const realtimeOwnerIdsCache = new Map<string, CacheEntry<Set<string>>>();
 const eligibleOpenDealIdsCache = new Map<string, CacheEntry<Set<string>>>();
 const orgIdByPortalIdCache = new Map<string, CacheEntry<string | null>>();
 
@@ -486,35 +485,18 @@ const loadOrgIdByPortalId = async (portalIds: string[]): Promise<Map<string, str
   return orgIdByPortalId;
 };
 
-const getDisplayTeamName = (teams: HubSpotOwner["teams"] | undefined): string | null =>
-  teams?.find((team) => team.primary)?.name ?? teams?.[0]?.name ?? null;
-
-const isSalesAeOwner = (owner: HubSpotOwner): boolean =>
-  getDisplayTeamName(owner.teams)?.trim().toLowerCase().includes("sales ae") ?? false;
-
-const loadHubSpotSalesAeOwnerIdsByOrg = async (orgId: string): Promise<Set<string>> => {
-  try {
-    const accessToken = await getHubSpotAccessToken(orgId);
-    const owners = await hubSpotService.fetchOwners(accessToken);
-
-    return new Set(owners.filter((owner) => !owner.archived).filter(isSalesAeOwner).map((owner) => owner.id));
-  } catch {
-    return new Set();
-  }
-};
-
-const loadSalesAeOwnerIdsByOrg = async (orgIds: string[]): Promise<Map<string, Set<string>>> => {
+const loadRealtimeOwnerIdsByOrg = async (orgIds: string[]): Promise<Map<string, Set<string>>> => {
   if (orgIds.length === 0) {
     return new Map();
   }
 
   const now = Date.now();
-  pruneExpiredCacheEntries(salesAeOwnerIdsCache, now);
+  pruneExpiredCacheEntries(realtimeOwnerIdsCache, now);
   const ownerIdsByOrg = new Map<string, Set<string>>();
   const uncachedOrgIds: string[] = [];
 
   for (const orgId of orgIds) {
-    const cachedOwnerIds = getCachedValue(salesAeOwnerIdsCache, orgId, now);
+    const cachedOwnerIds = getCachedValue(realtimeOwnerIdsCache, orgId, now);
 
     if (cachedOwnerIds) {
       ownerIdsByOrg.set(orgId, new Set(cachedOwnerIds));
@@ -527,39 +509,10 @@ const loadSalesAeOwnerIdsByOrg = async (orgIds: string[]): Promise<Map<string, S
     return ownerIdsByOrg;
   }
 
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("users")
-    .select("org_id, hubspot_owner_id")
-    .in("org_id", uncachedOrgIds)
-    .not("hubspot_owner_id", "is", null);
-
-  if (error) {
-    throw new Error(`Impossible de charger les owners Sales AE: ${error.message}`);
-  }
-
-  const loadedOwnerIdsByOrg = new Map<string, Set<string>>();
-
-  for (const row of (data ?? []) as Array<{ org_id: string | null; hubspot_owner_id: string | null }>) {
-    if (!row.org_id || !row.hubspot_owner_id) {
-      continue;
-    }
-
-    const ownerIds = loadedOwnerIdsByOrg.get(row.org_id) ?? new Set<string>();
-    ownerIds.add(row.hubspot_owner_id);
-    loadedOwnerIdsByOrg.set(row.org_id, ownerIds);
-  }
-
   for (const orgId of uncachedOrgIds) {
-    let ownerIds = loadedOwnerIdsByOrg.get(orgId) ?? new Set<string>();
+    const ownerIds = await loadHubSpotRealtimeOwnerIds(orgId);
 
-    // Si aucun user Jarvis n'est mappe a un owner HubSpot, on ne bloque pas Pulse:
-    // on retombe sur les owners HubSpot live de l'equipe Sales AE.
-    if (ownerIds.size === 0) {
-      ownerIds = await loadHubSpotSalesAeOwnerIdsByOrg(orgId);
-    }
-
-    setCachedValue(salesAeOwnerIdsCache, orgId, new Set(ownerIds), now);
+    setCachedValue(realtimeOwnerIdsCache, orgId, new Set(ownerIds), now);
     ownerIdsByOrg.set(orgId, ownerIds);
   }
 
@@ -661,7 +614,7 @@ const filterRealtimeScopedEvents = async (
   orgIdByPortalId: Map<string, string>,
 ): Promise<{ scopedEvents: NormalizedHubSpotWebhookEvent[]; ignored: number }> => {
   const orgIds = Array.from(new Set(Array.from(orgIdByPortalId.values())));
-  const ownerIdsByOrg = await loadSalesAeOwnerIdsByOrg(orgIds);
+  const ownerIdsByOrg = await loadRealtimeOwnerIdsByOrg(orgIds);
   const dealIdsByOrg = new Map<string, Set<string>>();
 
   for (const event of events) {
