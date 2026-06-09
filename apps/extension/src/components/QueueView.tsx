@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import type { QueueProspect } from "@jarvis/shared";
 import { AdminFeedback } from "./dashboard/AdminFeedback";
 import { HubSpotHeader } from "./dashboard/HubSpotHeader";
+import { PulseNotificationCenter } from "./dashboard/PulseNotificationCenter";
 import { OverviewView } from "./dashboard/OverviewView";
 import { Sidebar } from "./dashboard/Sidebar";
 import type { PlannedProspectTask, QueueViewProps } from "./dashboard/types";
@@ -314,6 +315,7 @@ export const QueueView = ({
               integrationStatusLabel={dashboard.integrationStatusLabel}
               isConnected={isConnected}
               isRefreshing={isRefreshing}
+              pulseSlot={canViewTeamForecast ? <PulseNotificationCenter /> : undefined}
               subtitle={pageCopy.subtitle}
               title={pageCopy.title}
             />
@@ -352,6 +354,7 @@ export const QueueView = ({
 
           {dashboard.activeView === "settings" ? (
             <SettingsView
+              canManagePulse={canViewTeamForecast}
               hubSpot={{
                 disconnectLoading: dashboard.disconnectLoading,
                 generatedAt,

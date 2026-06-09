@@ -10,7 +10,9 @@ import { registerLeadRoutes } from "./leads.js";
 import { registerLlmRoutes } from "./llm.js";
 import { registerProbabilityRoutes } from "./probability.js";
 import { registerProspectRoutes } from "./prospects.js";
+import { registerPulseRoutes } from "./pulse.js";
 import { registerQueueRoutes } from "./queue.js";
+import { registerSalesActivityStatsRoutes } from "./sales-activity-stats.js";
 import { registerSalesTargetRoutes } from "./sales-targets.js";
 import { registerTaskRoutes } from "./tasks.js";
 
@@ -26,7 +28,9 @@ export const registerRoutes = async (app: FastifyInstance): Promise<void> => {
   await registerLlmRoutes(app);
   await registerProbabilityRoutes(app);
   await registerProspectRoutes(app);
+  await registerPulseRoutes(app);
   await registerQueueRoutes(app);
+  await registerSalesActivityStatsRoutes(app);
   await registerSalesTargetRoutes(app);
   await registerTaskRoutes(app);
 };

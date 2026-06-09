@@ -1,5 +1,13 @@
-import type { ProspectPriority, QueueData, QueueProspect } from "@jarvis/shared";
-import { API_BASE_URL, apiPath, getJson, postJson, type ApiRequestOptions } from "./api/client";
+import type {
+  ProspectPriority,
+  PulseNotificationList,
+  PulsePreferences,
+  QueueData,
+  QueueProspect,
+} from "@jarvis/shared";
+import { API_BASE_URL, apiPath, getJson, postJson, putJson, type ApiRequestOptions } from "./api/client";
+
+export type { PulseEventType, PulseNotification, PulseNotificationList, PulsePreferences } from "@jarvis/shared";
 
 const ANALYTICS_OVERVIEW_CACHE_TTL_MS = 60_000;
 const ANALYTICS_DETAIL_CACHE_TTL_MS = 60_000;
@@ -1923,16 +1931,21 @@ export const saveMonthlySalesTargets = async (
     targets,
   });
 
-export type ProbabilityTimelinePoint = {
-  date: string;
+export type DealAgeProbabilityPoint = {
+  ageDays: number;
   averageProbability: number;
   dealCount: number;
 };
 
-export type AggregatedProbabilityTimeline = {
-  points: ProbabilityTimelinePoint[];
-  dealCount: number;
-  pointCount: number;
+export type DealAgeProbabilityTimeline = {
+  won: DealAgeProbabilityPoint[];
+  lost: DealAgeProbabilityPoint[];
+  wonDealCount: number;
+  lostDealCount: number;
+  wonAvgDurationDays: number | null;
+  lostAvgDurationDays: number | null;
+  maxAgeDays: number;
+  capped: boolean;
 };
 
 export type DealProbabilityPoint = {
@@ -1955,23 +1968,20 @@ export const fetchProbabilityTimeline = async ({
   orgId,
   scope,
   hubspotOwnerId,
-  includeClosed,
   dateFrom,
   dateTo,
 }: {
   orgId: string;
   scope: ForecastScope;
   hubspotOwnerId: string | null;
-  includeClosed: boolean;
   dateFrom?: string | null;
   dateTo?: string | null;
-}): Promise<AggregatedProbabilityTimeline> =>
-  getJson<AggregatedProbabilityTimeline>(
+}): Promise<DealAgeProbabilityTimeline> =>
+  getJson<DealAgeProbabilityTimeline>(
     apiPath("/api/probability/timeline", {
       orgId,
       scope,
       hubspotOwnerId,
-      includeClosed: includeClosed ? "true" : "false",
       dateFrom: dateFrom ?? undefined,
       dateTo: dateTo ?? undefined,
     }),
@@ -1991,3 +2001,92 @@ export const backfillProbabilityHistory = async (
   orgId: string,
 ): Promise<{ dealsProcessed: number; pointsInserted: number }> =>
   postJson<{ dealsProcessed: number; pointsInserted: number }>("/api/probability/backfill", { orgId });
+
+export type SalesActivityType = "call" | "sms" | "meeting";
+
+export type SalesActivityByType = Record<SalesActivityType, number>;
+
+export type SalesActivityOutcomeStats = {
+  dealCount: number;
+  total: number;
+  byType: SalesActivityByType;
+  avgPerDeal: number;
+};
+
+export type SalesActivityStats = {
+  won: SalesActivityOutcomeStats;
+  lost: SalesActivityOutcomeStats;
+};
+
+export const fetchSalesActivityStats = async ({
+  orgId,
+  scope,
+  hubspotOwnerId,
+  dateFrom,
+  dateTo,
+}: {
+  orgId: string;
+  scope: ForecastScope;
+  hubspotOwnerId: string | null;
+  dateFrom?: string | null;
+  dateTo?: string | null;
+}): Promise<SalesActivityStats> =>
+  getJson<SalesActivityStats>(
+    apiPath("/api/activities/stats", {
+      orgId,
+      scope,
+      hubspotOwnerId,
+      dateFrom: dateFrom ?? undefined,
+      dateTo: dateTo ?? undefined,
+    }),
+  );
+
+export const backfillSalesActivities = async ({
+  orgId,
+  dateFrom,
+  dateTo,
+}: {
+  orgId: string;
+  dateFrom?: string | null;
+  dateTo?: string | null;
+}): Promise<{ dealsProcessed: number; activitiesUpserted: number }> =>
+  postJson<{ dealsProcessed: number; activitiesUpserted: number }>("/api/activities/backfill", {
+    orgId,
+    dateFrom: dateFrom ?? undefined,
+    dateTo: dateTo ?? undefined,
+  });
+
+// --- Jarvis Pulse -----------------------------------------------------------
+
+export const fetchPulseNotifications = async (
+  {
+    unreadOnly = false,
+    limit,
+    offset,
+  }: {
+    unreadOnly?: boolean;
+    limit?: number;
+    offset?: number;
+  } = {},
+  options: ApiRequestOptions = {},
+): Promise<PulseNotificationList> =>
+  getJson<PulseNotificationList>(
+    apiPath("/api/pulse/notifications", {
+      unreadOnly: unreadOnly ? "true" : undefined,
+      limit,
+      offset,
+    }),
+    options,
+  );
+
+export const markPulseNotificationRead = async (notificationId: string): Promise<{ id: string }> =>
+  postJson<{ id: string }>(`/api/pulse/notifications/${notificationId}/read`, {});
+
+export const markAllPulseNotificationsRead = async (): Promise<{ done: boolean }> =>
+  postJson<{ done: boolean }>("/api/pulse/notifications/read-all", {});
+
+export const fetchPulsePreferences = async (options: ApiRequestOptions = {}): Promise<PulsePreferences> =>
+  getJson<PulsePreferences>("/api/pulse/preferences", options);
+
+export const savePulsePreferences = async (preferences: PulsePreferences): Promise<PulsePreferences> =>
+  putJson<PulsePreferences>("/api/pulse/preferences", preferences);

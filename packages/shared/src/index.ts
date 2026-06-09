@@ -30,3 +30,31 @@ export type QueueData = {
   generatedAt: string;
   prospects: QueueProspect[];
 };
+
+export type PulseEventType = "probability" | "amount" | "stage" | "close_date" | "owner" | "pipeline";
+
+export type PulseNotification = {
+  id: string;
+  eventType: PulseEventType;
+  hubspotDealId: string;
+  dealName: string | null;
+  title: string;
+  message: string;
+  previousValue: string | null;
+  newValue: string | null;
+  occurredAt: string;
+  readAt: string | null;
+  createdAt: string;
+};
+
+export type PulseNotificationList = {
+  notifications: PulseNotification[];
+  unreadCount: number;
+};
+
+export type PulseEventPreferences = Record<PulseEventType, boolean>;
+
+export type PulsePreferences = {
+  pulseEnabled: boolean;
+  events: PulseEventPreferences;
+};

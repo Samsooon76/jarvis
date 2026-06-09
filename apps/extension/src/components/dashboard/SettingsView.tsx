@@ -11,8 +11,9 @@ import {
 } from "../../services/api";
 import { formatAmount } from "../../utils/dashboard/formatters";
 import { HubSpotIntegrationView } from "./HubSpotIntegrationView";
+import { PulseSettingsView } from "./PulseSettingsView";
 
-type SettingsTab = "hubspot" | "ai" | "targets";
+type SettingsTab = "hubspot" | "ai" | "targets" | "pulse";
 
 type HubSpotSettingsProps = {
   disconnectLoading: boolean;
@@ -34,6 +35,7 @@ type HubSpotSettingsProps = {
 };
 
 type SettingsViewProps = {
+  canManagePulse?: boolean;
   hubSpot: HubSpotSettingsProps;
   orgId: string;
   owners: HubSpotOwnerOption[];
@@ -52,6 +54,7 @@ const monthLabels = Array.from({ length: 12 }, (_, index) => ({
 const getTargetKey = (hubspotOwnerId: string, targetMonth: string): string => `${hubspotOwnerId}:${targetMonth}`;
 
 export const SettingsView = ({
+  canManagePulse = false,
   hubSpot,
   orgId,
   owners,
@@ -195,6 +198,17 @@ export const SettingsView = ({
         >
           Objectifs
         </button>
+        {canManagePulse ? (
+          <button
+            aria-selected={activeSettingsTab === "pulse"}
+            className={activeSettingsTab === "pulse" ? "active" : ""}
+            onClick={() => setActiveSettingsTab("pulse")}
+            role="tab"
+            type="button"
+          >
+            Pulse
+          </button>
+        ) : null}
       </div>
 
       {activeSettingsTab === "hubspot" ? (
@@ -324,6 +338,8 @@ export const SettingsView = ({
         </div>
         </section>
       ) : null}
+
+      {activeSettingsTab === "pulse" && canManagePulse ? <PulseSettingsView /> : null}
     </section>
   );
 };

@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { formatDateTime } from "../../utils/dashboard/formatters";
 
 type HubSpotHeaderProps = {
@@ -8,6 +9,7 @@ type HubSpotHeaderProps = {
   integrationStatusLabel: string;
   isConnected: boolean;
   isRefreshing: boolean;
+  pulseSlot?: ReactNode;
   subtitle?: string;
   title?: string;
 };
@@ -20,6 +22,7 @@ export const HubSpotHeader = ({
   integrationStatusLabel,
   isConnected,
   isRefreshing,
+  pulseSlot,
   subtitle = "La queue priorisee pour savoir qui relancer, pourquoi, et avec quel angle.",
   title = "Pipeline inbox",
 }: HubSpotHeaderProps) => (
@@ -29,6 +32,7 @@ export const HubSpotHeader = ({
       <h1>{title}</h1>
       <p className="ae-subtitle">{subtitle}</p>
     </div>
+    {pulseSlot}
     <div className="ae-header-meta" aria-label="Etat HubSpot">
       <div className="ae-sync">
         <span>Integration</span>

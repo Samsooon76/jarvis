@@ -2754,6 +2754,21 @@ export const hubSpotService = {
     return fetchAssociatedIds(accessToken, "companies", companyId, "deals");
   },
 
+  // Activites commerciales (call/meeting/communication) directement associees a un deal.
+  // Sert au backfill des deals clotures, que le flux temps-reel ne relie pas.
+  async fetchDealSalesActivityIds(
+    accessToken: string,
+    dealId: string,
+  ): Promise<{ call: string[]; meeting: string[]; communication: string[] }> {
+    const [call, meeting, communication] = await Promise.all([
+      fetchAssociatedIds(accessToken, "deals", dealId, "calls"),
+      fetchAssociatedIds(accessToken, "deals", dealId, "meetings"),
+      fetchAssociatedIds(accessToken, "deals", dealId, "communications"),
+    ]);
+
+    return { call, meeting, communication };
+  },
+
   async fetchDealCount(accessToken: string): Promise<number> {
     const payload = await hubSpotFetch<HubSpotSearchResponse<Record<string, never>>>(
       "/crm/v3/objects/deals/search",

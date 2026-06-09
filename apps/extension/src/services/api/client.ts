@@ -15,12 +15,34 @@ const resolveApiBaseUrl = (): string => {
 export const API_BASE_URL = resolveApiBaseUrl();
 const API_AUTH_STORAGE_KEY = "jarvis.apiAuthToken";
 
+// Le service worker de l'extension (Jarvis Pulse) n'a pas acces au localStorage
+// de la page: on duplique le token dans chrome.storage.local quand il est disponible.
+const mirrorAuthTokenToChromeStorage = (token: string | null): void => {
+  try {
+    const chromeStorage = (globalThis as { chrome?: { storage?: { local?: { set?: (items: Record<string, unknown>) => void; remove?: (key: string) => void } } } }).chrome?.storage?.local;
+
+    if (!chromeStorage) {
+      return;
+    }
+
+    if (token) {
+      chromeStorage.set?.({ [API_AUTH_STORAGE_KEY]: token });
+    } else {
+      chromeStorage.remove?.(API_AUTH_STORAGE_KEY);
+    }
+  } catch {
+    // Hors contexte extension (dashboard web): on ignore silencieusement.
+  }
+};
+
 export const setApiAuthToken = (token: string): void => {
   window.localStorage.setItem(API_AUTH_STORAGE_KEY, token);
+  mirrorAuthTokenToChromeStorage(token);
 };
 
 export const clearApiAuthToken = (): void => {
   window.localStorage.removeItem(API_AUTH_STORAGE_KEY);
+  mirrorAuthTokenToChromeStorage(null);
 };
 
 export type ApiRequestOptions = {
@@ -106,6 +128,23 @@ export const postJson = async <T>(
 ): Promise<T> => {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: "POST",
+    headers: buildApiHeaders({
+      "Content-Type": "application/json",
+    }),
+    body: JSON.stringify(body),
+    signal: options.signal,
+  });
+
+  return parseApiResponse<T>(response);
+};
+
+export const putJson = async <T>(
+  path: string,
+  body: unknown,
+  options: ApiRequestOptions = {},
+): Promise<T> => {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: "PUT",
     headers: buildApiHeaders({
       "Content-Type": "application/json",
     }),

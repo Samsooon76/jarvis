@@ -3,7 +3,7 @@
 -- Entretien: webhook deal.propertyChange sur probabilite_de__closing.
 create table if not exists public.deal_probability_history (
   id uuid primary key default gen_random_uuid(),
-  org_id uuid not null references public.organizations (id) on delete cascade,
+  org_id uuid not null,
   hubspot_deal_id text not null,
   hubspot_owner_id text,
   probability integer not null check (probability between 0 and 100),

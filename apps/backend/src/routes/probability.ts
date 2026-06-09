@@ -2,9 +2,9 @@ import type { FastifyInstance } from "fastify";
 import type { ApiResponse } from "@jarvis/shared";
 import {
   backfillOrgProbabilityHistory,
-  getAggregatedProbabilityTimeline,
+  getDealAgeProbabilityTimeline,
   getDealProbabilityTimeline,
-  type AggregatedProbabilityTimeline,
+  type DealAgeProbabilityTimeline,
   type DealProbabilityTimeline,
 } from "../services/deal-probability.service.js";
 
@@ -12,7 +12,6 @@ type ProbabilityTimelineQuery = {
   orgId?: string;
   scope?: string;
   hubspotOwnerId?: string;
-  includeClosed?: string;
   dateFrom?: string;
   dateTo?: string;
 };
@@ -37,11 +36,9 @@ const isValidOrgId = (value: string | undefined): value is string =>
 
 const parseScope = (value: string | undefined | null): "all" | "owner" => (value === "owner" ? "owner" : "all");
 
-const parseBoolean = (value: string | undefined): boolean => value === "true" || value === "1";
-
 export const registerProbabilityRoutes = async (app: FastifyInstance): Promise<void> => {
-  // Courbe agregee (sales ou equipe) pour la section Statistiques.
-  app.get<{ Querystring: ProbabilityTimelineQuery; Reply: ApiResponse<AggregatedProbabilityTimeline> }>(
+  // Courbe agregee par age du deal (gagnes vs perdus) pour la section Statistiques.
+  app.get<{ Querystring: ProbabilityTimelineQuery; Reply: ApiResponse<DealAgeProbabilityTimeline> }>(
     "/api/probability/timeline",
     async (request, reply) => {
       const orgId = request.query.orgId;
@@ -63,12 +60,11 @@ export const registerProbabilityRoutes = async (app: FastifyInstance): Promise<v
       }
 
       try {
-        const result = await getAggregatedProbabilityTimeline(orgId, {
+        const result = await getDealAgeProbabilityTimeline(orgId, {
           scope,
           hubspotOwnerId: request.query.hubspotOwnerId?.trim() || null,
-          includeClosed: parseBoolean(request.query.includeClosed),
-          dateFrom: request.query.dateFrom ?? null,
-          dateTo: request.query.dateTo ?? null,
+          closedFrom: request.query.dateFrom ?? null,
+          closedTo: request.query.dateTo ?? null,
         });
 
         return reply.send({ success: true, data: result });

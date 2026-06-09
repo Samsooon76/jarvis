@@ -6,19 +6,23 @@ import { hubSpotService } from "./hubspot.service.js";
 export const CLOSING_PROBABILITY_PROPERTY = "probabilite_de__closing";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const WEEK_MS = 7 * DAY_MS;
 const BACKFILL_CONCURRENCY = 5;
 
-export type ProbabilityTimelinePoint = {
-  date: string;
+export type DealAgeProbabilityPoint = {
+  ageDays: number;
   averageProbability: number;
   dealCount: number;
 };
 
-export type AggregatedProbabilityTimeline = {
-  points: ProbabilityTimelinePoint[];
-  dealCount: number;
-  pointCount: number;
+export type DealAgeProbabilityTimeline = {
+  won: DealAgeProbabilityPoint[];
+  lost: DealAgeProbabilityPoint[];
+  wonDealCount: number;
+  lostDealCount: number;
+  wonAvgDurationDays: number | null;
+  lostAvgDurationDays: number | null;
+  maxAgeDays: number;
+  capped: boolean;
 };
 
 export type DealProbabilityPoint = {
@@ -37,13 +41,15 @@ export type DealProbabilityTimeline = {
   points: DealProbabilityPoint[];
 };
 
-type AggregatedTimelineOptions = {
+type DealAgeTimelineOptions = {
   scope: "all" | "owner";
   hubspotOwnerId: string | null;
-  includeClosed: boolean;
-  dateFrom: string | null;
-  dateTo: string | null;
+  // Filtre optionnel sur la date de cloture du deal.
+  closedFrom: string | null;
+  closedTo: string | null;
 };
+
+const MAX_AGE_DAYS = 365;
 
 type DealRow = {
   hubspot_deal_id: string;
@@ -239,16 +245,12 @@ const loadHistoryForDeals = async (orgId: string, dealIds: string[]): Promise<Ma
   return historyByDeal;
 };
 
-// Derniere valeur connue a l'instant t (fonction en escalier).
-const valueAsOf = (series: Array<{ t: number; p: number }> | undefined, time: number): number | null => {
-  if (!series || series.length === 0) {
-    return null;
-  }
-
+// Derniere valeur connue jusqu'a un seuil (fonction en escalier), sur une serie triee.
+const lastValueUpTo = (series: Array<{ key: number; p: number }>, threshold: number): number | null => {
   let value: number | null = null;
 
   for (const point of series) {
-    if (point.t <= time) {
+    if (point.key <= threshold) {
       value = point.p;
     } else {
       break;
@@ -258,92 +260,188 @@ const valueAsOf = (series: Array<{ t: number; p: number }> | undefined, time: nu
   return value;
 };
 
-// Courbe agregee: probabilite moyenne (escalier porte) des deals du scope, au fil du temps.
-export const getAggregatedProbabilityTimeline = async (
+type ClosedDealRow = Pick<
+  DealRow,
+  "hubspot_deal_id" | "hubspot_owner_id" | "deal_lifecycle_status" | "hubspot_created_at" | "closed_at"
+>;
+
+type DealAgeSeries = {
+  outcome: "won" | "lost";
+  totalAgeDays: number;
+  series: Array<{ key: number; p: number }>;
+};
+
+const getTerminalProbability = (outcome: "won" | "lost"): number => (outcome === "won" ? 100 : 0);
+
+const median = (values: number[]): number | null => {
+  if (values.length === 0) {
+    return null;
+  }
+
+  const sorted = [...values].sort((left, right) => left - right);
+  const middle = Math.floor(sorted.length / 2);
+
+  return sorted.length % 2 === 0 ? Math.round((sorted[middle - 1] + sorted[middle]) / 2) : sorted[middle];
+};
+
+// Courbe temporelle par age du deal (J+0, J+1...), segmentee gagnes vs perdus.
+// Chaque deal contribue des J+0; apres cloture, son verdict reel prend le relais.
+export const getDealAgeProbabilityTimeline = async (
   orgId: string,
-  options: AggregatedTimelineOptions,
-): Promise<AggregatedProbabilityTimeline> => {
-  const deals = await loadDealsForOrg(orgId, {
-    hubspotOwnerId: options.scope === "owner" ? options.hubspotOwnerId : null,
-    includeClosed: options.includeClosed,
+  options: DealAgeTimelineOptions,
+): Promise<DealAgeProbabilityTimeline> => {
+  const supabase = getSupabaseAdmin();
+  let query = supabase
+    .from("hubspot_deals")
+    .select("hubspot_deal_id, hubspot_owner_id, deal_lifecycle_status, hubspot_created_at, closed_at")
+    .eq("org_id", orgId)
+    .in("deal_lifecycle_status", ["won", "lost"]);
+
+  if (options.scope === "owner" && options.hubspotOwnerId) {
+    query = query.eq("hubspot_owner_id", options.hubspotOwnerId);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    throw new Error(`Impossible de charger les deals clotures: ${error.message}`);
+  }
+
+  const closedFrom = toTime(options.closedFrom);
+  const closedTo = toTime(options.closedTo);
+  const deals = ((data ?? []) as ClosedDealRow[]).filter((deal) => {
+    const closed = toTime(deal.closed_at);
+
+    if (closed === null) {
+      return false;
+    }
+
+    if (closedFrom !== null && (closed === null || closed < closedFrom)) {
+      return false;
+    }
+
+    // Borne haute inclusive sur la journee.
+    if (closedTo !== null && (closed === null || closed > closedTo + DAY_MS)) {
+      return false;
+    }
+
+    return true;
   });
 
+  const empty: DealAgeProbabilityTimeline = {
+    won: [],
+    lost: [],
+    wonDealCount: 0,
+    lostDealCount: 0,
+    wonAvgDurationDays: null,
+    lostAvgDurationDays: null,
+    maxAgeDays: 0,
+    capped: false,
+  };
+
   if (deals.length === 0) {
-    return { points: [], dealCount: 0, pointCount: 0 };
+    return empty;
   }
 
-  const dealIds = deals.map((deal) => deal.hubspot_deal_id);
-  const historyByDeal = await loadHistoryForDeals(orgId, dealIds);
+  const historyByDeal = await loadHistoryForDeals(
+    orgId,
+    deals.map((deal) => deal.hubspot_deal_id),
+  );
 
-  const now = Date.now();
-  const requestedStart = toTime(options.dateFrom);
-  const requestedEnd = toTime(options.dateTo);
+  const dealAges: DealAgeSeries[] = [];
 
-  // Borne basse par defaut: plus ancien point d'historique connu.
-  let earliest = Number.POSITIVE_INFINITY;
-  for (const series of historyByDeal.values()) {
-    if (series.length > 0 && series[0].t < earliest) {
-      earliest = series[0].t;
+  for (const deal of deals) {
+    const created = toTime(deal.hubspot_created_at);
+    const closed = toTime(deal.closed_at);
+
+    if (created === null || closed === null) {
+      continue;
     }
+
+    const rawSeries = historyByDeal.get(deal.hubspot_deal_id) ?? [];
+    const outcome = deal.deal_lifecycle_status === "won" ? "won" : "lost";
+    const totalAgeDays = Math.max(0, Math.floor((closed - created) / DAY_MS));
+
+    const historySeries = rawSeries
+      .filter((point) => point.t <= closed)
+      .map((point) => ({
+        key: Math.max(0, Math.floor((point.t - created) / DAY_MS)),
+        p: point.p,
+      }));
+
+    if (historySeries.length === 0) {
+      continue;
+    }
+
+    const firstKnownProbability = historySeries[0]?.p ?? getTerminalProbability(outcome);
+    const series = [{ key: 0, p: firstKnownProbability }, ...historySeries, { key: totalAgeDays, p: getTerminalProbability(outcome) }];
+
+    series.sort((left, right) => left.key - right.key);
+
+    dealAges.push({
+      outcome,
+      totalAgeDays,
+      series,
+    });
   }
 
-  if (!Number.isFinite(earliest)) {
-    return { points: [], dealCount: deals.length, pointCount: 0 };
+  if (dealAges.length === 0) {
+    return empty;
   }
 
-  const start = requestedStart ?? earliest;
-  const end = Math.min(requestedEnd ?? now, now);
+  const averageDuration = (outcome: "won" | "lost"): number | null => {
+    const durations = dealAges.filter((deal) => deal.outcome === outcome).map((deal) => deal.totalAgeDays);
 
-  if (start > end) {
-    return { points: [], dealCount: deals.length, pointCount: 0 };
-  }
+    return durations.length > 0 ? Math.round(durations.reduce((sum, value) => sum + value, 0) / durations.length) : null;
+  };
+  const wonAvgDurationDays = averageDuration("won");
+  const lostAvgDurationDays = averageDuration("lost");
+  const averageDurations = [wonAvgDurationDays, lostAvgDurationDays].filter((value): value is number => value !== null);
+  const maxDurationDays = Math.max(...dealAges.map((deal) => deal.totalAgeDays));
+  const axisMaxDays = Math.max(1, Math.min(Math.max(...averageDurations, 1), MAX_AGE_DAYS));
+  const capped = maxDurationDays > axisMaxDays;
 
-  const dealMeta = deals.map((deal) => ({
-    id: deal.hubspot_deal_id,
-    createdAt: toTime(deal.hubspot_created_at),
-    closedAt: deal.deal_lifecycle_status === "pending" ? null : toTime(deal.closed_at),
-  }));
+  const buildPoints = (outcome: "won" | "lost"): DealAgeProbabilityPoint[] => {
+    const subset = dealAges.filter((deal) => deal.outcome === outcome);
+    const points: DealAgeProbabilityPoint[] = [];
 
-  const points: ProbabilityTimelinePoint[] = [];
-  // Echantillonnage hebdomadaire + point final exact sur la borne haute.
-  for (let cursor = start; cursor <= end; cursor += WEEK_MS) {
-    const bucketTime = cursor + WEEK_MS > end ? end : cursor;
-    let sum = 0;
-    let count = 0;
+    for (let ageDays = 0; ageDays <= axisMaxDays; ageDays += 1) {
+      const values: number[] = [];
 
-    for (const deal of dealMeta) {
-      if (deal.createdAt !== null && deal.createdAt > bucketTime) {
-        continue;
+      for (const deal of subset) {
+        const value = lastValueUpTo(deal.series, ageDays);
+
+        if (value === null) {
+          continue;
+        }
+
+        values.push(value);
       }
 
-      if (deal.closedAt !== null && deal.closedAt < bucketTime) {
-        continue;
+      const probability = median(values);
+
+      if (probability !== null) {
+        points.push({
+          ageDays,
+          averageProbability: probability,
+          dealCount: values.length,
+        });
       }
-
-      const value = valueAsOf(historyByDeal.get(deal.id), bucketTime);
-
-      if (value === null) {
-        continue;
-      }
-
-      sum += value;
-      count += 1;
     }
 
-    if (count > 0) {
-      points.push({
-        date: new Date(bucketTime).toISOString(),
-        averageProbability: Math.round(sum / count),
-        dealCount: count,
-      });
-    }
+    return points;
+  };
 
-    if (bucketTime === end) {
-      break;
-    }
-  }
-
-  return { points, dealCount: deals.length, pointCount: points.length };
+  return {
+    won: buildPoints("won"),
+    lost: buildPoints("lost"),
+    wonDealCount: dealAges.filter((deal) => deal.outcome === "won").length,
+    lostDealCount: dealAges.filter((deal) => deal.outcome === "lost").length,
+    wonAvgDurationDays,
+    lostAvgDurationDays,
+    maxAgeDays: axisMaxDays,
+    capped,
+  };
 };
 
 // Courbe d'un deal precis: trajectoire de sa probabilite sur sa vie.

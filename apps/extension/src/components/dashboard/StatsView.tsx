@@ -7,6 +7,7 @@ import { ForecastChart } from "./charts/ForecastChart";
 import { StageFunnelChart } from "./charts/StageFunnelChart";
 import { MetricIcon } from "./MetricIcon";
 import { ProbabilityTimelinePanel } from "./ProbabilityTimelinePanel";
+import { SalesActivityStatsPanel } from "./SalesActivityStatsPanel";
 import type { ForecastChartViewModel, MetricCard, StageChartViewModel } from "./types";
 import type { HubSpotOwnerOption } from "../../services/api";
 
@@ -139,6 +140,14 @@ export const StatsView = ({
       </section>
       <section className="ae-dashboard-grid" aria-label="Probabilite de closing">
         <ProbabilityTimelinePanel
+          orgId={orgId}
+          owners={owners}
+          selectedOwnerId={selectedOwnerId}
+          canViewTeamForecast={canViewTeamForecast}
+        />
+      </section>
+      <section className="ae-dashboard-grid" aria-label="Activites commerciales">
+        <SalesActivityStatsPanel
           orgId={orgId}
           owners={owners}
           selectedOwnerId={selectedOwnerId}
