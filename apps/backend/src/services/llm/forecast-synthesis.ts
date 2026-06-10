@@ -190,6 +190,7 @@ export const buildForecastSynthesisPrompt = ({
   objectiveAmount,
   gapToObjective,
   today,
+  winBenchmarkSummary,
 }: AnalyzeForecastSynthesisInput): string => `Tu es Jarvis, un analyste revenue operations B2B. Tu fais la synthese forecast d'un portefeuille de deals ouverts deja analyses individuellement par l'IA.
 
 Reponds uniquement en JSON valide avec ce schema exact:
@@ -240,7 +241,7 @@ Contexte de la periode:
 - Atterrissage pondere actuel: ${landingAmount}
 - Objectif: ${objectiveAmount ?? "non defini"}
 - Gap a l'objectif: ${gapToObjective ?? "non defini"}
-
+${winBenchmarkSummary ? `\nBenchmark des deals gagnes (patterns de victoire observes, a utiliser pour juger l'avancement des deals):\n${winBenchmarkSummary}\n` : ""}
 Deals ouverts analyses (un par ligne):
 ${dealsSummary}`;
 

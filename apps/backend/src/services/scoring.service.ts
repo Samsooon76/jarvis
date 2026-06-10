@@ -17,6 +17,10 @@ export type ScoringInput = {
   companyIndustry?: string | null;
   companyDomain?: string | null;
   dealName?: string | null;
+  // Boucle Win Analysis: nombre de gaps d'activite vs le benchmark des deals
+  // gagnes (deal en retard d'activite vs pattern gagnant -> remonte la queue).
+  // Fourni uniquement quand le benchmark est significatif (>= 10 wins).
+  winActivityGapCount?: number | null;
 };
 
 export type ScoringOutput = {
@@ -166,7 +170,8 @@ export const scoreProspect = (input: ScoringInput): ScoringOutput => {
           ? 4
           : 0;
   const fitScore = (input.companyIndustry ? 2 : 0) + (input.companyDomain ? 2 : 0);
-  const rawScore = daysSinceLastContact * 2 + amountScore + probabilityScore + closeDateScore + employeeScore + revenueScore + lifecycleScore + fitScore;
+  const winGapScore = Math.min(12, Math.max(0, input.winActivityGapCount ?? 0) * 4);
+  const rawScore = daysSinceLastContact * 2 + amountScore + probabilityScore + closeDateScore + employeeScore + revenueScore + lifecycleScore + fitScore + winGapScore;
   const aiPriorityScore = isCurrentlySnoozed ? 0 : Math.max(0, Math.round(rawScore * 100) / 100);
 
   return {

@@ -3,6 +3,7 @@ import { env } from "../config/env.js";
 import { getSupabaseAdmin } from "../db/client.js";
 import type { Json } from "../db/database.types.js";
 import { scoreProspect } from "./scoring.service.js";
+import { computeWinActivityGapCounts } from "./win-analysis.service.js";
 
 type QueueUserRow = {
   id: string;
@@ -66,10 +67,11 @@ const readRawString = (rawData: Json, key: string): string | null => {
   return typeof value === "string" && value.trim() ? value : null;
 };
 
-const mapQueueProspect = (prospect: QueueProspectRow): QueueProspect => {
+const mapQueueProspect = (prospect: QueueProspectRow, winActivityGapCount: number | null = null): QueueProspect => {
   const dealName = readRawString(prospect.raw_data, "dealName");
   const closeDate = readRawString(prospect.raw_data, "closedAt") ?? readRawString(prospect.raw_data, "closeDate");
   const scoring = scoreProspect({
+    winActivityGapCount,
     dealAmount: prospect.deal_amount,
     closeProbability: prospect.close_probability,
     dealStage: prospect.deal_stage,
@@ -153,7 +155,16 @@ export const getUserQueue = async (userId: string): Promise<{ payload: QueueData
     throw new Error(`Impossible de charger la queue depuis Supabase: ${prospectsError.message}`);
   }
 
-  const queueProspects = ((prospects ?? []) as QueueProspectRow[]).map(mapQueueProspect);
+  const prospectRows = (prospects ?? []) as QueueProspectRow[];
+  // Boucle Win Analysis: les deals en retard d'activite vs le pattern gagnant
+  // remontent dans la queue. Best-effort (map vide si benchmark non significatif).
+  const winGapCounts = await computeWinActivityGapCounts(
+    queueUser.org_id,
+    prospectRows.map((prospect) => prospect.hubspot_deal_id).filter((value): value is string => Boolean(value)),
+  );
+  const queueProspects = prospectRows.map((prospect) =>
+    mapQueueProspect(prospect, prospect.hubspot_deal_id ? winGapCounts.get(prospect.hubspot_deal_id) ?? null : null),
+  );
   const payload: QueueData = {
     userId: queueUser.id,
     generatedAt: nowIso,

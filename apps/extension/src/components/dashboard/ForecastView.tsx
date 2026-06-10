@@ -17,6 +17,7 @@ import {
   type ForecastSynthesisDeal,
 } from "../../services/api";
 import { formatAmount, formatDate, formatDateTime } from "../../utils/dashboard/formatters";
+import { ForecastAccuracyPanel } from "./ForecastAccuracyPanel";
 import type { HubSpotOwnerOption } from "../../services/api";
 
 type ForecastViewProps = {
@@ -28,7 +29,7 @@ type ForecastViewProps = {
   canViewTeamForecast?: boolean;
 };
 
-type ForecastTab = "overview" | "synthesis" | "vs";
+type ForecastTab = "overview" | "synthesis" | "vs" | "accuracy";
 
 const FORECAST_SYNTHESIS_CATEGORY_ORDER: ForecastSynthesisCategory[] = ["commit", "bestCase", "atRisk", "slipping"];
 
@@ -610,6 +611,11 @@ export const ForecastView = ({
         <button className={activeTab === "vs" ? "active" : ""} onClick={() => setActiveTab("vs")} type="button">
           CRM vs IA
         </button>
+        {canViewTeamForecast ? (
+          <button className={activeTab === "accuracy" ? "active" : ""} onClick={() => setActiveTab("accuracy")} type="button">
+            Fiabilite
+          </button>
+        ) : null}
       </div>
 
       {error ? <p className="ae-admin-feedback error">{error}</p> : null}
@@ -886,6 +892,8 @@ export const ForecastView = ({
             </div>
           </article>
         </>
+      ) : activeTab === "accuracy" ? (
+        <ForecastAccuracyPanel />
       ) : activeTab === "synthesis" ? (
         <>
           <article className="ae-forecast-banner">

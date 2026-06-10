@@ -20,6 +20,21 @@ const DealAnalysisView = lazy(async () => {
 
   return { default: module.DealAnalysisView };
 });
+const WinAnalysisView = lazy(async () => {
+  const module = await import("./dashboard/WinAnalysisView");
+
+  return { default: module.WinAnalysisView };
+});
+const CoachingView = lazy(async () => {
+  const module = await import("./dashboard/CoachingView");
+
+  return { default: module.CoachingView };
+});
+const DigestView = lazy(async () => {
+  const module = await import("./dashboard/DigestView");
+
+  return { default: module.DigestView };
+});
 const ForecastView = lazy(async () => {
   const module = await import("./dashboard/ForecastView");
 
@@ -91,6 +106,21 @@ const workspaceCopy = {
     eyebrow: "Deal workspace",
     title: "Deal analysis",
     subtitle: "Analyse approfondie d'un deal, separee de la queue operationnelle.",
+  },
+  winAnalysis: {
+    eyebrow: "Revenue workspace",
+    title: "Win Analysis",
+    subtitle: "Comprendre pourquoi les deals sont gagnes et repliquer les patterns de victoire.",
+  },
+  coaching: {
+    eyebrow: "Manager workspace",
+    title: "Coaching IA",
+    subtitle: "Profil de chaque commercial: forces, axes de progression et actions de coaching pour le 1:1.",
+  },
+  digest: {
+    eyebrow: "Manager workspace",
+    title: "Digest",
+    subtitle: "Ce qui a bouge sur votre perimetre: mouvements cles, deals a risque et coups de main a donner.",
   },
   forecast: {
     eyebrow: "Revenue workspace",
@@ -303,7 +333,12 @@ export const QueueView = ({
 
   return (
     <main className="ae-inbox">
-      <Sidebar activeView={dashboard.activeView} onSignOut={onSignOut} onViewChange={dashboard.setActiveView} />
+      <Sidebar
+        activeView={dashboard.activeView}
+        onSignOut={onSignOut}
+        onViewChange={dashboard.setActiveView}
+        showDigest={canViewTeamForecast}
+      />
       <section className="ae-main-panel">
         {dashboard.activeView !== "tasks" ? (
           <>
@@ -399,6 +434,42 @@ export const QueueView = ({
               selectedAiProvider={dashboard.selectedAiProvider}
               selectedOwnerId={selectedOwnerId}
             />
+          ) : null}
+
+          {dashboard.activeView === "winAnalysis" ? (
+            canViewTeamForecast ? (
+              <WinAnalysisView orgId={orgId} />
+            ) : (
+              <section className="ae-view-panel">
+                <p className="ae-empty">La win analysis est reservee aux administrateurs et managers.</p>
+              </section>
+            )
+          ) : null}
+
+          {dashboard.activeView === "coaching" ? (
+            canViewTeamForecast ? (
+              <CoachingView />
+            ) : (
+              <section className="ae-view-panel">
+                <p className="ae-empty">Le coaching IA est reserve aux administrateurs et managers.</p>
+              </section>
+            )
+          ) : null}
+
+          {dashboard.activeView === "digest" ? (
+            canViewTeamForecast ? (
+              <DigestView
+                prospects={prospects}
+                onOpenDealAnalysis={(prospectId) => {
+                  dashboard.setActiveProspectId(prospectId);
+                  dashboard.setActiveView("dealAnalysis");
+                }}
+              />
+            ) : (
+              <section className="ae-view-panel">
+                <p className="ae-empty">Le digest est reserve aux administrateurs et managers.</p>
+              </section>
+            )
           ) : null}
 
           {dashboard.activeView === "forecast" ? (

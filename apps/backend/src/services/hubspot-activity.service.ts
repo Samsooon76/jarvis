@@ -19,6 +19,7 @@ import {
 } from "./hubspot-realtime-queue.service.js";
 import { loadHubSpotRealtimeOwnerIds } from "./hubspot-owner-scope.service.js";
 import { generatePulseNotificationsForDealWebhookEvent } from "./pulse.service.js";
+import { resolveForecastSnapshotsForDeal } from "./forecast-snapshot.service.js";
 
 type HubSpotWebhookEventRow = {
   id: string;
@@ -948,6 +949,17 @@ const processHubSpotWebhookEvent = async (eventId: string): Promise<void> => {
         event.property_value,
         event.occurred_at,
       );
+
+      // Forecast vs realite: un changement de stage peut clore le deal -> on fige
+      // l'outcome sur les snapshots. Best-effort, ne bloque jamais le pipeline.
+      if (event.property_name === "dealstage") {
+        try {
+          await resolveForecastSnapshotsForDeal(event.org_id, eligibleDealId);
+        } catch (snapshotError) {
+          void captureServerError(snapshotError, { scope: "forecast-snapshots", eventId: event.id });
+        }
+      }
+
       await scheduleDealReanalysis(event.org_id, eligibleDealId, event.id, "Changement HubSpot sur le deal");
       await updateWebhookEventStatus(event.id, "completed");
       return;

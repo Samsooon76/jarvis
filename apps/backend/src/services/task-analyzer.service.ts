@@ -8,6 +8,7 @@ import { buildBusinessDueAtFromDays } from "./business-days.js";
 import { createLlmProvider } from "./llm/provider.factory.js";
 import { resolveLlmProviderPreference } from "./llm/provider-preference.service.js";
 import type { AnalyzeTaskInput, TaskAnalysis } from "./llm/llm.provider.js";
+import { buildWinBenchmarkSummaryForPrompt } from "./win-analysis.service.js";
 
 type AnalyzeTaskOptions = {
   orgId: string;
@@ -605,6 +606,9 @@ export const analyzeHubSpotTask = async ({
     lastContactAt: prospect?.last_contact_at ?? null,
     nextAction: prospect?.next_action ?? null,
     history,
+    // Boucle Win Analysis: benchmark wins dans le prompt; le hash d'input change
+    // quand le benchmark evolue -> invalidation de cache naturelle.
+    winBenchmarkSummary: hubspotDealId ? await buildWinBenchmarkSummaryForPrompt(orgId) : null,
   };
   const inputHash = hashInput(input);
   const supabase = getSupabaseAdmin();

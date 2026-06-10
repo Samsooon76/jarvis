@@ -94,6 +94,7 @@ export const buildTaskAnalysisPrompt = ({
   lastContactAt,
   nextAction,
   history,
+  winBenchmarkSummary,
 }: AnalyzeTaskInput): string => `Tu es Jarvis, un sales copilot B2B. Analyse cette tache CRM et reponds uniquement en JSON valide.
 
 Schema JSON exact:
@@ -145,7 +146,7 @@ Contexte:
 - Probabilite close: ${closeProbability ?? "inconnue"}
 - Dernier contact connu: ${lastContactAt ?? "inconnu"}
 - Prochaine action Jarvis: ${nextAction ?? "aucune"}
-
+${winBenchmarkSummary ? `\nBenchmark des deals gagnes (pour situer ce deal vs le pattern gagnant):\n${winBenchmarkSummary}\n` : ""}
 Historique commercial utile:
 ${history?.trim() || "non disponible"}`;
 

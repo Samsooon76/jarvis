@@ -34,6 +34,7 @@ import { formatAmount, formatDate, formatDateTime } from "../../utils/dashboard/
 import { getInitials } from "../../utils/dashboard/prospects";
 import { MetricIcon } from "./MetricIcon";
 import { DealProbabilityHistoryPanel } from "./DealProbabilityHistoryPanel";
+import { WinGapsCard } from "./WinGapsCard";
 
 type DealAnalysisViewProps = {
   activeProspect: QueueProspect | null;
@@ -1564,6 +1565,10 @@ export const DealAnalysisView = ({
         <p className="ae-detail-success">
           {taskResult.created ? "Task HubSpot creee." : taskResult.recommendation.rationale}
         </p>
+      ) : null}
+
+      {activeProspect.hubspotDealId ? (
+        <WinGapsCard hubspotDealId={activeProspect.hubspotDealId} orgId={orgId} />
       ) : null}
 
       {page && snapshot && analysis ? (

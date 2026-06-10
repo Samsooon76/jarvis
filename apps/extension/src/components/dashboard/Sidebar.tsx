@@ -7,7 +7,10 @@ import {
   LayoutDashboard,
   ListFilter,
   ListTodo,
+  GraduationCap,
   LogOut,
+  Trophy,
+  Newspaper,
   Settings,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -17,17 +20,21 @@ type SidebarProps = {
   activeView: WorkspaceView;
   onSignOut?: () => void | Promise<void>;
   onViewChange: (view: WorkspaceView) => void;
+  showDigest?: boolean;
 };
 
 const viewIcons: Record<WorkspaceView, LucideIcon> = {
   closeLostAnalysis: CircleX,
+  coaching: GraduationCap,
   dealAnalysis: ChartNoAxesCombined,
+  digest: Newspaper,
   forecast: ChartNoAxesCombined,
   leads: ListFilter,
   overview: LayoutDashboard,
   settings: Settings,
   stats: BarChart3,
   tasks: ListTodo,
+  winAnalysis: Trophy,
 };
 
 type SidebarNavItem =
@@ -45,14 +52,17 @@ type SidebarNavItem =
 const sidebarNavItems: SidebarNavItem[] = [
   { type: "view", id: "overview", label: "Overview" },
   { type: "view", id: "forecast", label: "Forecast IA" },
+  { type: "view", id: "digest", label: "Digest" },
+  { type: "view", id: "coaching", label: "Coaching IA" },
   { type: "view", id: "leads", label: "Leads" },
   { type: "view", id: "closeLostAnalysis", label: "Close Lost Analysis" },
+  { type: "view", id: "winAnalysis", label: "Win Analysis" },
   { type: "view", id: "stats", label: "Statistiques" },
   { type: "view", id: "tasks", label: "Taches" },
   { type: "view", id: "settings", label: "Parametres" },
 ];
 
-export const Sidebar = ({ activeView, onSignOut, onViewChange }: SidebarProps) => (
+export const Sidebar = ({ activeView, onSignOut, onViewChange, showDigest = false }: SidebarProps) => (
   <aside className="ae-sidebar" aria-label="Workspace navigation">
     <div className="ae-sidebar-header">
       <div className="ae-sidebar-brand">
@@ -75,6 +85,16 @@ export const Sidebar = ({ activeView, onSignOut, onViewChange }: SidebarProps) =
     </div>
     <nav className="ae-sidebar-nav">
       {sidebarNavItems.map((item) => {
+        // Le digest, le coaching et la win analysis sont reserves aux
+        // admins/managers: on masque ces entrees pour les sales.
+        if (
+          item.type === "view" &&
+          (item.id === "digest" || item.id === "coaching" || item.id === "winAnalysis") &&
+          !showDigest
+        ) {
+          return null;
+        }
+
         if (item.type === "section") {
           return (
             <span className="ae-sidebar-section" key={item.id}>

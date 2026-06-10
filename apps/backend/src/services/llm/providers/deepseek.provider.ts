@@ -4,12 +4,18 @@ import type {
   AnalyzeDealActivityPlanInput,
   AnalyzeCloseLostDealInput,
   AnalyzeCloseLostPortfolioInput,
+  AnalyzeCloseWonDealInput,
+  AnalyzeCloseWonPortfolioInput,
   AnalyzeDealIntelligenceInput,
   AnalyzeDealQualificationInput,
   AnalyzeForecastSynthesisInput,
+  AnalyzeManagerDigestInput,
+  AnalyzeRepCoachingInput,
   AnalyzeTaskInput,
   CloseLostDealAnalysis,
   CloseLostPortfolioAnalysis,
+  CloseWonDealAnalysis,
+  CloseWonPortfolioAnalysis,
   DealActivityPlanAnalysis,
   DealFullAnalysis,
   DealHistoryAnalysis,
@@ -20,7 +26,9 @@ import type {
   FollowUpTaskRecommendation,
   LeadContactRankingAnalysis,
   LlmProvider,
+  ManagerDigestAnalysis,
   RankLeadContactsInput,
+  RepCoachingAnalysis,
   RecommendFollowUpTaskInput,
   TaskAnalysis,
 } from "../llm.provider.js";
@@ -33,6 +41,14 @@ import {
   parseCloseLostPortfolioAnalysis,
 } from "../close-lost.js";
 import { buildForecastSynthesisPrompt, parseForecastSynthesisAnalysis } from "../forecast-synthesis.js";
+import {
+  buildCloseWonDealPrompt,
+  buildCloseWonPortfolioPrompt,
+  parseCloseWonDealAnalysis,
+  parseCloseWonPortfolioAnalysis,
+} from "../close-won.js";
+import { buildManagerDigestPrompt, parseManagerDigestAnalysis } from "../manager-digest.js";
+import { buildRepCoachingPrompt, parseRepCoachingAnalysis } from "../rep-coaching.js";
 import { buildDealQualificationPrompt, parseDealQualification } from "../qualification.js";
 import { buildTaskAnalysisPrompt, parseTaskAnalysis } from "../task-analysis.js";
 
@@ -506,12 +522,32 @@ export class DeepSeekProvider implements LlmProvider {
     );
   }
 
+  async analyzeCloseWonDeal(input: AnalyzeCloseWonDealInput): Promise<CloseWonDealAnalysis> {
+    return parseCloseWonDealAnalysis(await this.completeJson(buildCloseWonDealPrompt(input), 3_800), "DeepSeek");
+  }
+
+  async analyzeCloseWonPortfolio(input: AnalyzeCloseWonPortfolioInput): Promise<CloseWonPortfolioAnalysis> {
+    return parseCloseWonPortfolioAnalysis(await this.completeJson(buildCloseWonPortfolioPrompt(input), 2_800), "DeepSeek");
+  }
+
   async analyzeForecastSynthesis(input: AnalyzeForecastSynthesisInput): Promise<ForecastSynthesisAnalysis> {
     return parseForecastSynthesisAnalysis(
       await this.completeJson(buildForecastSynthesisPrompt(input), 3_500),
       input.knownDealIds,
       "DeepSeek",
     );
+  }
+
+  async analyzeManagerDigest(input: AnalyzeManagerDigestInput): Promise<ManagerDigestAnalysis> {
+    return parseManagerDigestAnalysis(
+      await this.completeJson(buildManagerDigestPrompt(input), 2_800),
+      input.knownDealIds,
+      "DeepSeek",
+    );
+  }
+
+  async analyzeRepCoaching(input: AnalyzeRepCoachingInput): Promise<RepCoachingAnalysis> {
+    return parseRepCoachingAnalysis(await this.completeJson(buildRepCoachingPrompt(input), 2_800), "DeepSeek");
   }
 
   async recommendFollowUpTask(input: RecommendFollowUpTaskInput): Promise<FollowUpTaskRecommendation> {

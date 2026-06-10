@@ -10,6 +10,7 @@ import type {
   ForecastSynthesisCategory,
 } from "./llm/llm.provider.js";
 import { getObjectiveAmountForForecast } from "./sales-targets.service.js";
+import { buildWinBenchmarkSummaryForPrompt } from "./win-analysis.service.js";
 
 export type ForecastScope = "all" | "owner";
 export type ForecastAnalysisStatus = "fresh" | "stale" | "missing" | "closed_won";
@@ -1335,7 +1336,11 @@ const runForecastSynthesis = async (
     return null;
   }
 
+  // Boucle Win Analysis: benchmark des deals gagnes injecte dans le prompt
+  // (0 LLM supplementaire; null si le benchmark n'est pas significatif).
+  const winBenchmarkSummary = await buildWinBenchmarkSummaryForPrompt(overview.orgId);
   const analysis = await provider.analyzeForecastSynthesis({
+    winBenchmarkSummary,
     dealsSummary: buildSynthesisDealsSummary(analyzedOpenDeals),
     knownDealIds: analyzedOpenDeals.map((deal) => deal.hubspotDealId),
     dateFrom: overview.dateFrom,

@@ -192,6 +192,44 @@ export type CloseLostDealAnalysis = {
   confidence: "low" | "medium" | "high";
 };
 
+export type CloseWonFactorCategory =
+  | "champion"
+  | "timing"
+  | "product_fit"
+  | "pricing"
+  | "process"
+  | "relationship"
+  | "other";
+
+export type CloseWonKeyMoment = {
+  moment: string;
+  stage: string | null;
+  impact: string;
+};
+
+export type CloseWonReplicablePlay = {
+  play: string;
+  when: string;
+};
+
+export type CloseWonDealAnalysis = {
+  summary: string;
+  primaryWinFactor: string;
+  winFactorCategory: CloseWonFactorCategory;
+  keyMoments: CloseWonKeyMoment[];
+  replicablePlays: CloseWonReplicablePlay[];
+  confidence: "low" | "medium" | "high";
+};
+
+export type CloseWonPortfolioAnalysis = {
+  keyInsight: string;
+  executiveSummary: string;
+  winningPatterns: string[];
+  idealSequence: string[];
+  recommendations: CloseLostPortfolioRecommendation[];
+  confidence: "low" | "medium" | "high";
+};
+
 export type CloseLostPortfolioFactor = {
   title: string;
   impact: "low" | "medium" | "high";
@@ -235,6 +273,90 @@ export type ForecastSynthesisAnalysis = {
   confidence: "low" | "medium" | "high";
   dealVerdicts: ForecastSynthesisDealVerdict[];
   actionPlan: ForecastSynthesisAction[];
+};
+
+export type ManagerDigestHighlightType = "win" | "risk" | "movement";
+
+export type ManagerDigestHighlight = {
+  type: ManagerDigestHighlightType;
+  dealId: string | null;
+  text: string;
+};
+
+export type ManagerDigestAtRiskDeal = {
+  dealId: string;
+  dealName: string;
+  reason: string;
+  suggestedAction: string;
+};
+
+export type ManagerDigestAssistDeal = {
+  dealId: string;
+  dealName: string;
+  whyHelp: string;
+  coachingHint: string;
+};
+
+export type ManagerDigestAnalysis = {
+  headline: string;
+  highlights: ManagerDigestHighlight[];
+  atRiskDeals: ManagerDigestAtRiskDeal[];
+  assistDeals: ManagerDigestAssistDeal[];
+  teamPulse: string;
+  confidence: "low" | "medium" | "high";
+};
+
+export type AnalyzeManagerDigestInput = {
+  movementsSummary: string;
+  atRiskSummary: string;
+  kpisSummary: string;
+  period: "daily" | "weekly";
+  dateFrom: string;
+  dateTo: string;
+  teamScopeLabel: string;
+  knownDealIds: string[];
+};
+
+export type RepCoachingStrength = {
+  title: string;
+  evidence: string;
+};
+
+export type RepCoachingWeakness = {
+  title: string;
+  evidence: string;
+  stage: string | null;
+};
+
+export type RepCoachingLossPattern = {
+  pattern: string;
+  frequency: "rare" | "recurrent" | "systematic";
+};
+
+export type RepCoachingAction = {
+  action: string;
+  priority: "high" | "medium";
+  expectedImpact: string;
+};
+
+export type RepCoachingAnalysis = {
+  headline: string;
+  strengths: RepCoachingStrength[];
+  weaknesses: RepCoachingWeakness[];
+  lossPatterns: RepCoachingLossPattern[];
+  coachingActions: RepCoachingAction[];
+  trend: "improving" | "stable" | "declining";
+  confidence: "low" | "medium" | "high";
+};
+
+export type AnalyzeRepCoachingInput = {
+  repName: string;
+  statsSummary: string;
+  lossPatternsSummary: string;
+  forecastVerdictsSummary: string;
+  teamBenchmarkSummary: string;
+  dateFrom: string;
+  dateTo: string;
 };
 
 export type AnalyzeDealHistoryInput = {
@@ -319,6 +441,7 @@ export type AnalyzeTaskInput = {
   lastContactAt?: string | null;
   nextAction?: string | null;
   history?: string | null;
+  winBenchmarkSummary?: string | null;
 };
 
 export type LeadContactRankingContactInput = {
@@ -388,6 +511,18 @@ export type AnalyzeCloseLostDealInput = {
   today?: string | null;
 };
 
+export type AnalyzeCloseWonDealInput = AnalyzeCloseLostDealInput;
+
+export type AnalyzeCloseWonPortfolioInput = {
+  dealsSummary: string;
+  dateFrom: string;
+  dateTo: string;
+  scopeLabel: string;
+  wonDealCount: number;
+  totalWonValue: number;
+  analyzedDealCount: number;
+};
+
 export type AnalyzeCloseLostPortfolioInput = {
   dealsSummary: string;
   dateFrom: string;
@@ -411,6 +546,9 @@ export type AnalyzeForecastSynthesisInput = {
   objectiveAmount: number | null;
   gapToObjective: number | null;
   today: string;
+  // Boucle Win Analysis: 2-3 lignes de benchmark des deals gagnes (0 LLM),
+  // injectees dans le prompt quand le benchmark est significatif.
+  winBenchmarkSummary?: string | null;
 };
 
 export interface LlmProvider {
@@ -423,7 +561,11 @@ export interface LlmProvider {
   analyzeDealActivityPlan(input: AnalyzeDealActivityPlanInput): Promise<DealActivityPlanAnalysis>;
   analyzeCloseLostDeal(input: AnalyzeCloseLostDealInput): Promise<CloseLostDealAnalysis>;
   analyzeCloseLostPortfolio(input: AnalyzeCloseLostPortfolioInput): Promise<CloseLostPortfolioAnalysis>;
+  analyzeCloseWonDeal(input: AnalyzeCloseWonDealInput): Promise<CloseWonDealAnalysis>;
+  analyzeCloseWonPortfolio(input: AnalyzeCloseWonPortfolioInput): Promise<CloseWonPortfolioAnalysis>;
   analyzeForecastSynthesis(input: AnalyzeForecastSynthesisInput): Promise<ForecastSynthesisAnalysis>;
+  analyzeManagerDigest(input: AnalyzeManagerDigestInput): Promise<ManagerDigestAnalysis>;
+  analyzeRepCoaching(input: AnalyzeRepCoachingInput): Promise<RepCoachingAnalysis>;
   recommendFollowUpTask(input: RecommendFollowUpTaskInput): Promise<FollowUpTaskRecommendation>;
   analyzeTask(input: AnalyzeTaskInput): Promise<TaskAnalysis>;
   rankLeadContacts(input: RankLeadContactsInput): Promise<LeadContactRankingAnalysis>;
