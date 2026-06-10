@@ -20,7 +20,7 @@ type ActivityPeriodMode = "all" | "year" | "last3" | "last6" | "last12" | "month
 
 type PeriodBounds = { dateFrom: string | null; dateTo: string | null };
 
-const ACTIVITY_YEARS = ["2026", "2025", "2024", "2023"];
+const ACTIVITY_YEARS = Array.from({ length: 4 }, (_, index) => String(new Date().getFullYear() - index));
 
 const ACTIVITY_LABELS: Record<SalesActivityType, string> = {
   call: "Appels",
@@ -139,7 +139,7 @@ export const SalesActivityStatsPanel = ({
   const [ownerId, setOwnerId] = useState(selectedOwnerId ?? "");
   const [periodMode, setPeriodMode] = useState<ActivityPeriodMode>("year");
   const [monthValue, setMonthValue] = useState<string>(getCurrentMonthValue());
-  const [yearValue, setYearValue] = useState<string>("2025");
+  const [yearValue, setYearValue] = useState<string>(String(new Date().getFullYear()));
   const [stats, setStats] = useState<SalesActivityStats | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isBackfilling, setIsBackfilling] = useState(false);

@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { ApiResponse } from "@jarvis/shared";
+import { assertManagerOrAdmin, assertOrgAccess, assertOwnerScope } from "../services/app-auth.service.js";
 import {
   analyzeCloseLostDeal,
   createCloseLostAnalysisRun,
@@ -83,6 +84,22 @@ const normalizeStringArray = (value: string[] | undefined): string[] =>
     ? Array.from(new Set(value.map((item) => item.trim()).filter(Boolean)))
     : [];
 
+const assertCloseLostScopeAccess = (
+  request: Parameters<typeof assertOrgAccess>[0],
+  orgId: string,
+  scope: CloseLostScope,
+  hubspotOwnerId: string | null | undefined,
+): void => {
+  assertOrgAccess(request, orgId);
+
+  if (scope === "sales_ae") {
+    assertManagerOrAdmin(request);
+    return;
+  }
+
+  assertOwnerScope(request, hubspotOwnerId ?? null);
+};
+
 export const registerCloseLostAnalysisRoutes = async (app: FastifyInstance): Promise<void> => {
   app.get<{ Querystring: CloseLostOverviewQuery; Reply: ApiResponse<CloseLostOverviewResult> }>(
     "/api/close-lost-analysis/overview",
@@ -106,6 +123,7 @@ export const registerCloseLostAnalysisRoutes = async (app: FastifyInstance): Pro
       }
 
       try {
+        assertCloseLostScopeAccess(request, orgId, scope, request.query.hubspotOwnerId ?? null);
         const result = await getCloseLostOverview({
           orgId,
           scope,
@@ -161,6 +179,7 @@ export const registerCloseLostAnalysisRoutes = async (app: FastifyInstance): Pro
       }
 
       try {
+        assertCloseLostScopeAccess(request, orgId, scope, request.body.hubspotOwnerId ?? null);
         const run = await createCloseLostAnalysisRun({
           orgId,
           scope,
@@ -197,6 +216,7 @@ export const registerCloseLostAnalysisRoutes = async (app: FastifyInstance): Pro
     async (request, reply) => {
       try {
         const run = await getCloseLostAnalysisRun(request.params.runId);
+        assertCloseLostScopeAccess(request, run.orgId, run.scope, run.hubspotOwnerId);
 
         return reply.send({
           success: true,
@@ -226,6 +246,8 @@ export const registerCloseLostAnalysisRoutes = async (app: FastifyInstance): Pro
       }
 
       try {
+        assertOrgAccess(request, orgId);
+        assertManagerOrAdmin(request);
         const result = await getCloseLostDealDetail(
           orgId,
           request.params.dealId,
@@ -261,6 +283,8 @@ export const registerCloseLostAnalysisRoutes = async (app: FastifyInstance): Pro
       }
 
       try {
+        assertOrgAccess(request, orgId);
+        assertManagerOrAdmin(request);
         const result = await analyzeCloseLostDeal(
           orgId,
           request.params.dealId,

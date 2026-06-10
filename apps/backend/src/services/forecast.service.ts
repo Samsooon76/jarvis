@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { getSupabaseAdmin } from "../db/client.js";
 import { buildDealAnalysisBundleForProspect, type DealIntelligenceResult } from "./deal-intelligence.service.js";
 import { createLlmProvider } from "./llm/provider.factory.js";
+import { isTransientLlmError } from "./llm/llm-rate-limiter.js";
 import type {
   DealIntelligenceAnalysis,
   ForecastSynthesisAction,
@@ -1322,6 +1323,10 @@ const runForecastSynthesis = async (
   overview: ForecastOverviewResult,
   provider: ReturnType<typeof getProvider>,
 ): Promise<ForecastSynthesis | null> => {
+  if (overview.synthesis?.status === "fresh") {
+    return overview.synthesis;
+  }
+
   const analyzedOpenDeals = overview.deals
     .filter((deal) => deal.forecastBucket === "openForecast" && deal.analysisStatus === "fresh")
     .slice(0, MAX_SYNTHESIS_DEALS);
@@ -1569,6 +1574,10 @@ export const analyzeForecastOpenDeals = async (options: AnalyzeForecastOptions):
           };
         } catch (error) {
           lastError = error instanceof Error ? error.message : "Erreur inconnue pendant l'analyse IA.";
+
+          if (!isTransientLlmError(error)) {
+            break;
+          }
         }
       }
 
@@ -1667,6 +1676,16 @@ export const generateForecastSynthesis = async (
     llmProvider: provider.providerName,
     llmModel: provider.modelName,
   });
+  if (overview.synthesis?.status === "fresh") {
+    return {
+      orgId: options.orgId,
+      provider: provider.providerName,
+      model: provider.modelName,
+      synthesis: overview.synthesis,
+      overview,
+    };
+  }
+
   const synthesis = await runForecastSynthesis(overview, provider);
 
   return {

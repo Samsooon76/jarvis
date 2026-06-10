@@ -12,13 +12,14 @@ import {
   fetchHubSpotLastUpdates,
   fetchHubSpotSyncJob,
   syncHubSpotToSupabase,
+  clearApiResponseCaches,
   type HubSpotLastUpdateItem,
   type HubSpotDisconnectResult,
   type HubSpotSyncJobStatus,
   type HubSpotSyncResult,
   type AppUserProfile,
 } from "./services/api";
-import { clearApiAuthToken, setApiAuthToken } from "./services/api/client";
+import { clearApiAuthToken, setApiAuthSession } from "./services/api/client";
 import { getSupabaseClient, isSupabaseAuthConfigured, type JarvisSession } from "./services/supabase";
 import { setSentryUser } from "./sentry";
 
@@ -27,6 +28,33 @@ const getStoredHubSpotOwnerId = (orgId: string): string | null => {
 
   return storedOwnerId || null;
 };
+
+const clearJarvisBrowserCaches = (): void => {
+  clearApiResponseCaches();
+
+  for (const key of Object.keys(window.localStorage)) {
+    if (key.startsWith("jarvis:") || key.startsWith("jarvis.")) {
+      window.localStorage.removeItem(key);
+    }
+  }
+};
+
+const isDocumentVisible = (): boolean => typeof document === "undefined" || document.visibilityState === "visible";
+
+const areLastUpdatesEqual = (left: HubSpotLastUpdateItem[], right: HubSpotLastUpdateItem[]): boolean =>
+  left.length === right.length &&
+  left.every((item, index) => {
+    const other = right[index];
+
+    return (
+      Boolean(other) &&
+      item.id === other.id &&
+      item.status === other.status &&
+      item.processedAt === other.processedAt &&
+      item.errorMessage === other.errorMessage &&
+      item.receivedAt === other.receivedAt
+    );
+  });
 
 export const ExtensionApp = () => {
   const [authProfile, setAuthProfile] = useState<AppUserProfile | null>(null);
@@ -60,7 +88,7 @@ export const ExtensionApp = () => {
     try {
       setAuthLoading(true);
       setAuthError(null);
-      setApiAuthToken(session.access_token);
+      setApiAuthSession(session);
 
       const profile = await fetchCurrentUserProfile();
 
@@ -102,8 +130,13 @@ export const ExtensionApp = () => {
 
     void initSession();
 
-    const { data: listener } = getSupabaseClient().auth.onAuthStateChange((_event, session) => {
+    const { data: listener } = getSupabaseClient().auth.onAuthStateChange((event, session) => {
       if (!isCancelled) {
+        if (event === "TOKEN_REFRESHED" && session) {
+          setApiAuthSession(session);
+          return;
+        }
+
         void loadProfileForSession(session);
       }
     });
@@ -314,6 +347,10 @@ export const ExtensionApp = () => {
         return;
       }
 
+      if (!isDocumentVisible()) {
+        return;
+      }
+
       isRefreshInFlight = true;
 
       try {
@@ -322,7 +359,9 @@ export const ExtensionApp = () => {
         });
 
         if (!isCancelled) {
-          setLiveLastUpdates(updates);
+          setLiveLastUpdates((currentUpdates) =>
+            areLastUpdatesEqual(currentUpdates, updates) ? currentUpdates : updates,
+          );
         }
       } catch (refreshError) {
         if (isAbortError(refreshError)) {
@@ -337,7 +376,7 @@ export const ExtensionApp = () => {
     void refreshLastUpdates();
     const intervalId = window.setInterval(() => {
       void refreshLastUpdates();
-    }, 10_000);
+    }, 30_000);
 
     return () => {
       isCancelled = true;
@@ -415,9 +454,12 @@ export const ExtensionApp = () => {
   };
 
   const handleSignOut = async () => {
-    clearApiAuthToken();
-    setAuthProfile(null);
     await getSupabaseClient().auth.signOut();
+    clearApiAuthToken();
+    clearJarvisBrowserCaches();
+    setAuthProfile(null);
+    setSelectedOwnerId(null);
+    setLiveLastUpdates([]);
   };
 
   if (!authProfile && !authLoading) {

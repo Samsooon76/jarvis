@@ -1,4 +1,5 @@
 import type { ApiResponse } from "@jarvis/shared";
+import type { Session } from "@supabase/supabase-js";
 
 const resolveApiBaseUrl = (): string => {
   if (import.meta.env.VITE_API_URL) {
@@ -14,6 +15,13 @@ const resolveApiBaseUrl = (): string => {
 
 export const API_BASE_URL = resolveApiBaseUrl();
 const API_AUTH_STORAGE_KEY = "jarvis.apiAuthToken";
+const API_AUTH_SESSION_STORAGE_KEY = "jarvis.apiAuthSession";
+
+type StoredApiAuthSession = {
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number | null;
+};
 
 // Le service worker de l'extension (Jarvis Pulse) n'a pas acces au localStorage
 // de la page: on duplique le token dans chrome.storage.local quand il est disponible.
@@ -35,6 +43,36 @@ const mirrorAuthTokenToChromeStorage = (token: string | null): void => {
   }
 };
 
+const mirrorAuthSessionToChromeStorage = (session: StoredApiAuthSession | null): void => {
+  try {
+    const chromeStorage = (globalThis as { chrome?: { storage?: { local?: { set?: (items: Record<string, unknown>) => void; remove?: (key: string) => void } } } }).chrome?.storage?.local;
+
+    if (!chromeStorage) {
+      return;
+    }
+
+    if (session) {
+      chromeStorage.set?.({ [API_AUTH_SESSION_STORAGE_KEY]: session });
+    } else {
+      chromeStorage.remove?.(API_AUTH_SESSION_STORAGE_KEY);
+    }
+  } catch {
+    // Hors contexte extension (dashboard web): on ignore silencieusement.
+  }
+};
+
+export const setApiAuthSession = (session: Session): void => {
+  const storedSession: StoredApiAuthSession = {
+    accessToken: session.access_token,
+    refreshToken: session.refresh_token,
+    expiresAt: session.expires_at ?? null,
+  };
+
+  window.localStorage.setItem(API_AUTH_STORAGE_KEY, session.access_token);
+  mirrorAuthTokenToChromeStorage(session.access_token);
+  mirrorAuthSessionToChromeStorage(storedSession);
+};
+
 export const setApiAuthToken = (token: string): void => {
   window.localStorage.setItem(API_AUTH_STORAGE_KEY, token);
   mirrorAuthTokenToChromeStorage(token);
@@ -43,6 +81,7 @@ export const setApiAuthToken = (token: string): void => {
 export const clearApiAuthToken = (): void => {
   window.localStorage.removeItem(API_AUTH_STORAGE_KEY);
   mirrorAuthTokenToChromeStorage(null);
+  mirrorAuthSessionToChromeStorage(null);
 };
 
 export type ApiRequestOptions = {

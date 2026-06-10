@@ -100,6 +100,19 @@ const clearAnalyticsCacheByPrefix = (prefix: string): void => {
   }
 };
 
+export const clearApiResponseCaches = (): void => {
+  clearAnalyticsCache();
+};
+
+const clearHubSpotOrgCaches = (orgId: string): void => {
+  clearAnalyticsCacheByPrefix(`hubspot-`);
+  clearAnalyticsCacheByPrefix(`forecast-`);
+  clearAnalyticsCacheByPrefix(`close-lost-`);
+  clearAnalyticsCacheByPrefix(HUBSPOT_TASKS_CACHE_PREFIX);
+  clearAnalyticsCacheByPrefix(HUBSPOT_LEADS_CACHE_PREFIX);
+  clearAnalyticsCacheByPrefix(`sales-activity:${orgId}:`);
+};
+
 export type AiProviderId = "deepseek" | "openai" | "vertex-gemini";
 
 export type AiProviderOption = {
@@ -131,8 +144,6 @@ type HubSpotConnectionStatus = {
   hubspotDealCount: number | null;
   lastSyncedAt: string | null;
 };
-
-export type AppUserRole = "sales" | "manager" | "admin";
 
 export type AppUserProfile = {
   id: string | null;
@@ -1368,7 +1379,26 @@ export const fetchHubSpotQueue = async (
   const { status, owner, owners, lastUpdates } = payload;
 
   if (!status.connected) {
-    throw new Error("HubSpot n'est pas connecte pour cette organisation.");
+    return {
+      userId: preferredHubSpotOwnerId ?? "",
+      generatedAt: new Date().toISOString(),
+      prospects: [],
+      hubspotPortalId: null,
+      owner: {
+        ownerId: preferredHubSpotOwnerId ?? "",
+        userId: null,
+        hubspotUserId: null,
+        name: "HubSpot non connecte",
+        email: "",
+        teamName: null,
+        prospectCount: 0,
+        syncedDealCount: 0,
+        lastSyncedAt: null,
+      },
+      owners: [],
+      hubspotDealCount: 0,
+      lastUpdates,
+    };
   }
 
   if (owners.length === 0) {
@@ -1446,7 +1476,7 @@ const startAndPollHubSpotSync = async (
   hubspotOwnerIds: string[],
   onProgress?: (status: HubSpotSyncJobStatus) => void,
 ): Promise<HubSpotSyncResult> => {
-  clearAnalyticsCache();
+  clearHubSpotOrgCaches(orgId);
   const startedJob = await postJson<HubSpotSyncJobStatus>("/api/sync/hubspot", {
     orgId,
     hubspotOwnerIds,
@@ -1493,7 +1523,7 @@ const startAndPollHubSpotSync = async (
         error: null,
       });
 
-      clearAnalyticsCache();
+      clearHubSpotOrgCaches(orgId);
 
       return result;
     }
@@ -1508,13 +1538,15 @@ const startAndPollHubSpotSync = async (
     throw new Error("La sync HubSpot est terminee mais aucun resultat n'a ete renvoye.");
   }
 
-  clearAnalyticsCache();
+  clearHubSpotOrgCaches(orgId);
 
   return currentJob.result;
 };
 
 export const disconnectHubSpot = async (orgId: string): Promise<HubSpotDisconnectResult> =>
-  postJson<HubSpotDisconnectResult>("/api/hubspot/disconnect", { orgId, purgeData: true }).finally(clearAnalyticsCache);
+  postJson<HubSpotDisconnectResult>("/api/hubspot/disconnect", { orgId, purgeData: true }).finally(() =>
+    clearHubSpotOrgCaches(orgId),
+  );
 
 const buildDealAnalysisSearchParams = (
   prospect: QueueProspect,
@@ -1555,7 +1587,7 @@ export const startDealAnalysisRun = async (
   prospect: QueueProspect,
   orgId: string,
   aiProvider: AiProviderOption,
-  refresh = true,
+  refresh = false,
 ): Promise<DealAnalysisJobSnapshot> =>
   postJson<DealAnalysisJobSnapshot>(`/api/prospects/${encodeURIComponent(prospect.id)}/deal-analysis-runs`, {
     orgId,
@@ -1572,7 +1604,7 @@ export const startAndPollDealAnalysisRun = async (
   prospect: QueueProspect,
   orgId: string,
   aiProvider: AiProviderOption,
-  refresh = true,
+  refresh = false,
   onProgress?: (status: DealAnalysisJobSnapshot) => void,
 ): Promise<DealAnalysisBundleResult> => {
   const startedJob = await startDealAnalysisRun(prospect, orgId, aiProvider, refresh);
@@ -1600,7 +1632,7 @@ export const startAndPollDealAnalysisRun = async (
     throw new Error("L'analyse du deal est terminee mais aucun resultat n'a ete renvoye.");
   }
 
-  clearAnalyticsCache();
+  clearAnalyticsCacheByPrefix(`deal-analysis:${orgId}:${prospect.id}:`);
 
   return currentJob.result;
 };
@@ -1725,7 +1757,7 @@ export const startCloseLostAnalysisRun = async ({
     llmProvider: aiProvider.id,
     llmModel: aiProvider.model,
     refresh,
-  }).finally(clearAnalyticsCache);
+  }).finally(() => clearAnalyticsCacheByPrefix(`close-lost-`));
 
 export const fetchCloseLostAnalysisRun = async (runId: string): Promise<CloseLostAnalysisRun> =>
   getJson<CloseLostAnalysisRun>(`/api/close-lost-analysis/runs/${encodeURIComponent(runId)}`);
@@ -1761,7 +1793,10 @@ export const analyzeCloseLostDeal = async (
     llmProvider: aiProvider.id,
     llmModel: aiProvider.model,
     refresh,
-  }).finally(clearAnalyticsCache);
+  }).finally(() => {
+    clearAnalyticsCacheByPrefix(`close-lost-detail:/api/close-lost-analysis/deals/${encodeURIComponent(hubspotDealId)}`);
+    clearAnalyticsCacheByPrefix(`close-lost-`);
+  });
 
 export const fetchForecastOverview = async ({
   orgId,
@@ -1824,7 +1859,7 @@ export const startAndPollForecastOpenDealsAnalysis = async ({
   retryFailedCount?: number;
   onProgress?: (status: ForecastAnalyzeJobStatus) => void;
 }): Promise<ForecastAnalyzeResult> => {
-  clearAnalyticsCache();
+  clearAnalyticsCacheByPrefix(`forecast-`);
   const startedJob = await postJson<ForecastAnalyzeJobStatus>("/api/forecast/analyze-open-deals", {
     orgId,
     scope,
@@ -1862,7 +1897,7 @@ export const startAndPollForecastOpenDealsAnalysis = async ({
     throw new Error("L'analyse forecast est terminee mais aucun resultat n'a ete renvoye.");
   }
 
-  clearAnalyticsCache();
+  clearAnalyticsCacheByPrefix(`forecast-`);
 
   return currentJob.result;
 };
@@ -1895,7 +1930,7 @@ export const analyzeForecastDeal = async ({
     llmProvider: aiProvider.id,
     llmModel: aiProvider.model,
     refresh,
-  }).finally(clearAnalyticsCache);
+  }).finally(() => clearAnalyticsCacheByPrefix(`forecast-`));
 
 export const generateForecastSynthesis = async ({
   orgId,
@@ -1920,7 +1955,7 @@ export const generateForecastSynthesis = async ({
     dateTo,
     llmProvider: aiProvider.id,
     llmModel: aiProvider.model,
-  }).finally(clearAnalyticsCache);
+  }).finally(() => clearAnalyticsCacheByPrefix(`forecast-`));
 
 export const fetchMonthlySalesTargets = async (orgId: string, year: number): Promise<MonthlySalesTarget[]> =>
   getJson<MonthlySalesTarget[]>(apiPath("/api/forecast/targets", { orgId, year }));

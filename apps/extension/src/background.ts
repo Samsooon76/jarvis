@@ -9,6 +9,7 @@ const configureSidePanel = async () => {
 const PULSE_ALARM_NAME = "jarvis-pulse-poll";
 const PULSE_ALARM_PERIOD_MINUTES = 1;
 const PULSE_TOKEN_STORAGE_KEY = "jarvis.apiAuthToken";
+const PULSE_SESSION_STORAGE_KEY = "jarvis.apiAuthSession";
 const PULSE_SHOWN_IDS_STORAGE_KEY = "jarvis.pulse.shownNotificationIds";
 const PULSE_SHOWN_IDS_MAX = 200;
 const PULSE_MAX_NATIVE_NOTIFICATIONS_PER_CYCLE = 3;
@@ -17,6 +18,18 @@ const PULSE_ICON_URL = "icons/icon128.png";
 
 const resolvePulseApiBaseUrl = (): string =>
   import.meta.env.VITE_API_URL || "https://jarvisapi-production-10cd.up.railway.app";
+
+const resolveSupabaseUrl = (): string => import.meta.env.VITE_SUPABASE_URL?.trim() ?? "";
+const resolveSupabaseAnonKey = (): string =>
+  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim() ??
+  import.meta.env.VITE_SUPABASE_ANON_KEY?.trim() ??
+  "";
+
+type StoredPulseSession = {
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number | null;
+};
 
 type PulseApiNotification = {
   id: string;
@@ -41,6 +54,96 @@ const readStoredString = async (key: string): Promise<string | null> => {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 };
 
+const readStoredPulseSession = async (): Promise<StoredPulseSession | null> => {
+  const stored = await chrome.storage.local.get(PULSE_SESSION_STORAGE_KEY);
+  const value = stored[PULSE_SESSION_STORAGE_KEY];
+
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const candidate = value as Partial<StoredPulseSession>;
+
+  if (typeof candidate.accessToken !== "string" || typeof candidate.refreshToken !== "string") {
+    return null;
+  }
+
+  return {
+    accessToken: candidate.accessToken,
+    refreshToken: candidate.refreshToken,
+    expiresAt: typeof candidate.expiresAt === "number" ? candidate.expiresAt : null,
+  };
+};
+
+const saveStoredPulseSession = async (session: StoredPulseSession): Promise<void> => {
+  await chrome.storage.local.set({
+    [PULSE_TOKEN_STORAGE_KEY]: session.accessToken,
+    [PULSE_SESSION_STORAGE_KEY]: session,
+  });
+};
+
+const clearStoredPulseSession = async (): Promise<void> => {
+  await chrome.storage.local.remove([PULSE_TOKEN_STORAGE_KEY, PULSE_SESSION_STORAGE_KEY]);
+};
+
+const refreshPulseSession = async (): Promise<string | null> => {
+  const session = await readStoredPulseSession();
+  const supabaseUrl = resolveSupabaseUrl();
+  const supabaseAnonKey = resolveSupabaseAnonKey();
+
+  if (!session?.refreshToken || !supabaseUrl || !supabaseAnonKey) {
+    return null;
+  }
+
+  const response = await fetch(`${supabaseUrl.replace(/\/+$/, "")}/auth/v1/token?grant_type=refresh_token`, {
+    method: "POST",
+    headers: {
+      apikey: supabaseAnonKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      refresh_token: session.refreshToken,
+    }),
+  });
+
+  if (!response.ok) {
+    await clearStoredPulseSession();
+    return null;
+  }
+
+  const payload = (await response.json()) as {
+    access_token?: unknown;
+    refresh_token?: unknown;
+    expires_at?: unknown;
+    expires_in?: unknown;
+  };
+  const accessToken = typeof payload.access_token === "string" ? payload.access_token : null;
+  const refreshToken =
+    typeof payload.refresh_token === "string" && payload.refresh_token.trim()
+      ? payload.refresh_token
+      : session.refreshToken;
+
+  if (!accessToken) {
+    await clearStoredPulseSession();
+    return null;
+  }
+
+  const expiresAt =
+    typeof payload.expires_at === "number"
+      ? payload.expires_at
+      : typeof payload.expires_in === "number"
+        ? Math.floor(Date.now() / 1000) + payload.expires_in
+        : null;
+
+  await saveStoredPulseSession({
+    accessToken,
+    refreshToken,
+    expiresAt,
+  });
+
+  return accessToken;
+};
+
 const readShownNotificationIds = async (): Promise<string[]> => {
   const stored = await chrome.storage.local.get(PULSE_SHOWN_IDS_STORAGE_KEY);
   const value = stored[PULSE_SHOWN_IDS_STORAGE_KEY];
@@ -54,7 +157,10 @@ const saveShownNotificationIds = async (ids: string[]): Promise<void> => {
   });
 };
 
-const fetchUnreadPulseNotifications = async (token: string): Promise<PulseApiNotification[] | null> => {
+const fetchUnreadPulseNotifications = async (
+  token: string,
+  retryAfterRefresh = true,
+): Promise<PulseApiNotification[] | null> => {
   const response = await fetch(
     `${resolvePulseApiBaseUrl()}/api/pulse/notifications?unreadOnly=true&limit=10`,
     {
@@ -64,7 +170,19 @@ const fetchUnreadPulseNotifications = async (token: string): Promise<PulseApiNot
     },
   );
 
-  // 401: session expiree, 403: utilisateur sans acces Pulse (sales). On ignore.
+  if (response.status === 401) {
+    if (retryAfterRefresh) {
+      const refreshedToken = await refreshPulseSession();
+
+      if (refreshedToken) {
+        return fetchUnreadPulseNotifications(refreshedToken, false);
+      }
+    }
+
+    return null;
+  }
+
+  // 403: utilisateur sans acces Pulse (sales). On ignore.
   if (!response.ok) {
     return null;
   }
@@ -115,7 +233,12 @@ const showPulseNativeNotifications = async (notifications: PulseApiNotification[
 
 const pollPulseNotifications = async (): Promise<void> => {
   try {
-    const token = await readStoredString(PULSE_TOKEN_STORAGE_KEY);
+    const session = await readStoredPulseSession();
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const token =
+      session?.expiresAt && session.expiresAt <= nowSeconds + 60
+        ? await refreshPulseSession()
+        : session?.accessToken ?? await readStoredString(PULSE_TOKEN_STORAGE_KEY);
 
     if (!token) {
       return;
@@ -126,8 +249,10 @@ const pollPulseNotifications = async (): Promise<void> => {
     if (notifications && notifications.length > 0) {
       await showPulseNativeNotifications(notifications);
     }
-  } catch {
-    // Best-effort: pas de notification plutot qu'un service worker en erreur.
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.warn("Jarvis Pulse polling failed", error);
+    }
   }
 };
 

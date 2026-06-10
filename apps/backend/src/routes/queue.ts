@@ -1,7 +1,14 @@
 import type { FastifyInstance } from "fastify";
 import type { ApiResponse, QueueData } from "@jarvis/shared";
+import { env } from "../config/env.js";
+import { getSupabaseAdmin } from "../db/client.js";
 import { loadHubSpotDashboard, type HubSpotQueueDashboardData } from "../services/hubspot-dashboard.service.js";
-import { loadOptionalAuthenticatedAppUserProfile } from "../services/app-auth.service.js";
+import {
+  assertManagerOrAdmin,
+  assertOrgAccess,
+  loadOptionalAuthenticatedAppUserProfile,
+  requireAuth,
+} from "../services/app-auth.service.js";
 import { getQueueDebug, getUserQueue, type QueueDebugData } from "../services/queue.service.js";
 
 type QueueParams = {
@@ -33,6 +40,20 @@ const getStatusCode = (message: string): number => {
   }
 
   return 500;
+};
+
+const loadQueueUserOrgId = async (userId: string): Promise<string | null> => {
+  const { data, error } = await getSupabaseAdmin()
+    .from("users")
+    .select("org_id")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Impossible de verifier l'organisation du commercial: ${error.message}`);
+  }
+
+  return typeof data?.org_id === "string" ? data.org_id : null;
 };
 
 export const registerQueueRoutes = async (app: FastifyInstance): Promise<void> => {
@@ -123,6 +144,16 @@ export const registerQueueRoutes = async (app: FastifyInstance): Promise<void> =
       const { userId } = request.params;
 
       try {
+        const auth = requireAuth(request);
+        if (auth.role === "sales" && auth.appUserId !== userId) {
+          return reply.code(403).send({
+            success: false,
+            error: "Un commercial ne peut charger que sa propre queue.",
+          });
+        }
+
+        const orgId = await loadQueueUserOrgId(userId);
+        assertOrgAccess(request, orgId);
         const { payload, cacheHit } = await getUserQueue(userId);
         const totalDurationMs = formatDurationMs(requestStartedAtMs);
 
@@ -157,7 +188,28 @@ export const registerQueueRoutes = async (app: FastifyInstance): Promise<void> =
   app.get<{ Params: QueueParams; Reply: ApiResponse<QueueDebugData> }>(
     "/api/debug/queue/:userId",
     async (request, reply) => {
+      if (!env.enableDebugRoutes) {
+        return reply.code(404).send({
+          success: false,
+          error: "Route debug indisponible.",
+        });
+      }
+
       try {
+        const auth = requireAuth(request);
+        if (auth.role === "sales" && auth.appUserId !== request.params.userId) {
+          return reply.code(403).send({
+            success: false,
+            error: "Un commercial ne peut diagnostiquer que sa propre queue.",
+          });
+        }
+
+        if (auth.role !== "sales") {
+          assertManagerOrAdmin(request);
+        }
+
+        const orgId = await loadQueueUserOrgId(request.params.userId);
+        assertOrgAccess(request, orgId);
         const debug = await getQueueDebug(request.params.userId);
 
         return reply.send({

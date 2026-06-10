@@ -35,6 +35,7 @@ import {
 import { buildForecastSynthesisPrompt, parseForecastSynthesisAnalysis } from "../forecast-synthesis.js";
 import { buildDealQualificationPrompt, parseDealQualification } from "../qualification.js";
 import { buildTaskAnalysisPrompt, parseTaskAnalysis } from "../task-analysis.js";
+import { runWithLlmConcurrencyLimit } from "../llm-rate-limiter.js";
 
 type OpenAiChatResponse = {
   choices?: Array<{
@@ -56,6 +57,8 @@ type OpenAiChatResponse = {
     total_tokens?: number;
   };
 };
+
+const OPENAI_REQUEST_TIMEOUT_MS = 45_000;
 
 type ParsedDealHistoryAnalysis = {
   summary?: unknown;
@@ -702,65 +705,83 @@ export class OpenAiProvider implements LlmProvider {
   }
 
   private async completeJson(prompt: string, maxTokens: number): Promise<string> {
-    const response = await fetch(`${this.baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${this.apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: this.modelName,
-        messages: [
-          {
-            role: "system",
-            content:
-              "Tu reponds uniquement en json valide, sans markdown. Tu n'inventes pas de faits absents des donnees fournies.",
+    return runWithLlmConcurrencyLimit(async () => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), OPENAI_REQUEST_TIMEOUT_MS);
+
+      let response: Response;
+
+      try {
+        response = await fetch(`${this.baseUrl}/chat/completions`, {
+          method: "POST",
+          signal: controller.signal,
+          headers: {
+            Authorization: `Bearer ${this.apiKey}`,
+            "Content-Type": "application/json",
           },
-          {
-            role: "user",
-            content: prompt,
-          },
-        ],
-        response_format: {
-          type: "json_object",
-        },
-        reasoning_effort: "minimal",
-        max_completion_tokens: maxTokens,
-        stream: false,
-      }),
-    });
+          body: JSON.stringify({
+            model: this.modelName,
+            messages: [
+              {
+                role: "system",
+                content:
+                  "Tu reponds uniquement en json valide, sans markdown. Tu n'inventes pas de faits absents des donnees fournies.",
+              },
+              {
+                role: "user",
+                content: prompt,
+              },
+            ],
+            response_format: {
+              type: "json_object",
+            },
+            reasoning_effort: "minimal",
+            max_completion_tokens: maxTokens,
+            stream: false,
+          }),
+        });
+      } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") {
+          throw new Error("OpenAI timeout apres 45s.");
+        }
 
-    if (!response.ok) {
-      const errorText = await response.text();
+        throw error;
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
-      throw new Error(`OpenAI error (${response.status}): ${errorText}`);
-    }
+      if (!response.ok) {
+        const errorText = await response.text();
 
-    const payload = (await response.json()) as OpenAiChatResponse;
-    const choice = payload.choices?.[0];
-    const message = choice?.message;
-    const rawContent = message?.content;
-    const content =
-      typeof rawContent === "string"
-        ? rawContent.trim()
-        : Array.isArray(rawContent)
-          ? rawContent
-              .map((item) => item.text ?? "")
-              .join("")
-              .trim()
+        throw new Error(`OpenAI error (${response.status}): ${errorText}`);
+      }
+
+      const payload = (await response.json()) as OpenAiChatResponse;
+      const choice = payload.choices?.[0];
+      const message = choice?.message;
+      const rawContent = message?.content;
+      const content =
+        typeof rawContent === "string"
+          ? rawContent.trim()
+          : Array.isArray(rawContent)
+            ? rawContent
+                .map((item) => item.text ?? "")
+                .join("")
+                .trim()
+            : "";
+
+      if (!content) {
+        const refusal = message?.refusal ? ` Refus: ${message.refusal}` : "";
+        const tokenSummary = payload.usage
+          ? ` Tokens: completion=${payload.usage.completion_tokens ?? "?"}, total=${payload.usage.total_tokens ?? "?"}.`
           : "";
 
-    if (!content) {
-      const refusal = message?.refusal ? ` Refus: ${message.refusal}` : "";
-      const tokenSummary = payload.usage
-        ? ` Tokens: completion=${payload.usage.completion_tokens ?? "?"}, total=${payload.usage.total_tokens ?? "?"}.`
-        : "";
+        throw new Error(
+          `OpenAI n'a renvoye aucun contenu exploitable. finish_reason=${choice?.finish_reason ?? "unknown"}.${tokenSummary}${refusal}`,
+        );
+      }
 
-      throw new Error(
-        `OpenAI n'a renvoye aucun contenu exploitable. finish_reason=${choice?.finish_reason ?? "unknown"}.${tokenSummary}${refusal}`,
-      );
-    }
-
-    return content;
+      return content;
+    });
   }
 }

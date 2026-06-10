@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { QueueProspect } from "@jarvis/shared";
 import { CircleHelp, Loader2 } from "lucide-react";
 import {
   createFollowUpTask,
   fetchDealActivityPlan,
+  fetchDealAnalysisPage,
   fetchDealQualification,
   startAndPollDealAnalysisRun,
   type ActivityPlanAction,
@@ -1216,6 +1217,11 @@ export const DealAnalysisView = ({
   const [refreshMessage, setRefreshMessage] = useState<string | null>(null);
   const [refreshAttempt, setRefreshAttempt] = useState<number | null>(null);
   const [analysisJobStep, setAnalysisJobStep] = useState<string | null>(null);
+  const activeProspectIdRef = useRef<string | null>(activeProspect?.id ?? null);
+
+  useEffect(() => {
+    activeProspectIdRef.current = activeProspect?.id ?? null;
+  }, [activeProspect?.id]);
 
   const loadQualification = async (refresh = false) => {
     if (!activeProspect) {
@@ -1323,56 +1329,6 @@ export const DealAnalysisView = ({
     });
   };
 
-  const loadBundle = async (refresh = false) => {
-    if (!activeProspect) {
-      return;
-    }
-
-    const cacheKey = getCacheKey(orgId, selectedAiProvider, activeProspect.id);
-
-    if (!refresh) {
-      const cached = bundleCache.get(cacheKey);
-
-      if (cached) {
-        applyBundle(cached, cacheKey);
-        return;
-      }
-    }
-
-    try {
-      setQualificationLoading(true);
-      setActivityPlanLoading(true);
-      setRefreshAttempt(null);
-      setAnalysisJobStep(null);
-      setQualificationError(null);
-      setActivityPlanError(null);
-
-      const result = await runDealAnalysisJob(refresh);
-      applyBundle(result, cacheKey);
-    } catch (error) {
-      captureAppError(error, {
-        feature: "deal_analysis",
-        operation: "load_bundle",
-        orgId,
-        prospectId: activeProspect.id,
-        hubspotDealId: activeProspect.hubspotDealId ?? null,
-        provider: selectedAiProvider.id,
-        model: selectedAiProvider.model,
-        refresh,
-      });
-      const message = getErrorMessage(error, "Analyse complete du deal indisponible.");
-      setAnalysisError(message);
-      setQualificationError(message);
-      setActivityPlanError(message);
-    } finally {
-      setIsAnalyzing(false);
-      setQualificationLoading(false);
-      setActivityPlanLoading(false);
-      setRefreshAttempt(null);
-      setAnalysisJobStep(null);
-    }
-  };
-
   const loadPage = async (refresh = false) => {
     if (!activeProspect) {
       return;
@@ -1386,23 +1342,34 @@ export const DealAnalysisView = ({
       if (cached) {
         setPage(cached);
         setAnalysisError(null);
-        void loadBundle(false);
         return;
       }
     }
 
     try {
       setIsAnalyzing(true);
-      setQualificationLoading(true);
-      setActivityPlanLoading(true);
       setRefreshAttempt(null);
       setAnalysisJobStep(null);
       setAnalysisError(null);
       setQualificationError(null);
       setActivityPlanError(null);
 
-      const result = await runDealAnalysisJob(refresh);
-      applyBundle(result, cacheKey);
+      if (refresh) {
+        const result = await runDealAnalysisJob(true);
+        if (activeProspectIdRef.current !== activeProspect.id) {
+          return;
+        }
+        applyBundle(result, cacheKey);
+        return;
+      }
+
+      const result = await fetchDealAnalysisPage(activeProspect, orgId, selectedAiProvider, ownerName, false);
+      if (activeProspectIdRef.current !== activeProspect.id) {
+        return;
+      }
+      pageCache.set(cacheKey, result);
+      setPage(result);
+      setAnalysisError(null);
     } catch (error) {
       captureAppError(error, {
         feature: "deal_analysis",
@@ -1420,8 +1387,6 @@ export const DealAnalysisView = ({
       setActivityPlanError(message);
     } finally {
       setIsAnalyzing(false);
-      setQualificationLoading(false);
-      setActivityPlanLoading(false);
       setRefreshAttempt(null);
       setAnalysisJobStep(null);
     }
@@ -1474,6 +1439,14 @@ export const DealAnalysisView = ({
 
   const handleSectionChange = (section: DealSection) => {
     setActiveSection(section);
+
+    if (section === "qualification" && !qualification && !qualificationLoading) {
+      void loadQualification(false);
+    }
+
+    if (section === "activity" && !activityPlan && !activityPlanLoading) {
+      void loadActivityPlan(false);
+    }
   };
 
   const handleRefresh = () => {
@@ -1496,6 +1469,9 @@ export const DealAnalysisView = ({
         setTaskResult(null);
 
         const result = await runDealAnalysisJob(true);
+        if (activeProspectIdRef.current !== activeProspect.id) {
+          return;
+        }
 
         pageCache.delete(cacheKey);
         bundleCache.delete(cacheKey);

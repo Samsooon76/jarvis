@@ -1,6 +1,10 @@
 import type { FastifyInstance } from "fastify";
 import type { ApiResponse } from "@jarvis/shared";
 import {
+  assertOrgAccess,
+  requireAuth,
+} from "../services/app-auth.service.js";
+import {
   completeSalesTask,
   getTodaySalesTasks,
   skipSalesTask,
@@ -50,6 +54,13 @@ export const registerTaskRoutes = async (app: FastifyInstance): Promise<void> =>
     "/api/tasks/today/:userId",
     async (request, reply) => {
       try {
+        const auth = requireAuth(request);
+        if (auth.role === "sales" && auth.appUserId !== request.params.userId) {
+          return reply.code(403).send({
+            success: false,
+            error: "Un commercial ne peut charger que ses propres taches.",
+          });
+        }
         const payload = await getTodaySalesTasks(request.params.userId);
 
         return reply.send({
@@ -71,7 +82,8 @@ export const registerTaskRoutes = async (app: FastifyInstance): Promise<void> =>
     "/api/tasks/:id/complete",
     async (request, reply) => {
       try {
-        const result = await completeSalesTask(request.params.id);
+        const auth = requireAuth(request);
+        const result = await completeSalesTask(request.params.id, auth);
 
         return reply.send({
           success: true,
@@ -101,7 +113,8 @@ export const registerTaskRoutes = async (app: FastifyInstance): Promise<void> =>
       }
 
       try {
-        const result = await snoozeSalesTask(request.params.id, snoozedUntil, request.body?.reason ?? null);
+        const auth = requireAuth(request);
+        const result = await snoozeSalesTask(request.params.id, snoozedUntil, auth, request.body?.reason ?? null);
 
         return reply.send({
           success: true,
@@ -122,7 +135,8 @@ export const registerTaskRoutes = async (app: FastifyInstance): Promise<void> =>
     "/api/tasks/:id/skip",
     async (request, reply) => {
       try {
-        const result = await skipSalesTask(request.params.id, request.body?.reason ?? null);
+        const auth = requireAuth(request);
+        const result = await skipSalesTask(request.params.id, auth, request.body?.reason ?? null);
 
         return reply.send({
           success: true,
@@ -152,6 +166,7 @@ export const registerTaskRoutes = async (app: FastifyInstance): Promise<void> =>
       }
 
       try {
+        assertOrgAccess(request, orgId);
         const result = await analyzeHubSpotTask({
           orgId,
           hubspotTaskId: request.params.taskId,
@@ -196,6 +211,7 @@ export const registerTaskRoutes = async (app: FastifyInstance): Promise<void> =>
       }
 
       try {
+        assertOrgAccess(request, orgId);
         const result = await analyzeAndApplyHubSpotTask({
           orgId,
           hubspotTaskId: request.params.taskId,
@@ -241,6 +257,7 @@ export const registerTaskRoutes = async (app: FastifyInstance): Promise<void> =>
       }
 
       try {
+        assertOrgAccess(request, orgId);
         const result = await applyHubSpotTaskAnalysis({
           orgId,
           hubspotTaskId: request.params.taskId,

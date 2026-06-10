@@ -9,6 +9,7 @@ import {
 
 const PULSE_POLL_INTERVAL_MS = 30_000;
 const PULSE_PAGE_SIZE = 30;
+const isDocumentVisible = (): boolean => typeof document === "undefined" || document.visibilityState === "visible";
 
 export type UsePulseNotificationsResult = {
   notifications: PulseNotification[];
@@ -38,6 +39,10 @@ export const usePulseNotifications = (enabled: boolean, eventTypes: PulseEventTy
 
   const refresh = useCallback(async (): Promise<void> => {
     if (!enabled) {
+      return;
+    }
+
+    if (!isDocumentVisible()) {
       return;
     }
 

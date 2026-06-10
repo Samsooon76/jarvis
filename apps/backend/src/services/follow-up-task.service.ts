@@ -1,4 +1,6 @@
+import { createHash } from "node:crypto";
 import { getSupabaseAdmin } from "../db/client.js";
+import type { Json } from "../db/database.types.js";
 import { hubSpotService } from "./hubspot.service.js";
 import { getHubSpotAccessToken } from "./hubspot-auth.service.js";
 import { buildBusinessDueAtFromDays } from "./business-days.js";
@@ -7,6 +9,8 @@ import type { FollowUpTaskRecommendation } from "./llm/llm.provider.js";
 
 const UUID_V4_LIKE_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const AUTO_FOLLOW_UP_PROSPECT_LIMIT = 20;
+const FOLLOW_UP_TASK_CACHE_TTL_HOURS = 6;
 
 type ProspectRow = {
   id: string;
@@ -35,6 +39,14 @@ type ProspectRawData = {
   hubspotOwnerId?: string | null;
   dealOwnerHubSpotId?: string | null;
   contactOwnerHubSpotId?: string | null;
+};
+
+type FollowUpTaskAnalysisRow = {
+  recommendation: FollowUpTaskRecommendation;
+  provider: string;
+  model: string;
+  input_hash: string;
+  expires_at: string;
 };
 
 export type FollowUpTaskRequestContext = {
@@ -330,6 +342,72 @@ const shouldSkipProspect = async (prospect: ProspectRow): Promise<boolean> => {
   return hasOpenTask(prospect.id);
 };
 
+const hashInput = (value: unknown): string => createHash("sha256").update(JSON.stringify(value)).digest("hex");
+
+const loadCachedFollowUpRecommendation = async (params: {
+  orgId: string;
+  prospectId: string;
+  hubspotDealId: string;
+  provider: string;
+  model: string;
+  inputHash: string;
+}): Promise<FollowUpTaskRecommendation | null> => {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("follow_up_task_ai_analyses")
+    .select("recommendation, provider, model, input_hash, expires_at")
+    .eq("org_id", params.orgId)
+    .eq("prospect_id", params.prospectId)
+    .eq("hubspot_deal_id", params.hubspotDealId)
+    .eq("provider", params.provider)
+    .eq("model", params.model)
+    .eq("input_hash", params.inputHash)
+    .gt("expires_at", new Date().toISOString())
+    .order("generated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    return null;
+  }
+
+  return ((data as FollowUpTaskAnalysisRow | null)?.recommendation ?? null);
+};
+
+const persistFollowUpRecommendation = async (params: {
+  orgId: string;
+  prospectId: string;
+  hubspotDealId: string;
+  provider: string;
+  model: string;
+  inputHash: string;
+  recommendation: FollowUpTaskRecommendation;
+}): Promise<void> => {
+  const expiresAt = new Date();
+  expiresAt.setUTCHours(expiresAt.getUTCHours() + FOLLOW_UP_TASK_CACHE_TTL_HOURS);
+
+  const { error } = await getSupabaseAdmin().from("follow_up_task_ai_analyses").upsert(
+    {
+      org_id: params.orgId,
+      prospect_id: params.prospectId,
+      hubspot_deal_id: params.hubspotDealId,
+      provider: params.provider,
+      model: params.model,
+      input_hash: params.inputHash,
+      recommendation: params.recommendation as unknown as Json,
+      generated_at: new Date().toISOString(),
+      expires_at: expiresAt.toISOString(),
+    },
+    {
+      onConflict: "org_id,prospect_id,hubspot_deal_id,provider,model,input_hash",
+    },
+  );
+
+  if (error) {
+    throw new Error(`Impossible de sauvegarder le cache de relance IA: ${error.message}`);
+  }
+};
+
 const loadProspect = async (prospectId: string): Promise<ProspectRow | null> => {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
@@ -520,28 +598,49 @@ const analyzeFollowUpTaskForProspect = async (
   debug.historyLength = historyText.length;
   const provider = createLlmProvider();
   debug.llmProvider = `${provider.providerName}:${provider.modelName}`;
-
-  const recommendation = await provider
-    .recommendFollowUpTask({
-      history: historyText,
-      companyName: dealHistory.companyName ?? resolvedTarget.company,
-      dealName: dealHistory.dealName ?? resolvedTarget.dealName,
-      companyContext: dealHistory.companyContext,
-      dealContext: dealHistory.dealContext,
-      dealStage: resolvedTarget.dealStage,
-      objective,
-      today: new Date().toISOString(),
-      lastContactAt: resolvedTarget.lastContactAt,
-      nextAction: resolvedTarget.nextAction,
-      contactNames: dealHistory.contactNames,
-    })
+  const recommendationInput = {
+    history: historyText,
+    companyName: dealHistory.companyName ?? resolvedTarget.company,
+    dealName: dealHistory.dealName ?? resolvedTarget.dealName,
+    companyContext: dealHistory.companyContext,
+    dealContext: dealHistory.dealContext,
+    dealStage: resolvedTarget.dealStage,
+    objective,
+    today: new Date().toISOString().slice(0, 10),
+    lastContactAt: resolvedTarget.lastContactAt,
+    nextAction: resolvedTarget.nextAction,
+    contactNames: dealHistory.contactNames,
+  };
+  const inputHash = hashInput(recommendationInput);
+  const cachedRecommendation = await loadCachedFollowUpRecommendation({
+    orgId: resolvedTarget.orgId,
+    prospectId,
+    hubspotDealId: resolvedTarget.hubspotDealId,
+    provider: provider.providerName,
+    model: provider.modelName,
+    inputHash,
+  });
+  const recommendation = cachedRecommendation ?? await provider
+    .recommendFollowUpTask(recommendationInput)
     .catch((error: unknown) => withStageError("llm_recommendation", error, debug));
+
+  if (!cachedRecommendation) {
+    await persistFollowUpRecommendation({
+      orgId: resolvedTarget.orgId,
+      prospectId,
+      hubspotDealId: resolvedTarget.hubspotDealId,
+      provider: provider.providerName,
+      model: provider.modelName,
+      inputHash,
+      recommendation,
+    }).catch((error: unknown) => withStageError("persist_llm_cache", error, debug));
+  }
   const normalizedRecommendation = normalizeFollowUpRecommendation(recommendation, historyText, resolvedTarget);
   addDebugStep(
     debug,
     "llm_recommendation",
     "ok",
-    `Recommandation LLM recue. shouldCreateTask=${recommendation.shouldCreateTask ? "true" : "false"}. dueInDays=${recommendation.dueInDays}, normalise=${normalizedRecommendation.dueInDays}.`,
+    `Recommandation LLM ${cachedRecommendation ? "reutilisee depuis le cache" : "recue"}. shouldCreateTask=${recommendation.shouldCreateTask ? "true" : "false"}. dueInDays=${recommendation.dueInDays}, normalise=${normalizedRecommendation.dueInDays}.`,
   );
 
   return {
@@ -740,7 +839,8 @@ export const runAutomaticFollowUpTasksForOrg = async (
     .eq("org_id", orgId)
     .contains("raw_data", { source: "hubspot" })
     .not("hubspot_deal_id", "is", null)
-    .order("ai_priority_score", { ascending: false });
+    .order("ai_priority_score", { ascending: false })
+    .limit(AUTO_FOLLOW_UP_PROSPECT_LIMIT);
 
   if (error) {
     throw new Error(`Impossible de charger les prospects pour les relances auto: ${error.message}`);

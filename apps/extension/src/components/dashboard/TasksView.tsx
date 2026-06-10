@@ -378,6 +378,8 @@ const wait = (durationMs: number): Promise<void> =>
     window.setTimeout(resolve, durationMs);
   });
 
+const isDocumentVisible = (): boolean => typeof document === "undefined" || document.visibilityState === "visible";
+
 type CachedHubSpotTasks = {
   cachedAt: number;
   tasks: DisplayTask[];
@@ -581,6 +583,10 @@ export const TasksView = ({
     void loadTasksRef.current();
 
     const intervalId = window.setInterval(() => {
+      if (!isDocumentVisible()) {
+        return;
+      }
+
       void loadTasksRef.current();
     }, 60_000);
 

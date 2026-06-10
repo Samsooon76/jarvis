@@ -2,11 +2,58 @@ import { useEffect, useRef, useState } from "react";
 import { DEFAULT_HUBSPOT_OWNER_ID, DEFAULT_ORG_ID, isAbortError } from "../config/runtime";
 import { fetchHubSpotQueue, type HubSpotQueueData } from "../services/api";
 
+const QUEUE_CACHE_TTL_MS = 5 * 60 * 1000;
+
 type UseQueueState = {
   data: HubSpotQueueData | null;
   isLoading: boolean;
   isRefreshing: boolean;
   error: string | null;
+};
+
+type CachedQueuePayload = {
+  storedAt: number;
+  data: HubSpotQueueData;
+};
+
+const getQueueCacheKey = (orgId: string, hubspotOwnerId: string | null): string =>
+  `jarvis:queue:${orgId}:${hubspotOwnerId ?? "auto"}`;
+
+const readCachedQueue = (orgId: string, hubspotOwnerId: string | null): HubSpotQueueData | null => {
+  try {
+    const rawCache = window.localStorage.getItem(getQueueCacheKey(orgId, hubspotOwnerId));
+
+    if (!rawCache) {
+      return null;
+    }
+
+    const parsed = JSON.parse(rawCache) as Partial<CachedQueuePayload>;
+
+    if (
+      typeof parsed.storedAt !== "number" ||
+      Date.now() - parsed.storedAt > QUEUE_CACHE_TTL_MS ||
+      !parsed.data ||
+      !Array.isArray(parsed.data.prospects)
+    ) {
+      return null;
+    }
+
+    return parsed.data as HubSpotQueueData;
+  } catch {
+    return null;
+  }
+};
+
+const writeCachedQueue = (orgId: string, hubspotOwnerId: string | null, data: HubSpotQueueData): void => {
+  try {
+    const payload: CachedQueuePayload = {
+      storedAt: Date.now(),
+      data,
+    };
+    window.localStorage.setItem(getQueueCacheKey(orgId, hubspotOwnerId), JSON.stringify(payload));
+  } catch {
+    // localStorage can be unavailable in restricted extension contexts.
+  }
 };
 
 export const useQueue = (
@@ -35,6 +82,13 @@ export const useQueue = (
       }
 
       try {
+        const cachedQueue = readCachedQueue(orgId, hubspotOwnerId);
+        if (cachedQueue && !hasLoadedOnceRef.current) {
+          setData(cachedQueue);
+          setIsLoading(false);
+          setIsRefreshing(true);
+          hasLoadedOnceRef.current = true;
+        }
         const isInitialLoad = !hasLoadedOnceRef.current;
 
         setIsLoading(isInitialLoad);
@@ -47,6 +101,7 @@ export const useQueue = (
 
         if (!isCancelled) {
           setData(syncedQueue);
+          writeCachedQueue(orgId, hubspotOwnerId, syncedQueue);
           hasLoadedOnceRef.current = true;
           setIsLoading(false);
         }

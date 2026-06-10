@@ -6,7 +6,7 @@ import {
   fetchCurrentUserProfile,
   type AppUserProfile,
 } from "../../services/api";
-import { setApiAuthToken } from "../../services/api/client";
+import { setApiAuthSession } from "../../services/api/client";
 import { getSupabaseClient, isSupabaseAuthConfigured } from "../../services/supabase";
 import heroImageUrl from "../../assets/landing-hero.png";
 import "./AuthLanding.css";
@@ -111,7 +111,7 @@ export const AuthLanding = ({ error, onAuthenticated }: AuthLandingProps) => {
           return;
         }
 
-        setApiAuthToken(data.session.access_token);
+        setApiAuthSession(data.session);
         const profile = await completeMemberOnboarding().catch(() => fetchCurrentUserProfile());
         onAuthenticated(profile);
         return;
@@ -142,7 +142,7 @@ export const AuthLanding = ({ error, onAuthenticated }: AuthLandingProps) => {
         return;
       }
 
-      setApiAuthToken(data.session.access_token);
+      setApiAuthSession(data.session);
       const profile = await completeAdminOnboarding({
         organizationName: organizationName.trim(),
         fullName: fullName.trim() || email,

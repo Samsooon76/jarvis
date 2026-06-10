@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { ApiResponse } from "@jarvis/shared";
+import { assertManagerOrAdmin, assertOrgAccess } from "../services/app-auth.service.js";
 import {
   listMonthlySalesTargets,
   normalizeTargetMonth,
@@ -87,6 +88,7 @@ export const registerSalesTargetRoutes = async (app: FastifyInstance): Promise<v
           error: "Le parametre year doit etre une annee valide.",
         });
       }
+      assertOrgAccess(request, orgId);
 
       try {
         const result = await listMonthlySalesTargets(orgId, year);
@@ -125,6 +127,8 @@ export const registerSalesTargetRoutes = async (app: FastifyInstance): Promise<v
           error: "Les objectifs mensuels sont invalides.",
         });
       }
+      assertOrgAccess(request, orgId);
+      assertManagerOrAdmin(request);
 
       try {
         const result = await upsertMonthlySalesTargets(orgId, targets);

@@ -3,6 +3,11 @@ import type { FastifyInstance } from "fastify";
 import type { ApiResponse } from "@jarvis/shared";
 import type { Json } from "../db/database.types.js";
 import {
+  assertManagerOrAdmin,
+  assertOrgAccess,
+  assertOwnerScope,
+} from "../services/app-auth.service.js";
+import {
   analyzeForecastDeal,
   analyzeForecastOpenDeals,
   generateForecastSynthesis,
@@ -241,6 +246,7 @@ export const registerForecastRoutes = async (app: FastifyInstance): Promise<void
           error: "Job d'analyse forecast introuvable.",
         });
       }
+      assertOrgAccess(request, job.orgId);
 
       return reply.send({
         success: true,
@@ -260,7 +266,6 @@ export const registerForecastRoutes = async (app: FastifyInstance): Promise<void
           error: "Le parametre orgId doit etre un UUID Jarvis valide.",
         });
       }
-
       const scope = parseScope(request.query.scope);
 
       if (scope === "owner" && !request.query.hubspotOwnerId?.trim()) {
@@ -268,6 +273,12 @@ export const registerForecastRoutes = async (app: FastifyInstance): Promise<void
           success: false,
           error: "hubspotOwnerId est obligatoire pour le scope owner.",
         });
+      }
+      assertOrgAccess(request, orgId);
+      if (scope === "all") {
+        assertManagerOrAdmin(request);
+      } else {
+        assertOwnerScope(request, request.query.hubspotOwnerId ?? null);
       }
 
       try {
@@ -315,6 +326,12 @@ export const registerForecastRoutes = async (app: FastifyInstance): Promise<void
           success: false,
           error: "hubspotOwnerId est obligatoire pour le scope owner.",
         });
+      }
+      assertOrgAccess(request, orgId);
+      if (scope === "all") {
+        assertManagerOrAdmin(request);
+      } else {
+        assertOwnerScope(request, request.body.hubspotOwnerId ?? null);
       }
 
       try {
@@ -407,6 +424,9 @@ export const registerForecastRoutes = async (app: FastifyInstance): Promise<void
           error: "hubspotOwnerId est obligatoire pour le scope owner.",
         });
       }
+      assertOrgAccess(request, orgId);
+      assertOwnerScope(request, scope === "owner" ? request.body.hubspotOwnerId ?? null : null);
+      assertManagerOrAdmin(request);
 
       try {
         const result = await analyzeForecastDeal(hubspotDealId, {
@@ -455,6 +475,9 @@ export const registerForecastRoutes = async (app: FastifyInstance): Promise<void
           error: "hubspotOwnerId est obligatoire pour le scope owner.",
         });
       }
+      assertOrgAccess(request, orgId);
+      assertOwnerScope(request, scope === "owner" ? request.body.hubspotOwnerId ?? null : null);
+      assertManagerOrAdmin(request);
 
       try {
         const result = await generateForecastSynthesis({

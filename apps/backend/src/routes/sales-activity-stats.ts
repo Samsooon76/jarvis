@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { ApiResponse } from "@jarvis/shared";
+import { assertManagerOrAdmin, assertOrgAccess, assertOwnerScope } from "../services/app-auth.service.js";
 import { getSalesActivityStats, type SalesActivityStats } from "../services/sales-activity-stats.service.js";
 import {
   backfillClosedDealActivities,
@@ -52,6 +53,12 @@ export const registerSalesActivityStatsRoutes = async (app: FastifyInstance): Pr
       }
 
       try {
+        assertOrgAccess(request, orgId);
+        if (scope === "all") {
+          assertManagerOrAdmin(request);
+        } else {
+          assertOwnerScope(request, request.query.hubspotOwnerId ?? null);
+        }
         const result = await getSalesActivityStats(orgId, {
           scope,
           hubspotOwnerId: request.query.hubspotOwnerId?.trim() || null,
@@ -86,6 +93,8 @@ export const registerSalesActivityStatsRoutes = async (app: FastifyInstance): Pr
       }
 
       try {
+        assertOrgAccess(request, orgId);
+        assertManagerOrAdmin(request);
         const result = await backfillClosedDealActivities(orgId, {
           closedFrom: request.body.dateFrom ?? null,
           closedTo: request.body.dateTo ?? null,

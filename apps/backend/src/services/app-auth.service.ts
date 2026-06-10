@@ -1,8 +1,25 @@
 import type { FastifyRequest } from "fastify";
 import type { User } from "@supabase/supabase-js";
+import { env } from "../config/env.js";
 import { getSupabaseAdmin } from "../db/client.js";
+import { ForbiddenError, UnauthorizedError } from "../lib/errors.js";
 
 export type AppUserRole = "sales" | "manager" | "admin";
+
+export type AuthContext = {
+  authUserId: string;
+  appUserId: string | null;
+  orgId: string | null;
+  role: AppUserRole | null;
+  hubspotOwnerId: string | null;
+  email: string;
+};
+
+declare module "fastify" {
+  interface FastifyRequest {
+    auth?: AuthContext;
+  }
+}
 
 export type AppUserProfile = {
   id: string | null;
@@ -54,6 +71,19 @@ export const getAuthenticatedAuthUser = async (request: FastifyRequest): Promise
   }
 
   return data.user;
+};
+
+export const loadAuthContext = async (authUser: User): Promise<AuthContext> => {
+  const profile = await loadAppUserProfile(authUser);
+
+  return {
+    authUserId: authUser.id,
+    appUserId: profile.id,
+    orgId: profile.orgId,
+    role: profile.role,
+    hubspotOwnerId: profile.hubspotOwnerId,
+    email: profile.email,
+  };
 };
 
 export const loadAppUserProfile = async (authUser: User): Promise<AppUserProfile> => {
@@ -119,6 +149,71 @@ export const loadOptionalAuthenticatedAppUserProfile = async (
   }
 
   return loadAuthenticatedAppUserProfile(request);
+};
+
+export const requireAuth = (request: FastifyRequest): AuthContext => {
+  if (!request.auth) {
+    if (!env.requireApiAuth) {
+      return {
+        authUserId: "dev-auth-disabled",
+        appUserId: null,
+        orgId: null,
+        role: "admin",
+        hubspotOwnerId: null,
+        email: "dev@jarvis.local",
+      };
+    }
+
+    throw new UnauthorizedError();
+  }
+
+  return request.auth;
+};
+
+export const assertOrgAccess = (request: FastifyRequest, orgId: string | null | undefined): AuthContext => {
+  const auth = requireAuth(request);
+
+  if (!env.requireApiAuth && !auth.orgId) {
+    return auth;
+  }
+
+  if (!orgId || !auth.orgId || auth.orgId !== orgId) {
+    request.log.warn(
+      {
+        authUserId: auth.authUserId,
+        appUserId: auth.appUserId,
+        authOrgId: auth.orgId,
+        requestedOrgId: orgId ?? null,
+      },
+      "Acces cross-org refuse.",
+    );
+    throw new ForbiddenError("Cette session n'a pas acces a cette organisation.");
+  }
+
+  return auth;
+};
+
+export const assertManagerOrAdmin = (request: FastifyRequest): AuthContext => {
+  const auth = requireAuth(request);
+
+  if (auth.role !== "admin" && auth.role !== "manager") {
+    throw new ForbiddenError("Cette action est reservee aux admins et managers.");
+  }
+
+  return auth;
+};
+
+export const assertOwnerScope = (
+  request: FastifyRequest,
+  hubspotOwnerId: string | null | undefined,
+): AuthContext => {
+  const auth = requireAuth(request);
+
+  if (auth.role === "sales" && (!auth.hubspotOwnerId || hubspotOwnerId !== auth.hubspotOwnerId)) {
+    throw new ForbiddenError("Un commercial ne peut acceder qu'a son propre perimetre HubSpot.");
+  }
+
+  return auth;
 };
 
 export const upsertAuthUserAppMetadata = async (

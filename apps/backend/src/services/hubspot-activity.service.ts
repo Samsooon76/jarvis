@@ -252,9 +252,9 @@ const updateWebhookEventStatus = async (
   eventId: string,
   status: "processing" | "completed" | "failed" | "ignored",
   errorMessage: string | null = null,
-): Promise<void> => {
+): Promise<boolean> => {
   const supabase = getSupabaseAdmin();
-  const { error } = await supabase
+  let query = supabase
     .from("hubspot_webhook_events")
     .update({
       processing_status: status,
@@ -263,9 +263,17 @@ const updateWebhookEventStatus = async (
     })
     .eq("id", eventId);
 
+  if (status === "processing") {
+    query = query.eq("processing_status", "queued");
+  }
+
+  const { data, error } = await query.select("id");
+
   if (error) {
     throw new Error(`Impossible de mettre a jour l'evenement webhook HubSpot: ${error.message}`);
   }
+
+  return (data?.length ?? 0) > 0;
 };
 
 const queryOpenDealsByArrayField = async (
@@ -795,6 +803,17 @@ const purgePrivacyDeletedContact = async (orgId: string, hubspotContactId: strin
 
   const impactedActivities = (impactedActivitiesData ?? []) as HubSpotActivityLookupRow[];
   const impactedDealIds = Array.from(new Set(impactedActivities.flatMap((activity) => activity.associated_deal_ids)));
+  const { data: impactedProspectData, error: prospectsLoadError } = await supabase
+    .from("prospects")
+    .select("id")
+    .eq("org_id", orgId)
+    .eq("hubspot_contact_id", hubspotContactId);
+
+  if (prospectsLoadError) {
+    throw new Error(`Impossible de charger les prospects a purger: ${prospectsLoadError.message}`);
+  }
+
+  const impactedProspectIds = ((impactedProspectData ?? []) as Array<{ id: string }>).map((prospect) => prospect.id);
 
   if (impactedActivities.length > 0) {
     const activityIds = impactedActivities.map((activity) => activity.hubspot_activity_id);
@@ -814,6 +833,8 @@ const purgePrivacyDeletedContact = async (orgId: string, hubspotContactId: strin
     deleteContactResult,
     deleteProspectsResult,
     deleteAnalysesResult,
+    deleteFollowUpCacheResult,
+    deleteAccessLogsResult,
   ] = await Promise.all([
     supabase.from("hubspot_activities").delete().eq("org_id", orgId).contains("associated_contact_ids", [hubspotContactId]),
     supabase.from("hubspot_contacts").delete().eq("org_id", orgId).eq("hubspot_contact_id", hubspotContactId),
@@ -821,13 +842,21 @@ const purgePrivacyDeletedContact = async (orgId: string, hubspotContactId: strin
     impactedDealIds.length > 0
       ? supabase.from("deal_ai_analyses").delete().eq("org_id", orgId).in("hubspot_deal_id", impactedDealIds)
       : Promise.resolve({ data: null, error: null }),
+    impactedDealIds.length > 0
+      ? supabase.from("follow_up_task_ai_analyses").delete().eq("org_id", orgId).in("hubspot_deal_id", impactedDealIds)
+      : Promise.resolve({ data: null, error: null }),
+    impactedProspectIds.length > 0
+      ? supabase.from("prospect_access_logs").delete().eq("org_id", orgId).in("prospect_id", impactedProspectIds)
+      : Promise.resolve({ data: null, error: null }),
   ]);
 
   const firstError =
     deleteActivitiesResult.error ??
     deleteContactResult.error ??
     deleteProspectsResult.error ??
-    deleteAnalysesResult.error;
+    deleteAnalysesResult.error ??
+    deleteFollowUpCacheResult.error ??
+    deleteAccessLogsResult.error;
 
   if (firstError) {
     throw new Error(`Impossible de purger le contact RGPD HubSpot: ${firstError.message}`);
@@ -846,7 +875,11 @@ const processHubSpotWebhookEvent = async (eventId: string): Promise<void> => {
     return;
   }
 
-  await updateWebhookEventStatus(event.id, "processing");
+  const lockedForProcessing = await updateWebhookEventStatus(event.id, "processing");
+
+  if (!lockedForProcessing) {
+    return;
+  }
 
   try {
     const payload = asRecord(event.payload);
@@ -972,17 +1005,23 @@ const runHubSpotDealReanalysis = async (runId: string): Promise<void> => {
     return;
   }
 
-  const { error: startError } = await supabase
+  const { data: startedRows, error: startError } = await supabase
     .from("hubspot_realtime_analysis_runs")
     .update({
       status: "running",
       started_at: new Date().toISOString(),
       error_message: null,
     })
-    .eq("id", run.id);
+    .eq("id", run.id)
+    .eq("status", "queued")
+    .select("id");
 
   if (startError) {
     throw new Error(`Impossible de demarrer l'analyse realtime: ${startError.message}`);
+  }
+
+  if ((startedRows?.length ?? 0) === 0) {
+    return;
   }
 
   try {
@@ -1007,7 +1046,7 @@ const runHubSpotDealReanalysis = async (runId: string): Promise<void> => {
       hubspotDealId: run.hubspot_deal_id,
       llmProvider: llmPreference.provider,
       llmModel: llmPreference.model,
-      refresh: true,
+      refresh: false,
     });
 
     const { error: completeError } = await supabase

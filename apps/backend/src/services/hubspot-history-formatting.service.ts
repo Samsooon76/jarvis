@@ -1,5 +1,7 @@
 import type { HubSpotDealHistoryItem } from "./hubspot.service.js";
 
+const MAX_PROMPT_TIMELINE_CHARS = 10_000;
+
 export const sanitizeHubSpotHtml = (value: string | null | undefined): string | null => {
   if (!value) {
     return null;
@@ -29,8 +31,8 @@ const sortByTimestamp = (left: HubSpotDealHistoryItem, right: HubSpotDealHistory
     (Number.isNaN(rightTime) ? Number.POSITIVE_INFINITY : rightTime);
 };
 
-export const formatHubSpotTimelineForPrompt = (timeline: HubSpotDealHistoryItem[]): string =>
-  timeline
+export const formatHubSpotTimelineForPrompt = (timeline: HubSpotDealHistoryItem[]): string => {
+  const formattedTimeline = timeline
     .slice()
     .sort(sortByTimestamp)
     .map((item) => {
@@ -50,3 +52,10 @@ export const formatHubSpotTimelineForPrompt = (timeline: HubSpotDealHistoryItem[
         .join(" | ");
     })
     .join("\n");
+
+  if (formattedTimeline.length <= MAX_PROMPT_TIMELINE_CHARS) {
+    return formattedTimeline;
+  }
+
+  return formattedTimeline.slice(-MAX_PROMPT_TIMELINE_CHARS);
+};

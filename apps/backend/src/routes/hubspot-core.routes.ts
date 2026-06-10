@@ -13,10 +13,10 @@ import {
 } from "../services/hubspot.service.js";
 import { loadLocalHubSpotDealHistory } from "../services/hubspot-activity-history.service.js";
 import { getHubSpotAccessToken, upsertHubSpotIntegration } from "../services/hubspot-auth.service.js";
-import { runAutomaticFollowUpTasksForOrg } from "../services/follow-up-task.service.js";
 import { scoreProspect } from "../services/scoring.service.js";
 import { createJob, getJob, updateJob } from "../services/job-store.js";
 import { getHubSpotSyncStatus, upsertHubSpotSyncStatus, type HubSpotSyncStatusSnapshot } from "../services/hubspot-sync-status.service.js";
+import { assertManagerOrAdmin, assertOrgAccess } from "../services/app-auth.service.js";
 
 type HubSpotStartQuery = {
   orgId?: string;
@@ -1608,28 +1608,16 @@ const syncHubSpotProspects = async (
       }
     }
 
-    const autoFollowUp =
-      hubspotOwnerIds.length === 0
-        ? await runAutomaticFollowUpTasksForOrg(orgId, {
-            warn: (_payload, message) => {
-              reportProgress?.({
-                progress: 90,
-                step: "Relances automatiques",
-                level: "warning",
-                message,
-              });
-            },
-          })
-        : {
-            analyzedCount: 0,
-            createdCount: 0,
-            skippedCount: rows.length,
-            failedCount: 0,
-          };
+    const autoFollowUp = {
+      analyzedCount: 0,
+      createdCount: 0,
+      skippedCount: rows.length,
+      failedCount: 0,
+    };
     reportProgress?.({
       progress: 95,
       step: "Finalisation",
-      message: `Relances: ${autoFollowUp.createdCount} creee(s), ${autoFollowUp.failedCount} echec(s).`,
+      message: "Sync HubSpot finalisee. Les relances automatiques sont traitees hors du flow de sync.",
     });
 
     const result = {
@@ -2728,6 +2716,7 @@ export const registerHubSpotCoreRoutes = async (app: FastifyInstance): Promise<v
           error: "Job de sync HubSpot introuvable.",
         });
       }
+      assertOrgAccess(request, job.orgId);
 
       return reply.send({
         success: true,
@@ -2756,6 +2745,8 @@ export const registerHubSpotCoreRoutes = async (app: FastifyInstance): Promise<v
       }
 
       try {
+        assertOrgAccess(request, orgId);
+        assertManagerOrAdmin(request);
         const contactNames = Array.isArray(request.body.contactNames)
           ? request.body.contactNames.filter((contactName): contactName is string => typeof contactName === "string")
           : [];

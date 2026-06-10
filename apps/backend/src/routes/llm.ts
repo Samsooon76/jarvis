@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { ApiResponse } from "@jarvis/shared";
+import { assertManagerOrAdmin, assertOrgAccess, requireAuth } from "../services/app-auth.service.js";
 import { createLlmProvider } from "../services/llm/provider.factory.js";
 import {
   isLlmProviderId,
@@ -46,6 +47,7 @@ export const registerLlmRoutes = async (app: FastifyInstance): Promise<void> => 
           error: "Le parametre orgId doit etre un UUID Jarvis valide.",
         });
       }
+      assertOrgAccess(request, orgId);
 
       try {
         return reply.send({
@@ -82,6 +84,8 @@ export const registerLlmRoutes = async (app: FastifyInstance): Promise<void> => 
           error: "Provider IA non supporte.",
         });
       }
+      assertOrgAccess(request, orgId);
+      assertManagerOrAdmin(request);
 
       try {
         return reply.send({
@@ -113,6 +117,7 @@ export const registerLlmRoutes = async (app: FastifyInstance): Promise<void> => 
       }
 
       try {
+        requireAuth(request);
         const provider = createLlmProvider();
         const analysis = await provider.analyzeDealHistory({
           history,

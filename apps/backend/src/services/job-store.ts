@@ -1,3 +1,4 @@
+import { env } from "../config/env.js";
 import { getSupabaseAdmin } from "../db/client.js";
 import type { Json } from "../db/database.types.js";
 
@@ -40,6 +41,8 @@ type BackendJobRow = {
 };
 
 const memoryJobs = new Map<string, PersistentJobSnapshot>();
+
+const canUseMemoryJobFallback = (): boolean => env.nodeEnv === "development" || env.nodeEnv === "test";
 
 const mapRowToJob = <TResult extends Json | null>(row: BackendJobRow): PersistentJobSnapshot<TResult> => ({
   id: row.id,
@@ -97,8 +100,10 @@ export const createJob = async <TResult extends Json | null = Json | null>(input
       updated_at: now,
       finished_at: null,
     });
-  } catch {
-    // The in-memory store keeps dev/local flows working before migrations are applied.
+  } catch (error) {
+    if (!canUseMemoryJobFallback()) {
+      throw error;
+    }
   }
 
   return job;
@@ -134,8 +139,10 @@ export const updateJob = async <TResult extends Json | null = Json | null>(
         finished_at: patch.finishedAt,
       })
       .eq("id", id);
-  } catch {
-    // Best-effort persistence; callers still keep their in-process snapshot.
+  } catch (error) {
+    if (!canUseMemoryJobFallback()) {
+      throw error;
+    }
   }
 };
 
@@ -149,8 +156,10 @@ export const getJob = async <TResult extends Json | null = Json | null>(
     if (!error && data) {
       return mapRowToJob<TResult>(data as BackendJobRow);
     }
-  } catch {
-    // Fall back to memory below.
+  } catch (error) {
+    if (!canUseMemoryJobFallback()) {
+      throw error;
+    }
   }
 
   return (memoryJobs.get(id) as PersistentJobSnapshot<TResult> | undefined) ?? null;

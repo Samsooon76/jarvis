@@ -1,5 +1,6 @@
 import { getSupabaseAdmin } from "../db/client.js";
 import { scoreProspect } from "./scoring.service.js";
+import type { AuthContext } from "./app-auth.service.js";
 
 export const SALES_ACTIVITY_EVENT_TYPES = [
   "call.received",
@@ -1648,7 +1649,25 @@ const loadTaskById = async (taskId: string): Promise<SalesTaskListItem | null> =
   return tasks[0] ?? null;
 };
 
-export const completeSalesTask = async (taskId: string): Promise<SalesTaskActionResult> => {
+const assertTaskActionAccess = (task: SalesTaskListItem, auth: AuthContext): void => {
+  if (auth.orgId && task.orgId !== auth.orgId) {
+    throw new Error("Cette session n'a pas acces a cette tache.");
+  }
+
+  if (auth.role === "sales" && (!auth.appUserId || task.userId !== auth.appUserId)) {
+    throw new Error("Un commercial ne peut modifier que ses propres taches.");
+  }
+};
+
+export const completeSalesTask = async (taskId: string, auth: AuthContext): Promise<SalesTaskActionResult> => {
+  const currentTask = await loadTaskById(taskId);
+
+  if (!currentTask) {
+    throw new Error("Tache introuvable.");
+  }
+
+  assertTaskActionAccess(currentTask, auth);
+
   const supabase = getSupabaseAdmin();
   const now = new Date().toISOString();
   const { error } = await supabase
@@ -1679,6 +1698,7 @@ export const completeSalesTask = async (taskId: string): Promise<SalesTaskAction
 export const snoozeSalesTask = async (
   taskId: string,
   snoozedUntil: string,
+  auth: AuthContext,
   reason?: string | null,
 ): Promise<SalesTaskActionResult> => {
   assertUuid(taskId, "taskId");
@@ -1693,6 +1713,8 @@ export const snoozeSalesTask = async (
   if (!currentTask) {
     throw new Error("Tache introuvable.");
   }
+
+  assertTaskActionAccess(currentTask, auth);
 
   const nowDate = new Date();
   const scheduledAt = normalizeWorkSlot(
@@ -1740,7 +1762,11 @@ export const snoozeSalesTask = async (
   return { task };
 };
 
-export const skipSalesTask = async (taskId: string, reason?: string | null): Promise<SalesTaskActionResult> => {
+export const skipSalesTask = async (
+  taskId: string,
+  auth: AuthContext,
+  reason?: string | null,
+): Promise<SalesTaskActionResult> => {
   assertUuid(taskId, "taskId");
 
   const currentTask = await loadTaskById(taskId);
@@ -1748,6 +1774,8 @@ export const skipSalesTask = async (taskId: string, reason?: string | null): Pro
   if (!currentTask) {
     throw new Error("Tache introuvable.");
   }
+
+  assertTaskActionAccess(currentTask, auth);
 
   const now = new Date().toISOString();
   const supabase = getSupabaseAdmin();

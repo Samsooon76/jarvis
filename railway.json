@@ -2,10 +2,10 @@
   "$schema": "https://railway.app/railway.schema.json",
   "build": {
     "builder": "RAILPACK",
-    "buildCommand": "npm run build -w @jarvis/api"
+    "buildCommand": "if [ \"$RAILWAY_SERVICE_NAME\" = \"jarvis\" ]; then npm run build -w @jarvis/shared && npm run build -w @jarvis/extension; else npm run build -w @jarvis/api; fi"
   },
   "deploy": {
-    "startCommand": "node apps/backend/dist/index.js",
+    "startCommand": "if [ \"$RAILWAY_SERVICE_NAME\" = \"jarvis\" ]; then npm exec -w @jarvis/extension vite -- preview --host 0.0.0.0 --port ${PORT:-4173}; else node apps/backend/dist/index.js; fi",
     "healthcheckPath": "/health",
     "healthcheckTimeout": 120,
     "restartPolicyType": "ON_FAILURE",

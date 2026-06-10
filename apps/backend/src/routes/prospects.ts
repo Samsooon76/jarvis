@@ -26,6 +26,8 @@ import { getSupabaseAdmin } from "../db/client.js";
 import type { Json } from "../db/database.types.js";
 import { createJob, getJob, updateJob, type PersistentJobSnapshot } from "../services/job-store.js";
 import { invalidateQueueCache } from "../services/queue.service.js";
+import { assertOrgAccess, requireAuth } from "../services/app-auth.service.js";
+import { logProspectAccess } from "../services/prospect-access-log.service.js";
 
 type FollowUpTaskParams = {
   id: string;
@@ -392,10 +394,21 @@ export const registerProspectRoutes = async (app: FastifyInstance): Promise<void
             error: "Prospect introuvable.",
           });
         }
+        const mappedProspect = mapProspectDetail(prospect as Record<string, unknown>);
+        assertOrgAccess(request, mappedProspect.orgId);
+        const auth = requireAuth(request);
+        await logProspectAccess({
+          orgId: mappedProspect.orgId,
+          userId: auth.appUserId,
+          prospectId: mappedProspect.id,
+          source: "prospect_detail",
+        }).catch((logError: unknown) => {
+          request.log.warn({ error: logError, prospectId: mappedProspect.id }, "Journalisation acces prospect ignoree.");
+        });
 
         return reply.send({
           success: true,
-          data: mapProspectDetail(prospect as Record<string, unknown>),
+          data: mappedProspect,
         });
       } catch (error) {
         request.log.error({ error, prospectId: request.params.id }, "Impossible de charger la fiche prospect.");
@@ -575,6 +588,9 @@ export const registerProspectRoutes = async (app: FastifyInstance): Promise<void
           error: "Job d'analyse deal introuvable.",
         });
       }
+      if (job.orgId) {
+        assertOrgAccess(request, job.orgId);
+      }
 
       return reply.send({
         success: true,
@@ -587,6 +603,9 @@ export const registerProspectRoutes = async (app: FastifyInstance): Promise<void
     "/api/prospects/:id/deal-intelligence",
     async (request, reply) => {
       try {
+        if (request.query.orgId) {
+          assertOrgAccess(request, request.query.orgId);
+        }
         const result = await analyzeDealIntelligenceForProspect(request.params.id, {
           orgId: request.query.orgId ?? null,
           hubspotDealId: request.query.hubspotDealId ?? null,
@@ -598,6 +617,14 @@ export const registerProspectRoutes = async (app: FastifyInstance): Promise<void
           lastContactAt: request.query.lastContactAt ?? null,
           nextAction: request.query.nextAction ?? null,
           refresh: request.query.refresh === "true",
+        });
+        await logProspectAccess({
+          orgId: result.orgId,
+          userId: requireAuth(request).appUserId,
+          prospectId: result.prospectId,
+          source: "deal_intelligence",
+        }).catch((logError: unknown) => {
+          request.log.warn({ error: logError, prospectId: result.prospectId }, "Journalisation acces prospect ignoree.");
         });
 
         return reply.send({
@@ -626,6 +653,9 @@ export const registerProspectRoutes = async (app: FastifyInstance): Promise<void
   app.post<{ Params: DealAnalysisRunParams; Body: DealAnalysisRunBody; Reply: ApiResponse<DealAnalysisJobSnapshot> }>(
     "/api/prospects/:id/deal-analysis-runs",
     async (request, reply) => {
+      if (request.body.orgId) {
+        assertOrgAccess(request, request.body.orgId);
+      }
       const job = await createDealAnalysisJob(request.params.id, request.body);
 
       void (async () => {
@@ -636,7 +666,7 @@ export const registerProspectRoutes = async (app: FastifyInstance): Promise<void
             hubspotDealId: request.body.hubspotDealId ?? null,
             llmProvider: request.body.llmProvider ?? null,
             llmModel: request.body.llmModel ?? null,
-            refresh: request.body.refresh ?? true,
+            refresh: request.body.refresh ?? false,
           });
           await markDealAnalysisJobRunning(job.jobId, "Persistance des analyses du deal", 90);
           await completeDealAnalysisJob(job.jobId, result);
@@ -666,6 +696,9 @@ export const registerProspectRoutes = async (app: FastifyInstance): Promise<void
     "/api/prospects/:id/deal-analysis-page",
     async (request, reply) => {
       try {
+        if (request.query.orgId) {
+          assertOrgAccess(request, request.query.orgId);
+        }
         const result = await buildDealAnalysisPageForProspect(request.params.id, {
           orgId: request.query.orgId ?? null,
           hubspotDealId: request.query.hubspotDealId ?? null,
@@ -684,6 +717,14 @@ export const registerProspectRoutes = async (app: FastifyInstance): Promise<void
           lastContactAt: request.query.lastContactAt ?? null,
           nextAction: request.query.nextAction ?? null,
           refresh: request.query.refresh === "true",
+        });
+        await logProspectAccess({
+          orgId: result.orgId,
+          userId: requireAuth(request).appUserId,
+          prospectId: result.prospectId,
+          source: "deal_analysis_page",
+        }).catch((logError: unknown) => {
+          request.log.warn({ error: logError, prospectId: result.prospectId }, "Journalisation acces prospect ignoree.");
         });
 
         return reply.send({
@@ -713,6 +754,9 @@ export const registerProspectRoutes = async (app: FastifyInstance): Promise<void
     "/api/prospects/:id/deal-analysis-bundle",
     async (request, reply) => {
       try {
+        if (request.query.orgId) {
+          assertOrgAccess(request, request.query.orgId);
+        }
         const result = await buildDealAnalysisBundleForProspect(request.params.id, {
           orgId: request.query.orgId ?? null,
           hubspotDealId: request.query.hubspotDealId ?? null,
@@ -731,6 +775,14 @@ export const registerProspectRoutes = async (app: FastifyInstance): Promise<void
           lastContactAt: request.query.lastContactAt ?? null,
           nextAction: request.query.nextAction ?? null,
           refresh: request.query.refresh === "true",
+        });
+        await logProspectAccess({
+          orgId: result.page.orgId,
+          userId: requireAuth(request).appUserId,
+          prospectId: result.page.prospectId,
+          source: "deal_analysis_bundle",
+        }).catch((logError: unknown) => {
+          request.log.warn({ error: logError, prospectId: result.page.prospectId }, "Journalisation acces prospect ignoree.");
         });
 
         return reply.send({
@@ -760,6 +812,9 @@ export const registerProspectRoutes = async (app: FastifyInstance): Promise<void
     "/api/prospects/:id/deal-qualification",
     async (request, reply) => {
       try {
+        if (request.query.orgId) {
+          assertOrgAccess(request, request.query.orgId);
+        }
         const result = await analyzeDealQualificationForProspect(request.params.id, {
           orgId: request.query.orgId ?? null,
           hubspotDealId: request.query.hubspotDealId ?? null,
@@ -778,6 +833,14 @@ export const registerProspectRoutes = async (app: FastifyInstance): Promise<void
           lastContactAt: request.query.lastContactAt ?? null,
           nextAction: request.query.nextAction ?? null,
           refresh: request.query.refresh === "true",
+        });
+        await logProspectAccess({
+          orgId: result.orgId,
+          userId: requireAuth(request).appUserId,
+          prospectId: result.prospectId,
+          source: "deal_qualification",
+        }).catch((logError: unknown) => {
+          request.log.warn({ error: logError, prospectId: result.prospectId }, "Journalisation acces prospect ignoree.");
         });
 
         return reply.send({
@@ -807,6 +870,9 @@ export const registerProspectRoutes = async (app: FastifyInstance): Promise<void
     "/api/prospects/:id/deal-activity-plan",
     async (request, reply) => {
       try {
+        if (request.query.orgId) {
+          assertOrgAccess(request, request.query.orgId);
+        }
         const result = await analyzeDealActivityPlanForProspect(request.params.id, {
           orgId: request.query.orgId ?? null,
           hubspotDealId: request.query.hubspotDealId ?? null,
@@ -825,6 +891,14 @@ export const registerProspectRoutes = async (app: FastifyInstance): Promise<void
           lastContactAt: request.query.lastContactAt ?? null,
           nextAction: request.query.nextAction ?? null,
           refresh: request.query.refresh === "true",
+        });
+        await logProspectAccess({
+          orgId: result.orgId,
+          userId: requireAuth(request).appUserId,
+          prospectId: result.prospectId,
+          source: "deal_activity_plan",
+        }).catch((logError: unknown) => {
+          request.log.warn({ error: logError, prospectId: result.prospectId }, "Journalisation acces prospect ignoree.");
         });
 
         return reply.send({
@@ -869,6 +943,9 @@ export const registerProspectRoutes = async (app: FastifyInstance): Promise<void
       };
 
       try {
+        if (context.orgId) {
+          assertOrgAccess(request, context.orgId);
+        }
         if (dryRun) {
           const preview = await previewFollowUpTaskForProspect(
             prospectId,

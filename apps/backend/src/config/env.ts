@@ -56,9 +56,17 @@ export const env = {
     .split(",")
     .map((origin) => origin.trim())
     .filter(Boolean),
-  requireApiAuth: (process.env.REQUIRE_API_AUTH ?? (process.env.NODE_ENV === "production" ? "true" : "false")) === "true",
+  requireApiAuth:
+    (process.env.REQUIRE_API_AUTH ??
+      (process.env.NODE_ENV === "development" || process.env.NODE_ENV === "test" ? "false" : "true")) === "true",
   apiAuthToken: process.env.API_AUTH_TOKEN ?? "",
   apiPublicUrl,
+  enableDebugRoutes: process.env.ENABLE_DEBUG_ROUTES === "true",
+  oauthStateSecret:
+    process.env.OAUTH_STATE_SECRET ??
+    process.env.HUBSPOT_OAUTH_STATE_SECRET ??
+    process.env.SUPABASE_SERVICE_ROLE_KEY ??
+    "",
   sentryDsn: process.env.SENTRY_DSN ?? "",
   sentryTracesSampleRate: Number(process.env.SENTRY_TRACES_SAMPLE_RATE ?? 0),
   redisUrl: process.env.REDIS_URL ?? "",
