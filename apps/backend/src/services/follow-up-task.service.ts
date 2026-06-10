@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { getSupabaseAdmin } from "../db/client.js";
 import type { Json } from "../db/database.types.js";
 import { formatHubSpotTimelineForPrompt } from "./hubspot-history-formatting.service.js";
-import { hubSpotService } from "./hubspot.service.js";
+import { hubSpotService, type HubSpotDealHistoryItem } from "./hubspot.service.js";
 import { getHubSpotAccessToken } from "./hubspot-auth.service.js";
 import { buildBusinessDueAtFromDays } from "./business-days.js";
 import { createLlmProvider } from "./llm/provider.factory.js";
@@ -248,6 +248,8 @@ const historyContainsOverdueSignal = (historyText: string): boolean => {
 
   return FOLLOW_UP_OVERDUE_KEYWORDS.some((keyword) => normalizedHistory.includes(keyword));
 };
+
+const buildHistoryText = (timeline: HubSpotDealHistoryItem[]): string => formatHubSpotTimelineForPrompt(timeline);
 
 const normalizeFollowUpRecommendation = (
   recommendation: FollowUpTaskRecommendation,
