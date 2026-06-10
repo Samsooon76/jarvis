@@ -247,6 +247,11 @@ export const CoachingView = () => {
                 <h4>Funnel par stage</h4>
                 <small>Repartition ouverts / gagnes / perdus</small>
               </div>
+              <div className="ae-coaching-funnel-legend" aria-hidden="true">
+                <span className="won">Gagnes</span>
+                <span className="open">Ouverts</span>
+                <span className="lost">Perdus</span>
+              </div>
               <div className="ae-forecast-list">
                 {repCoaching.stats.funnel.map((stage) => {
                   const total = stage.openCount + stage.wonCount + stage.lostCount;
@@ -254,13 +259,10 @@ export const CoachingView = () => {
                   return (
                     <div className="ae-coaching-funnel-row" key={stage.stage}>
                       <span>{stage.stage}</span>
-                      <div
-                        aria-label={`${stage.stage}: ${total} deals`}
-                        style={{ display: "flex", height: "10px", borderRadius: "5px", overflow: "hidden", width: "100%" }}
-                      >
-                        <i style={{ background: "#26be67", width: `${(stage.wonCount / funnelMax) * 100}%` }} />
-                        <i style={{ background: "#4f7dce", width: `${(stage.openCount / funnelMax) * 100}%` }} />
-                        <i style={{ background: "#ef5b5b", width: `${(stage.lostCount / funnelMax) * 100}%` }} />
+                      <div className="ae-coaching-funnel-bar" aria-label={`${stage.stage}: ${total} deals`}>
+                        <i className="won" style={{ width: `${(stage.wonCount / funnelMax) * 100}%` }} />
+                        <i className="open" style={{ width: `${(stage.openCount / funnelMax) * 100}%` }} />
+                        <i className="lost" style={{ width: `${(stage.lostCount / funnelMax) * 100}%` }} />
                       </div>
                       <small>
                         {stage.openCount} ouverts - {stage.wonCount} gagnes - {stage.lostCount} perdus
@@ -278,15 +280,16 @@ export const CoachingView = () => {
                     <div className="ae-panel-heading">
                       <h4>Forces</h4>
                     </div>
-                    <div className="ae-forecast-list">
+                    <div className="ae-coaching-insight-list">
                       {repCoaching.analysis.strengths.length === 0 ? (
                         <p className="ae-empty">Aucune force identifiee.</p>
                       ) : (
                         repCoaching.analysis.strengths.map((strength) => (
-                          <div key={strength.title}>
+                          <article className="ae-coaching-insight-card strength" key={strength.title}>
+                            <span>Force</span>
                             <strong>{strength.title}</strong>
                             <p>{strength.evidence}</p>
-                          </div>
+                          </article>
                         ))
                       )}
                     </div>
@@ -296,18 +299,18 @@ export const CoachingView = () => {
                     <div className="ae-panel-heading">
                       <h4>Axes de progression</h4>
                     </div>
-                    <div className="ae-forecast-list">
+                    <div className="ae-coaching-insight-list">
                       {repCoaching.analysis.weaknesses.length === 0 ? (
                         <p className="ae-empty">Aucun axe identifie.</p>
                       ) : (
                         repCoaching.analysis.weaknesses.map((weakness) => (
-                          <div key={weakness.title}>
+                          <article className="ae-coaching-insight-card growth" key={weakness.title}>
+                            <span>{weakness.stage ?? "A travailler"}</span>
                             <strong>
                               {weakness.title}
-                              {weakness.stage ? ` (${weakness.stage})` : ""}
                             </strong>
                             <p>{weakness.evidence}</p>
-                          </div>
+                          </article>
                         ))
                       )}
                     </div>
@@ -319,12 +322,12 @@ export const CoachingView = () => {
                     <div className="ae-panel-heading">
                       <h4>Patterns de pertes</h4>
                     </div>
-                    <div className="ae-forecast-list">
+                    <div className="ae-coaching-loss-patterns">
                       {repCoaching.analysis.lossPatterns.map((pattern) => (
-                        <div key={pattern.pattern}>
-                          <strong>{FREQUENCY_LABELS[pattern.frequency] ?? pattern.frequency}</strong>
-                          <p>{pattern.pattern}</p>
-                        </div>
+                        <article className="ae-coaching-loss-pattern" key={pattern.pattern}>
+                          <span>{FREQUENCY_LABELS[pattern.frequency] ?? pattern.frequency}</span>
+                          <strong>{pattern.pattern}</strong>
+                        </article>
                       ))}
                     </div>
                   </article>
@@ -335,21 +338,24 @@ export const CoachingView = () => {
                     <h4>Actions de coaching pour le 1:1</h4>
                     <small>Cliquer pour copier</small>
                   </div>
-                  <div className="ae-forecast-list">
+                  <div className="ae-coaching-action-list">
                     {repCoaching.analysis.coachingActions.map((action) => (
-                      <div key={action.action}>
+                      <article className="ae-coaching-action-card" key={action.action}>
                         <button
-                          className="ae-forecast-link"
+                          className="ae-coaching-action-button"
                           onClick={() => handleCopyAction(`${action.action} (impact attendu: ${action.expectedImpact})`)}
                           type="button"
                         >
+                          <span className={action.priority === "high" ? "high" : "medium"}>
+                            {action.priority === "high" ? "Prioritaire" : "Moyen"}
+                          </span>
                           <strong>
-                            [{action.priority === "high" ? "Prioritaire" : "Moyen"}] {action.action}
+                            {action.action}
                           </strong>
                         </button>
                         <p>Impact attendu: {action.expectedImpact}</p>
                         {copiedAction?.startsWith(action.action) ? <small>Copie !</small> : null}
-                      </div>
+                      </article>
                     ))}
                   </div>
                 </article>

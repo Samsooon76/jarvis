@@ -1245,7 +1245,7 @@ export const DealAnalysisView = ({
       setQualificationLoading(true);
       setQualificationError(null);
 
-      const result = await fetchDealQualification(activeProspect, orgId, selectedAiProvider, ownerName, refresh);
+      const result = await fetchDealQualification(activeProspect, orgId, selectedAiProvider, refresh);
       qualificationCache.set(cacheKey, result);
       setQualification(result);
     } catch (error) {
@@ -1286,7 +1286,7 @@ export const DealAnalysisView = ({
       setActivityPlanLoading(true);
       setActivityPlanError(null);
 
-      const result = await fetchDealActivityPlan(activeProspect, orgId, selectedAiProvider, ownerName, refresh);
+      const result = await fetchDealActivityPlan(activeProspect, orgId, selectedAiProvider, refresh);
       activityPlanCache.set(cacheKey, result);
       setActivityPlan(result);
     } catch (error) {
@@ -1364,7 +1364,7 @@ export const DealAnalysisView = ({
         return;
       }
 
-      const result = await fetchDealAnalysisPage(activeProspect, orgId, selectedAiProvider, ownerName, false);
+      const result = await fetchDealAnalysisPage(activeProspect, orgId, selectedAiProvider, false);
       if (activeProspectIdRef.current !== activeProspect.id) {
         return;
       }

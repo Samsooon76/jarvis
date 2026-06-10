@@ -11,6 +11,13 @@ type DigestViewProps = {
   onOpenDealAnalysis: (prospectId: string) => void;
 };
 
+type DigestMovementViewModel = {
+  id: string | null;
+  title: string;
+  changeCount: string | null;
+  detail: string;
+};
+
 const PERIOD_OPTIONS: Array<{ id: ManagerDigestPeriod; label: string }> = [
   { id: "daily", label: "Aujourd'hui" },
   { id: "weekly", label: "7 derniers jours" },
@@ -20,6 +27,12 @@ const HIGHLIGHT_LABELS: Record<string, string> = {
   win: "Win",
   risk: "Risque",
   movement: "Mouvement",
+};
+
+const CONFIDENCE_LABELS: Record<string, string> = {
+  high: "Haute",
+  medium: "Moyenne",
+  low: "Faible",
 };
 
 const formatDate = (value: string): string =>
@@ -32,6 +45,27 @@ const formatDateTime = (value: string): string =>
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(value));
+
+const formatDigestMovementDetail = (value: string): string => {
+  const [, rawDetail = value] = value.split(" : ");
+  const readable = rawDetail
+    .replace(/\bprobabilite\b/gi, "Probabilite")
+    .replace(/\s*->\s*/g, " -> ");
+
+  return readable.charAt(0).toUpperCase() + readable.slice(1);
+};
+
+const toDigestMovementViewModel = (movement: string): DigestMovementViewModel => {
+  const [idPart, titlePart, changePart, detailPart] = movement.split(" | ");
+  const id = idPart?.startsWith("id=") ? idPart.replace("id=", "") : null;
+
+  return {
+    id,
+    title: titlePart || "Mouvement HubSpot",
+    changeCount: changePart || null,
+    detail: formatDigestMovementDetail(detailPart || movement),
+  };
+};
 
 export const DigestView = ({ prospects, onOpenDealAnalysis }: DigestViewProps) => {
   const [period, setPeriod] = useState<ManagerDigestPeriod>("daily");
@@ -108,6 +142,10 @@ export const DigestView = ({ prospects, onOpenDealAnalysis }: DigestViewProps) =
     );
   };
 
+  const riskDealCount = digest?.digest.atRiskDeals.length ?? 0;
+  const assistDealCount = digest?.digest.assistDeals.length ?? 0;
+  const actionDealCount = riskDealCount + assistDealCount;
+
   return (
     <section className="ae-view-panel ae-digest-page" aria-label="Digest manager">
       <div className="ae-forecast-header">
@@ -141,30 +179,54 @@ export const DigestView = ({ prospects, onOpenDealAnalysis }: DigestViewProps) =
 
       {digest ? (
         <>
-          <article className="ae-forecast-banner">
-            <div>
+          <article className="ae-digest-hero">
+            <div className="ae-digest-hero-label">
+              <span>Brief manager</span>
+              <strong>{period === "daily" ? "Aujourd'hui" : "7 derniers jours"}</strong>
+            </div>
+            <div className="ae-digest-hero-copy">
               <h3>{digest.digest.headline}</h3>
               <p>{digest.digest.teamPulse}</p>
               <small>
-                {digest.movementCount} mouvement{digest.movementCount > 1 ? "s" : ""} sur la periode - confiance{" "}
-                {digest.digest.confidence}
-                {digest.stale ? " - base sur la derniere synthese forecast connue (perimee)" : ""}
+                Confiance {CONFIDENCE_LABELS[digest.digest.confidence] ?? digest.digest.confidence}
+                {digest.stale ? " - base sur la derniere synthese forecast connue" : ""}
               </small>
             </div>
           </article>
 
-          <section className="ae-forecast-layout">
-            <article className="ae-forecast-panel">
+          <section className="ae-digest-metrics" aria-label="Synthese digest">
+            <div>
+              <span>Mouvements CRM</span>
+              <strong>{digest.movementCount}</strong>
+              <small>sur la periode</small>
+            </div>
+            <div>
+              <span>Deals a risque</span>
+              <strong>{riskDealCount}</strong>
+              <small>a surveiller</small>
+            </div>
+            <div>
+              <span>Coups de main</span>
+              <strong>{assistDealCount}</strong>
+              <small>interventions utiles</small>
+            </div>
+          </section>
+
+          <section className="ae-digest-action-grid">
+            <article className="ae-forecast-panel ae-digest-action-panel risk">
               <div className="ae-panel-heading">
-                <h4>Deals a risque</h4>
-                <small>Top {digest.digest.atRiskDeals.length} de la periode</small>
+                <div>
+                  <span className="ae-digest-chip">Risque</span>
+                  <h4>Deals a risque</h4>
+                </div>
+                <small>Top {riskDealCount} de la periode</small>
               </div>
-              <div className="ae-forecast-list">
+              <div className="ae-digest-card-list">
                 {digest.digest.atRiskDeals.length === 0 ? (
                   <p className="ae-empty">Aucun deal a risque identifie.</p>
                 ) : (
                   digest.digest.atRiskDeals.map((deal) => (
-                    <div className="ae-forecast-list-item" key={deal.dealId}>
+                    <div className="ae-digest-deal-card" key={deal.dealId}>
                       {renderDealButton(deal.dealId, deal.dealName)}
                       <p>{deal.reason}</p>
                       <small>Action suggeree: {deal.suggestedAction}</small>
@@ -174,17 +236,20 @@ export const DigestView = ({ prospects, onOpenDealAnalysis }: DigestViewProps) =
               </div>
             </article>
 
-            <article className="ae-forecast-panel">
+            <article className="ae-forecast-panel ae-digest-action-panel assist">
               <div className="ae-panel-heading">
-                <h4>Coup de main</h4>
+                <div>
+                  <span className="ae-digest-chip">Aide</span>
+                  <h4>Coup de main</h4>
+                </div>
                 <small>Deals ou intervenir aide le plus</small>
               </div>
-              <div className="ae-forecast-list">
+              <div className="ae-digest-card-list">
                 {digest.digest.assistDeals.length === 0 ? (
                   <p className="ae-empty">Aucun deal a pousser identifie.</p>
                 ) : (
                   digest.digest.assistDeals.map((deal) => (
-                    <div className="ae-forecast-list-item" key={deal.dealId}>
+                    <div className="ae-digest-deal-card" key={deal.dealId}>
                       {renderDealButton(deal.dealId, deal.dealName)}
                       <p>{deal.whyHelp}</p>
                       <small>Coaching: {deal.coachingHint}</small>
@@ -196,14 +261,17 @@ export const DigestView = ({ prospects, onOpenDealAnalysis }: DigestViewProps) =
           </section>
 
           {digest.digest.highlights.length > 0 ? (
-            <article className="ae-forecast-panel">
+            <article className="ae-forecast-panel ae-digest-highlights">
               <div className="ae-panel-heading">
-                <h4>Faits marquants</h4>
+                <div>
+                  <h4>Faits marquants</h4>
+                  <small>{digest.digest.highlights.length} signal{digest.digest.highlights.length > 1 ? "s" : ""} a lire</small>
+                </div>
               </div>
-              <div className="ae-forecast-list">
+              <div className="ae-digest-highlight-grid">
                 {digest.digest.highlights.map((highlight, index) => (
-                  <div className="ae-forecast-list-item" key={`${highlight.type}-${index}`}>
-                    <strong>{HIGHLIGHT_LABELS[highlight.type] ?? highlight.type}</strong>
+                  <div className={`ae-digest-highlight ${highlight.type}`} key={`${highlight.type}-${index}`}>
+                    <span>{HIGHLIGHT_LABELS[highlight.type] ?? highlight.type}</span>
                     <p>
                       {highlight.text}
                       {highlight.dealId && prospectIdByDealId.has(highlight.dealId) ? (
@@ -221,24 +289,47 @@ export const DigestView = ({ prospects, onOpenDealAnalysis }: DigestViewProps) =
             </article>
           ) : null}
 
-          <article className="ae-forecast-panel">
+          <article className="ae-forecast-panel ae-digest-movements">
             <div className="ae-panel-heading">
-              <h4>Mouvements bruts</h4>
+              <div>
+                <h4>Mouvements CRM</h4>
+                <small>Changements HubSpot detectes sur la periode</small>
+              </div>
+              <span className="ae-digest-action-count">{actionDealCount} action{actionDealCount > 1 ? "s" : ""}</span>
               <button className="ae-forecast-link" onClick={() => setMovementsOpen((isOpen) => !isOpen)} type="button">
-                {movementsOpen ? "Masquer" : `Afficher (${digest.movements.length})`}
+                {movementsOpen ? "Masquer" : `Voir les details (${digest.movements.length})`}
               </button>
             </div>
             {movementsOpen ? (
               digest.movements.length === 0 ? (
                 <p className="ae-empty">Aucun mouvement sur la periode.</p>
               ) : (
-                <ol className="ae-sync-logs">
-                  {digest.movements.map((movement) => (
-                    <li key={movement}>{movement}</li>
-                  ))}
-                </ol>
+                <ul className="ae-digest-movement-list">
+                  {digest.movements.map((movement) => {
+                    const parsedMovement = toDigestMovementViewModel(movement);
+
+                    return (
+                      <li className="ae-digest-movement-item" key={movement}>
+                        <div>
+                          <strong>{parsedMovement.title}</strong>
+                          {parsedMovement.changeCount ? <span>{parsedMovement.changeCount}</span> : null}
+                        </div>
+                        <p>{parsedMovement.detail}</p>
+                        {parsedMovement.id ? <small>HubSpot deal #{parsedMovement.id}</small> : null}
+                      </li>
+                    );
+                  })}
+                </ul>
               )
-            ) : null}
+            ) : (
+              <p className="ae-digest-movement-preview">
+                {digest.movements.length === 0
+                  ? "Aucun mouvement CRM sur la periode."
+                  : `${digest.movements.length} mouvement${digest.movements.length > 1 ? "s" : ""} CRM detecte${
+                      digest.movements.length > 1 ? "s" : ""
+                    }. Ouvrez les details pour voir les deals concernes.`}
+              </p>
+            )}
           </article>
         </>
       ) : null}

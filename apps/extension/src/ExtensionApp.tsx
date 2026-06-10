@@ -553,7 +553,7 @@ export const ExtensionApp = () => {
         {hubSpotConnectionError ? <div className="ae-app-error">{hubSpotConnectionError}</div> : null}
         <FirstRunOnboarding
           canManageHubSpot={Boolean(authProfile?.canManageHubSpot)}
-          generatedAt={data?.generatedAt}
+          generatedAt={data?.generatedAt ?? undefined}
           hubspotPortalId={data?.hubspotPortalId}
           isConnected={isHubSpotConnected}
           onConnectHubSpot={authProfile?.canManageHubSpot ? handleConnectHubSpot : undefined}
@@ -573,7 +573,7 @@ export const ExtensionApp = () => {
       {hubSpotConnectionError ? <div className="ae-app-error">{hubSpotConnectionError}</div> : null}
       <QueueView
         orgId={activeOrgId}
-        generatedAt={data?.generatedAt}
+        generatedAt={data?.generatedAt ?? undefined}
         hubspotDealCount={data?.hubspotDealCount}
         hubspotPortalId={data?.hubspotPortalId}
         isConnected={isHubSpotConnected}

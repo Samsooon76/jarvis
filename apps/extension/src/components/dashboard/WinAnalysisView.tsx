@@ -183,8 +183,12 @@ export const WinAnalysisView = ({ orgId }: WinAnalysisViewProps) => {
           </section>
 
           {overview.portfolio ? (
-            <article className="ae-forecast-banner">
-              <div>
+            <article className="ae-win-hero-card">
+              <div className="ae-win-hero-label">
+                <span>Insight IA</span>
+                <strong>Portefeuille gagne</strong>
+              </div>
+              <div className="ae-win-hero-copy">
                 <h3>{overview.portfolio.keyInsight}</h3>
                 <p>{overview.portfolio.executiveSummary}</p>
                 <small>Confiance {overview.portfolio.confidence} - attention au biais de survivant</small>
@@ -192,15 +196,16 @@ export const WinAnalysisView = ({ orgId }: WinAnalysisViewProps) => {
             </article>
           ) : null}
 
-          <section className="ae-forecast-layout">
+          <section className="ae-win-playbook-grid">
             {overview.portfolio && overview.portfolio.winningPatterns.length > 0 ? (
-              <article className="ae-forecast-panel">
+              <article className="ae-forecast-panel ae-win-playbook-panel">
                 <div className="ae-panel-heading">
                   <h4>Patterns de victoire</h4>
                 </div>
-                <div className="ae-forecast-list">
-                  {overview.portfolio.winningPatterns.map((pattern) => (
-                    <div key={pattern}>
+                <div className="ae-win-pattern-grid">
+                  {overview.portfolio.winningPatterns.map((pattern, index) => (
+                    <div key={pattern} className="ae-win-pattern-card">
+                      <span>{String(index + 1).padStart(2, "0")}</span>
                       <p>{pattern}</p>
                     </div>
                   ))}
@@ -209,11 +214,11 @@ export const WinAnalysisView = ({ orgId }: WinAnalysisViewProps) => {
             ) : null}
 
             {overview.portfolio && overview.portfolio.idealSequence.length > 0 ? (
-              <article className="ae-forecast-panel">
+              <article className="ae-forecast-panel ae-win-sequence-panel">
                 <div className="ae-panel-heading">
                   <h4>Sequence gagnante type</h4>
                 </div>
-                <ol className="ae-sync-logs">
+                <ol className="ae-win-sequence-list">
                   {overview.portfolio.idealSequence.map((step) => (
                     <li key={step}>{step}</li>
                   ))}
@@ -222,73 +227,108 @@ export const WinAnalysisView = ({ orgId }: WinAnalysisViewProps) => {
             ) : null}
           </section>
 
-          {allBenchmark ? (
-            <article className="ae-forecast-panel">
-              <div className="ae-panel-heading">
-                <h4>Benchmark quantitatif (0 LLM)</h4>
-                <small>
-                  {allBenchmark.sampleSize} wins, {allBenchmark.dateFrom} au {allBenchmark.dateTo}
-                </small>
-              </div>
-              <div className="ae-forecast-list">
-                <div>
-                  <strong>Cycle moyen: {allBenchmark.metrics.avgCycleDays ?? "n/a"} jours</strong>
-                  <p>
-                    Panier median{" "}
-                    {allBenchmark.metrics.medianAmount !== null ? formatAmount(allBenchmark.metrics.medianAmount) : "n/a"}
-                  </p>
+          <section className="ae-win-data-grid">
+            {allBenchmark ? (
+              <article className="ae-forecast-panel ae-win-benchmark-panel">
+                <div className="ae-panel-heading">
+                  <h4>Benchmark quantitatif (0 LLM)</h4>
+                  <small>
+                    {allBenchmark.sampleSize} wins, {allBenchmark.dateFrom} au {allBenchmark.dateTo}
+                  </small>
                 </div>
-                <div>
-                  <strong>Activite moyenne d'un deal gagnant</strong>
-                  <p>
-                    {allBenchmark.metrics.avgCalls ?? "n/a"} appels - {allBenchmark.metrics.avgEmails ?? "n/a"} emails -{" "}
-                    {allBenchmark.metrics.avgTouchpoints ?? "n/a"} touchpoints
-                  </p>
-                </div>
-              </div>
-            </article>
-          ) : null}
-
-          {overview.winFactors.length > 0 ? (
-            <article className="ae-forecast-panel">
-              <div className="ae-panel-heading">
-                <h4>Facteurs de victoire</h4>
-              </div>
-              <div className="ae-forecast-list">
-                {overview.winFactors.map((factor) => (
-                  <div key={factor.id}>
-                    <strong>{factor.label}</strong>
-                    <p>
-                      {factor.dealCount} deal{factor.dealCount > 1 ? "s" : ""} - {formatAmount(factor.wonValue)} ({factor.share}%)
-                    </p>
+                <div className="ae-win-benchmark-grid">
+                  <div>
+                    <span>Cycle moyen</span>
+                    <strong>{allBenchmark.metrics.avgCycleDays ?? "n/a"} j</strong>
                   </div>
-                ))}
-              </div>
-            </article>
-          ) : null}
+                  <div>
+                    <span>Panier median</span>
+                    <strong>
+                      {allBenchmark.metrics.medianAmount !== null ? formatAmount(allBenchmark.metrics.medianAmount) : "n/a"}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>Appels moyens</span>
+                    <strong>{allBenchmark.metrics.avgCalls ?? "n/a"}</strong>
+                  </div>
+                  <div>
+                    <span>Emails moyens</span>
+                    <strong>{allBenchmark.metrics.avgEmails ?? "n/a"}</strong>
+                  </div>
+                  <div>
+                    <span>Touchpoints</span>
+                    <strong>{allBenchmark.metrics.avgTouchpoints ?? "n/a"}</strong>
+                  </div>
+                </div>
+              </article>
+            ) : null}
+
+            {overview.winFactors.length > 0 ? (
+              <article className="ae-forecast-panel ae-win-factors-panel">
+                <div className="ae-panel-heading">
+                  <h4>Facteurs de victoire</h4>
+                </div>
+                <div className="ae-win-factor-list">
+                  {overview.winFactors.map((factor) => (
+                    <div key={factor.id} className="ae-win-factor-row">
+                      <div>
+                        <strong>{factor.label}</strong>
+                        <span>
+                          {factor.dealCount} deal{factor.dealCount > 1 ? "s" : ""} - {formatAmount(factor.wonValue)}
+                        </span>
+                      </div>
+                      <div className="ae-win-factor-meter" aria-label={`${factor.share}%`}>
+                        <i style={{ width: `${factor.share}%` }} />
+                      </div>
+                      <em>{factor.share}%</em>
+                    </div>
+                  ))}
+                </div>
+              </article>
+            ) : null}
+          </section>
 
           <article className="ae-forecast-panel">
             <div className="ae-panel-heading">
               <h4>Deals gagnes</h4>
               <small>Cliquer pour le detail IA</small>
             </div>
-            <div className="ae-forecast-list">
-              {overview.deals.length === 0 ? (
-                <p className="ae-empty">Aucun deal gagne sur les 12 derniers mois.</p>
-              ) : (
-                overview.deals.map((deal) => (
-                  <div key={deal.hubspotDealId}>
-                    <button className="ae-forecast-link" onClick={() => openDeal(deal)} type="button">
-                      <strong>{deal.dealName ?? deal.companyName}</strong>
-                    </button>
-                    <p>
-                      {formatAmount(deal.amount)} - gagne le {formatDate(deal.closedAt)} - {deal.ownerName ?? "owner inconnu"}
-                    </p>
-                    <small>{deal.analyzed ? deal.primaryWinFactor : "Pas encore analyse par l'IA."}</small>
-                  </div>
-                ))
-              )}
-            </div>
+            {overview.deals.length === 0 ? (
+              <p className="ae-empty">Aucun deal gagne sur les 12 derniers mois.</p>
+            ) : (
+              <div className="ae-win-deals-table" role="region" aria-label="Deals gagnes">
+                <table>
+                  <thead>
+                    <tr>
+                      <th scope="col">Deal</th>
+                      <th scope="col">Montant</th>
+                      <th scope="col">Date gagnee</th>
+                      <th scope="col">Owner</th>
+                      <th scope="col">Analyse IA</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {overview.deals.map((deal) => (
+                      <tr key={deal.hubspotDealId}>
+                        <td>
+                          <button className="ae-win-deal-link" onClick={() => openDeal(deal)} type="button">
+                            {deal.dealName ?? deal.companyName}
+                          </button>
+                        </td>
+                        <td>{formatAmount(deal.amount)}</td>
+                        <td>{formatDate(deal.closedAt)}</td>
+                        <td>{deal.ownerName ?? "owner inconnu"}</td>
+                        <td>
+                          <span className={deal.analyzed ? "ae-win-analysis-status done" : "ae-win-analysis-status"}>
+                            {deal.analyzed ? deal.primaryWinFactor : "Pas encore analysee"}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </article>
 
           {selectedDeal ? (

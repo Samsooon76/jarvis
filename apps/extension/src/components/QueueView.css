@@ -221,12 +221,535 @@ body {
   margin: 8px 0 6px;
 }
 
+.ae-win-analysis-page {
+  display: grid;
+  gap: 16px;
+}
+
+.ae-win-analysis-page .ae-forecast-kpis {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.ae-win-analysis-page .ae-forecast-kpis > div {
+  min-width: 0;
+  min-height: 98px;
+  padding: 16px;
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.035);
+}
+
+.ae-win-analysis-page .ae-forecast-list > div {
+  min-width: 0;
+}
+
+.ae-win-benchmark-panel,
+.ae-win-factors-panel {
+  padding: 18px;
+}
+
+.ae-win-benchmark-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  margin-top: 14px;
+}
+
+.ae-win-benchmark-grid > div {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--ae-line);
+  border-radius: 8px;
+  background: var(--ae-surface-subtle);
+}
+
+.ae-win-benchmark-grid span {
+  color: var(--ae-muted);
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: uppercase;
+}
+
+.ae-win-benchmark-grid strong {
+  color: var(--ae-ink);
+  font-size: 20px;
+  font-weight: 650;
+  line-height: 1.1;
+}
+
+.ae-win-factor-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.ae-win-factor-row {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(220px, 0.55fr) minmax(180px, 1fr) 54px;
+  align-items: center;
+}
+
+.ae-win-factor-row > div:first-child {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.ae-win-factor-row strong {
+  color: var(--ae-ink);
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.ae-win-factor-row span,
+.ae-win-factor-row em {
+  color: var(--ae-muted);
+  font-size: 12px;
+  font-style: normal;
+}
+
+.ae-win-factor-row em {
+  justify-self: end;
+  font-weight: 650;
+}
+
+.ae-win-factor-meter {
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--ae-surface-muted);
+}
+
+.ae-win-factor-meter i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--ae-accent);
+}
+
+.ae-win-deals-table {
+  margin-top: 12px;
+  overflow-x: auto;
+}
+
+.ae-win-deals-table table {
+  width: 100%;
+  min-width: 860px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.ae-win-deals-table th,
+.ae-win-deals-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--ae-line);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.ae-win-deals-table th {
+  color: var(--ae-muted);
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: uppercase;
+}
+
+.ae-win-deals-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--ae-surface);
+}
+
+.ae-win-deals-table th:nth-child(2),
+.ae-win-deals-table td:nth-child(2),
+.ae-win-deals-table th:nth-child(3),
+.ae-win-deals-table td:nth-child(3) {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.ae-win-deals-table td:nth-child(4) {
+  color: var(--ae-ink-soft);
+  white-space: nowrap;
+}
+
+.ae-win-deals-table tbody tr:hover {
+  background: var(--ae-surface-muted);
+}
+
+.ae-win-deals-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.ae-win-deal-link {
+  max-width: 420px;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  color: var(--ae-accent);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 650;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ae-win-deal-link:hover {
+  text-decoration: underline;
+}
+
+.ae-win-analysis-status {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 280px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--ae-surface-muted);
+  color: var(--ae-muted);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.ae-win-analysis-status.done {
+  background: #eaf8f0;
+  color: var(--ae-ink);
+  font-weight: 550;
+}
+
 .ae-forecast-layout {
   grid-template-columns: minmax(0, 1.08fr) minmax(380px, 0.92fr);
 }
 
 .ae-forecast-layout.three {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.ae-coaching-page {
+  display: grid;
+  gap: 16px;
+}
+
+.ae-coaching-page .ae-forecast-banner {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.ae-coaching-page .ae-forecast-banner h3 {
+  margin: 0 0 10px;
+}
+
+.ae-coaching-page .ae-forecast-banner p {
+  max-width: 920px;
+  margin: 0;
+  color: var(--ae-ink);
+  font-size: 16px;
+  line-height: 1.45;
+}
+
+.ae-coaching-page .ae-forecast-banner small {
+  display: block;
+  margin-top: 10px;
+}
+
+.ae-coaching-page .ae-forecast-kpis {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.ae-coaching-page .ae-forecast-kpis > div {
+  min-width: 0;
+  min-height: 98px;
+  padding: 16px;
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.035);
+}
+
+.ae-coaching-page .ae-forecast-list > div {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  min-width: 0;
+}
+
+.ae-coaching-page .ae-forecast-list strong {
+  display: block;
+  max-width: 100%;
+  color: var(--ae-ink);
+  font-size: 14px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.ae-coaching-page .ae-forecast-list p {
+  margin: 0;
+  color: var(--ae-muted);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.ae-coaching-page .ae-coaching-funnel-row {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(170px, 0.34fr) minmax(220px, 1fr) minmax(190px, auto);
+  align-items: center;
+}
+
+.ae-coaching-page .ae-coaching-funnel-row small {
+  white-space: nowrap;
+}
+
+.ae-coaching-page .ae-coaching-funnel-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 4px 0 14px;
+  color: var(--ae-muted);
+  font-size: 12px;
+  font-weight: 520;
+}
+
+.ae-coaching-page .ae-coaching-funnel-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ae-coaching-page .ae-coaching-funnel-legend span::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.ae-coaching-page .ae-coaching-funnel-legend .won {
+  color: #1c9b5a;
+}
+
+.ae-coaching-page .ae-coaching-funnel-legend .open {
+  color: #416fc4;
+}
+
+.ae-coaching-page .ae-coaching-funnel-legend .lost {
+  color: #d94b4b;
+}
+
+.ae-coaching-page .ae-coaching-funnel-bar {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  height: 12px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--ae-surface-muted);
+}
+
+.ae-coaching-page .ae-coaching-funnel-bar i {
+  display: block;
+  min-width: 0;
+  height: 100%;
+}
+
+.ae-coaching-page .ae-coaching-funnel-bar i.won {
+  background: #26be67;
+}
+
+.ae-coaching-page .ae-coaching-funnel-bar i.open {
+  background: #4f7dce;
+}
+
+.ae-coaching-page .ae-coaching-funnel-bar i.lost {
+  background: #ef5b5b;
+}
+
+.ae-coaching-insight-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.ae-coaching-insight-card {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--ae-line);
+  border-left-width: 3px;
+  border-radius: 8px;
+  background: var(--ae-surface-subtle);
+}
+
+.ae-coaching-insight-card.strength {
+  border-left-color: #26be67;
+}
+
+.ae-coaching-insight-card.growth {
+  border-left-color: var(--ae-accent);
+}
+
+.ae-coaching-insight-card span {
+  width: fit-content;
+  max-width: 100%;
+  padding: 3px 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.ae-coaching-insight-card.strength span {
+  background: #eaf8f0;
+  color: #16834c;
+}
+
+.ae-coaching-insight-card.growth span {
+  background: #fff2ec;
+  color: var(--ae-accent);
+}
+
+.ae-coaching-insight-card strong {
+  color: var(--ae-ink);
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.ae-coaching-insight-card p {
+  margin: 0;
+  color: var(--ae-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.ae-coaching-loss-patterns {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 12px;
+}
+
+.ae-coaching-loss-pattern {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--ae-line);
+  border-radius: 8px;
+  background: var(--ae-surface-subtle);
+}
+
+.ae-coaching-loss-pattern span {
+  width: fit-content;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #fff2ec;
+  color: var(--ae-accent);
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: uppercase;
+}
+
+.ae-coaching-loss-pattern strong {
+  color: var(--ae-ink);
+  font-size: 14px;
+  font-weight: 620;
+  line-height: 1.35;
+}
+
+.ae-coaching-action-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.ae-coaching-action-card {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--ae-line);
+  border-radius: 8px;
+  background: var(--ae-surface-subtle);
+}
+
+.ae-coaching-action-card:hover {
+  border-color: var(--ae-line-strong);
+  background: var(--ae-surface);
+}
+
+.ae-coaching-action-button {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.ae-coaching-action-button span {
+  width: fit-content;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: uppercase;
+}
+
+.ae-coaching-action-button span.high {
+  background: #fff2ec;
+  color: var(--ae-accent);
+}
+
+.ae-coaching-action-button span.medium {
+  background: #eef3ff;
+  color: #416fc4;
+}
+
+.ae-coaching-action-button strong {
+  color: var(--ae-ink);
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.ae-coaching-action-card p {
+  margin: 0;
+  color: var(--ae-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.ae-coaching-action-card small {
+  color: #16834c;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.ae-coaching-page .ae-forecast-link strong {
+  white-space: normal;
+}
+
+.ae-coaching-page .ae-forecast-list .ae-forecast-link {
+  display: block;
+  width: 100%;
+  margin-top: 0;
+  text-align: left;
 }
 
 .ae-forecast-months {
@@ -455,6 +978,365 @@ body {
   padding: 0;
 }
 
+.ae-digest-page {
+  display: grid;
+  gap: 18px;
+}
+
+.ae-digest-page .ae-forecast-header {
+  align-items: center;
+  padding: 0;
+}
+
+.ae-digest-page .ae-forecast-last-update {
+  color: #6f675f;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.ae-digest-page .ae-forecast-period-toggle {
+  overflow: hidden;
+  border: 1px solid rgba(28, 25, 23, 0.1);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.ae-digest-page .ae-forecast-period-toggle button {
+  min-height: 36px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.ae-digest-page .ae-forecast-period-toggle button.active {
+  background: #1f1d1a;
+  color: #ffffff;
+}
+
+.ae-digest-page > .ae-forecast-header .ae-forecast-link {
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid rgba(212, 113, 74, 0.28);
+  border-radius: 8px;
+  background: #fff7f2;
+  color: #b95734;
+  margin-top: 0;
+}
+
+.ae-digest-hero {
+  display: grid;
+  gap: 22px;
+  grid-template-columns: minmax(160px, 0.22fr) minmax(0, 1fr);
+  padding: 24px;
+  border: 1px solid rgba(28, 25, 23, 0.09);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(212, 113, 74, 0.14), rgba(255, 255, 255, 0) 42%),
+    #ffffff;
+  box-shadow: 0 16px 44px rgba(28, 25, 23, 0.055);
+}
+
+.ae-digest-hero-label {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ae-digest-hero-label span,
+.ae-digest-chip {
+  width: fit-content;
+  max-width: 100%;
+  padding: 4px 9px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #fff2ec;
+  color: #b95734;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.ae-digest-hero-label strong {
+  color: #1c1917;
+  font-size: 16px;
+  line-height: 1.3;
+}
+
+.ae-digest-hero-copy {
+  min-width: 0;
+}
+
+.ae-digest-hero h3 {
+  max-width: 960px;
+  margin: 0;
+  color: #1c1917;
+  font-size: clamp(23px, 2vw, 32px);
+  font-weight: 720;
+  line-height: 1.16;
+  letter-spacing: 0;
+}
+
+.ae-digest-hero p {
+  max-width: 980px;
+  margin: 14px 0 0;
+  color: #4f4943;
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+.ae-digest-hero small {
+  display: block;
+  margin-top: 14px;
+  color: #8b8178;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.ae-digest-metrics {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.ae-digest-metrics > div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  min-height: 98px;
+  padding: 16px;
+  border: 1px solid rgba(28, 25, 23, 0.09);
+  border-radius: 8px;
+  background: linear-gradient(180deg, #ffffff, #fffdfb);
+  box-shadow: 0 12px 32px rgba(28, 25, 23, 0.045);
+}
+
+.ae-digest-metrics span {
+  color: #8b8178;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.ae-digest-metrics strong {
+  color: #1c1917;
+  font-size: 30px;
+  font-weight: 720;
+  line-height: 1;
+}
+
+.ae-digest-metrics small {
+  color: #6f675f;
+  font-size: 12px;
+  font-weight: 550;
+}
+
+.ae-digest-action-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.ae-digest-action-panel {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.ae-digest-action-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: #d4714a;
+}
+
+.ae-digest-action-panel.assist::before {
+  background: #1c9b5a;
+}
+
+.ae-digest-action-panel.assist .ae-digest-chip {
+  background: #eaf8f0;
+  color: #16834c;
+}
+
+.ae-digest-card-list,
+.ae-digest-highlight-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.ae-digest-deal-card,
+.ae-digest-highlight {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid rgba(28, 25, 23, 0.08);
+  border-radius: 8px;
+  background: #fffdfb;
+}
+
+.ae-digest-deal-card strong {
+  color: #1c1917;
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+.ae-digest-deal-card .ae-forecast-link {
+  margin: 0;
+}
+
+.ae-digest-deal-card p,
+.ae-digest-deal-card small {
+  margin: 0;
+  color: #6f675f;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.ae-digest-page .ae-panel-heading > div {
+  display: grid;
+  gap: 3px;
+}
+
+.ae-digest-page .ae-panel-heading h4 {
+  margin: 0;
+}
+
+.ae-digest-page .ae-panel-heading small {
+  color: var(--ae-muted);
+  font-size: 12px;
+  font-weight: 450;
+}
+
+.ae-digest-highlights {
+  min-width: 0;
+}
+
+.ae-digest-highlight-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.ae-digest-highlight span {
+  width: fit-content;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #f3eee8;
+  color: #7c6f64;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.ae-digest-highlight.risk span {
+  background: #fff2ec;
+  color: #b95734;
+}
+
+.ae-digest-highlight.win span {
+  background: #eaf8f0;
+  color: #16834c;
+}
+
+.ae-digest-highlight p {
+  margin: 0;
+  color: #312c27;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.ae-digest-movements {
+  min-width: 0;
+}
+
+.ae-digest-movements .ae-panel-heading {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
+.ae-digest-action-count {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: #f3eee8;
+  color: #7c6f64;
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.ae-digest-movement-preview {
+  margin: 12px 0 0;
+  color: #6f675f;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.ae-digest-movement-list {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ae-digest-movement-item {
+  display: grid;
+  gap: 7px;
+  padding: 13px 14px;
+  border: 1px solid rgba(28, 25, 23, 0.08);
+  border-radius: 8px;
+  background: #fffdfb;
+}
+
+.ae-digest-movement-item > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ae-digest-movement-item strong {
+  min-width: 0;
+  color: #1c1917;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+.ae-digest-movement-item span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 8px;
+  border: 1px solid rgba(212, 113, 74, 0.2);
+  border-radius: 999px;
+  background: #fff2ec;
+  color: #b95734;
+  font-size: 11px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.ae-digest-movement-item p {
+  margin: 0;
+  color: #4f4943;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.ae-digest-movement-item small {
+  color: #8b8178;
+  font-size: 11px;
+}
+
 .ae-forecast-risk-pill {
   border-radius: 999px;
   padding: 4px 9px;
@@ -486,10 +1368,66 @@ body {
   .ae-forecast-synthesis-board {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .ae-win-benchmark-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .ae-coaching-loss-patterns {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 640px) {
   .ae-forecast-synthesis-board {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ae-digest-page .ae-forecast-header,
+  .ae-digest-page .ae-forecast-header-meta {
+    align-items: stretch;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ae-digest-page .ae-forecast-period-toggle {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ae-digest-hero,
+  .ae-digest-metrics,
+  .ae-digest-action-grid,
+  .ae-digest-highlight-grid,
+  .ae-digest-movements .ae-panel-heading {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ae-digest-hero {
+    padding: 18px;
+  }
+
+  .ae-digest-hero h3 {
+    font-size: 22px;
+  }
+
+  .ae-win-benchmark-grid,
+  .ae-win-factor-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ae-win-factor-row em {
+    justify-self: start;
+  }
+
+  .ae-coaching-page .ae-coaching-funnel-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ae-coaching-page .ae-coaching-funnel-row small {
+    white-space: normal;
+  }
+
+  .ae-coaching-loss-patterns {
     grid-template-columns: minmax(0, 1fr);
   }
 }
@@ -6724,6 +7662,7 @@ body,
   .ae-integration-grid,
   .ae-metrics,
   .ae-metrics.stats-grid,
+  .ae-win-analysis-page .ae-forecast-kpis,
   .ae-deal-metrics,
   .ae-meddicc-grid,
   .ae-health-grid {
@@ -10799,4 +11738,295 @@ body,
 .pulse-settings-master {
   background: rgba(15, 111, 92, 0.05);
   border-color: rgba(15, 111, 92, 0.25);
+}
+
+/* Win Analysis workspace refresh */
+
+.ae-win-analysis-page {
+  gap: 18px;
+}
+
+.ae-win-analysis-page .ae-forecast-header {
+  align-items: end;
+  padding: 0;
+}
+
+.ae-win-analysis-page .ae-forecast-header-meta {
+  gap: 10px;
+}
+
+.ae-win-analysis-page .ae-forecast-header-meta button {
+  border-color: rgba(28, 25, 23, 0.12);
+  background: #ffffff;
+  color: #1c1917;
+  box-shadow: 0 1px 2px rgba(28, 25, 23, 0.04);
+}
+
+.ae-win-analysis-page .ae-forecast-header-meta button:last-child {
+  border-color: rgba(212, 113, 74, 0.28);
+  background: #fff7f2;
+  color: #b95734;
+}
+
+.ae-win-analysis-page .ae-forecast-kpis {
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.ae-win-analysis-page .ae-forecast-kpis > div {
+  display: grid;
+  align-content: start;
+  gap: 5px;
+  min-height: 104px;
+  padding: 18px;
+  border-color: rgba(28, 25, 23, 0.09);
+  background: linear-gradient(180deg, #ffffff, #fffdfb);
+  box-shadow: 0 12px 32px rgba(28, 25, 23, 0.045);
+}
+
+.ae-win-analysis-page .ae-forecast-kpis strong {
+  margin: 2px 0;
+  font-size: 28px;
+  letter-spacing: -0.01em;
+}
+
+.ae-win-hero-card {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: minmax(180px, 0.25fr) minmax(0, 1fr);
+  padding: 24px;
+  border: 1px solid rgba(28, 25, 23, 0.09);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(212, 113, 74, 0.12), rgba(255, 255, 255, 0) 36%),
+    #ffffff;
+  box-shadow: 0 16px 44px rgba(28, 25, 23, 0.055);
+}
+
+.ae-win-hero-label {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ae-win-hero-label span,
+.ae-win-pattern-card span {
+  width: fit-content;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: #fff2ec;
+  color: #b95734;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.ae-win-hero-label strong {
+  color: #1c1917;
+  font-size: 16px;
+  line-height: 1.3;
+}
+
+.ae-win-hero-copy {
+  min-width: 0;
+}
+
+.ae-win-hero-copy h3 {
+  max-width: 920px;
+  margin: 0;
+  color: #1c1917;
+  font-size: clamp(22px, 2vw, 32px);
+  font-weight: 720;
+  line-height: 1.16;
+  letter-spacing: 0;
+}
+
+.ae-win-hero-copy p {
+  max-width: 980px;
+  margin: 14px 0 0;
+  color: #4f4943;
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+.ae-win-hero-copy small {
+  display: block;
+  margin-top: 14px;
+  color: #8b8178;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.ae-win-playbook-grid,
+.ae-win-data-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+}
+
+.ae-win-playbook-panel,
+.ae-win-sequence-panel,
+.ae-win-benchmark-panel,
+.ae-win-factors-panel {
+  min-width: 0;
+}
+
+.ae-win-pattern-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 14px;
+}
+
+.ae-win-pattern-card {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid rgba(28, 25, 23, 0.08);
+  border-radius: 8px;
+  background: #fffdfb;
+}
+
+.ae-win-pattern-card p {
+  margin: 0;
+  color: #312c27;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.ae-win-sequence-list {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: win-step;
+}
+
+.ae-win-sequence-list li {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: start;
+  color: #4f4943;
+  font-size: 13px;
+  line-height: 1.45;
+  counter-increment: win-step;
+}
+
+.ae-win-sequence-list li::before {
+  content: counter(win-step);
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 999px;
+  background: #f3eee8;
+  color: #7c6f64;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ae-win-data-grid {
+  grid-template-columns: minmax(0, 0.9fr) minmax(360px, 1.1fr);
+}
+
+.ae-win-benchmark-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.ae-win-benchmark-grid > div:first-child {
+  grid-column: span 2;
+}
+
+.ae-win-factor-row {
+  grid-template-columns: minmax(150px, 0.7fr) minmax(120px, 1fr) 46px;
+}
+
+.ae-win-factor-meter {
+  background: #f0ebe5;
+}
+
+.ae-win-factor-meter i {
+  background: linear-gradient(90deg, #d4714a, #ef9f72);
+}
+
+.ae-win-deals-table {
+  border: 1px solid rgba(28, 25, 23, 0.08);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.ae-win-deals-table table {
+  min-width: 980px;
+}
+
+.ae-win-deals-table th {
+  background: #faf7f3;
+  color: #8b8178;
+}
+
+.ae-win-deals-table td {
+  color: #312c27;
+}
+
+.ae-win-deals-table tbody tr:hover {
+  background: #fff8f3;
+}
+
+.ae-win-deal-link {
+  color: #1c1917;
+}
+
+.ae-win-analysis-status {
+  display: -webkit-box;
+  max-width: 420px;
+  padding: 0;
+  overflow: hidden;
+  border-radius: 0;
+  background: transparent;
+  color: #6b6259;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.ae-win-analysis-status.done {
+  background: transparent;
+  color: #312c27;
+}
+
+@media (max-width: 1180px) {
+  .ae-win-playbook-grid,
+  .ae-win-data-grid,
+  .ae-win-hero-card {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ae-win-pattern-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 720px) {
+  .ae-win-analysis-page .ae-forecast-header,
+  .ae-win-analysis-page .ae-forecast-header-meta,
+  .ae-win-analysis-page .ae-forecast-kpis {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ae-win-benchmark-grid,
+  .ae-win-benchmark-grid > div:first-child,
+  .ae-win-factor-row {
+    grid-template-columns: minmax(0, 1fr);
+    grid-column: auto;
+  }
+
+  .ae-win-factor-row em {
+    justify-self: start;
+  }
 }
