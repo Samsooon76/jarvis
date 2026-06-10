@@ -88,8 +88,23 @@ const getCachedJson = async <T>(
   return withAbort(promise, options.signal);
 };
 
+// Registre des caches module-level (vues lazy-loadees) a purger en meme temps
+// que le cache API: chaque module s'enregistre a son chargement.
+const cacheClearers = new Set<() => void>();
+
+export const registerCacheClearer = (clearer: () => void): void => {
+  cacheClearers.add(clearer);
+};
+
+const runRegisteredCacheClearers = (): void => {
+  for (const clearer of cacheClearers) {
+    clearer();
+  }
+};
+
 const clearAnalyticsCache = (): void => {
   analyticsGetCache.clear();
+  runRegisteredCacheClearers();
 };
 
 const clearAnalyticsCacheByPrefix = (prefix: string): void => {
@@ -111,9 +126,11 @@ const clearHubSpotOrgCaches = (orgId: string): void => {
   clearAnalyticsCacheByPrefix(HUBSPOT_TASKS_CACHE_PREFIX);
   clearAnalyticsCacheByPrefix(HUBSPOT_LEADS_CACHE_PREFIX);
   clearAnalyticsCacheByPrefix(`sales-activity:${orgId}:`);
+  clearAnalyticsCacheByPrefix(`probability-timeline:${orgId}:`);
+  runRegisteredCacheClearers();
 };
 
-export type AiProviderId = "deepseek" | "openai" | "vertex-gemini";
+export type AiProviderId = "openai";
 
 export type AiProviderOption = {
   id: AiProviderId;
@@ -436,7 +453,9 @@ type HubSpotTasksPayload = {
   tasks: HubSpotTaskListItem[];
 };
 
-export type HubSpotQueueData = QueueData & {
+export type HubSpotQueueData = Omit<QueueData, "generatedAt"> & {
+  // null tant qu'aucune sync HubSpot reelle n'a eu lieu (pas de date fabriquee).
+  generatedAt: string | null;
   hubspotPortalId: string | null;
   owner: HubSpotOwnerOption;
   owners: HubSpotOwnerOption[];
@@ -1381,7 +1400,7 @@ export const fetchHubSpotQueue = async (
   if (!status.connected) {
     return {
       userId: preferredHubSpotOwnerId ?? "",
-      generatedAt: new Date().toISOString(),
+      generatedAt: null,
       prospects: [],
       hubspotPortalId: null,
       owner: {
@@ -1408,7 +1427,7 @@ export const fetchHubSpotQueue = async (
 
   return {
     userId: owner.ownerId,
-    generatedAt: status.lastSyncedAt ?? owner.lastSyncedAt ?? new Date().toISOString(),
+    generatedAt: status.lastSyncedAt ?? owner.lastSyncedAt ?? null,
     prospects,
     hubspotPortalId: status.hubspotPortalId,
     owner,
@@ -1552,7 +1571,6 @@ const buildDealAnalysisSearchParams = (
   prospect: QueueProspect,
   orgId: string,
   aiProvider: AiProviderOption,
-  _ownerName: string | undefined,
   refresh = false,
 ): URLSearchParams => {
   const searchParams = new URLSearchParams({
@@ -1573,10 +1591,9 @@ export const fetchDealAnalysisBundle = async (
   prospect: QueueProspect,
   orgId: string,
   aiProvider: AiProviderOption,
-  ownerName: string | undefined,
   refresh = false,
 ): Promise<DealAnalysisBundleResult> => {
-  const searchParams = buildDealAnalysisSearchParams(prospect, orgId, aiProvider, ownerName, refresh);
+  const searchParams = buildDealAnalysisSearchParams(prospect, orgId, aiProvider, refresh);
 
   return getJson<DealAnalysisBundleResult>(
     `/api/prospects/${encodeURIComponent(prospect.id)}/deal-analysis-bundle?${searchParams.toString()}`,
@@ -1641,10 +1658,9 @@ export const fetchDealAnalysisPage = async (
   prospect: QueueProspect,
   orgId: string,
   aiProvider: AiProviderOption,
-  ownerName: string | undefined,
   refresh = false,
 ): Promise<DealAnalysisPageResult> => {
-  const searchParams = buildDealAnalysisSearchParams(prospect, orgId, aiProvider, ownerName, refresh);
+  const searchParams = buildDealAnalysisSearchParams(prospect, orgId, aiProvider, refresh);
 
   return getJson<DealAnalysisPageResult>(
     `/api/prospects/${encodeURIComponent(prospect.id)}/deal-analysis-page?${searchParams.toString()}`,
@@ -1655,10 +1671,9 @@ export const fetchDealQualification = async (
   prospect: QueueProspect,
   orgId: string,
   aiProvider: AiProviderOption,
-  ownerName: string | undefined,
   refresh = false,
 ): Promise<DealQualificationResult> => {
-  const searchParams = buildDealAnalysisSearchParams(prospect, orgId, aiProvider, ownerName, refresh);
+  const searchParams = buildDealAnalysisSearchParams(prospect, orgId, aiProvider, refresh);
 
   return getJson<DealQualificationResult>(
     `/api/prospects/${encodeURIComponent(prospect.id)}/deal-qualification?${searchParams.toString()}`,
@@ -1669,10 +1684,9 @@ export const fetchDealActivityPlan = async (
   prospect: QueueProspect,
   orgId: string,
   aiProvider: AiProviderOption,
-  ownerName: string | undefined,
   refresh = false,
 ): Promise<DealActivityPlanResult> => {
-  const searchParams = buildDealAnalysisSearchParams(prospect, orgId, aiProvider, ownerName, refresh);
+  const searchParams = buildDealAnalysisSearchParams(prospect, orgId, aiProvider, refresh);
 
   return getJson<DealActivityPlanResult>(
     `/api/prospects/${encodeURIComponent(prospect.id)}/deal-activity-plan?${searchParams.toString()}`,

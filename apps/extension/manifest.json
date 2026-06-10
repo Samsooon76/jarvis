@@ -6,7 +6,10 @@
   "permissions": ["sidePanel", "notifications", "alarms", "storage"],
   "host_permissions": [
     "https://jarvisapi-production-10cd.up.railway.app/*",
+    "https://*.supabase.co/*",
     "http://localhost:4000/*",
+    "http://localhost:54321/*",
+    "http://127.0.0.1:54321/*",
     "https://*.ingest.sentry.io/*",
     "https://*.ingest.us.sentry.io/*"
   ],

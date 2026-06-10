@@ -972,6 +972,21 @@ const rehydrateHubSpotActivity = async (
   await hydrateActivity(orgId, activityType, hubspotActivityId, null, false);
 };
 
+// Invalide le cache d'analyses IA du deal avant la reanalyse webhook, pour que
+// refresh:false regenere une analyse a partir des nouvelles donnees HubSpot.
+const invalidateDealAiAnalyses = async (orgId: string, hubspotDealId: string): Promise<void> => {
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase
+    .from("deal_ai_analyses")
+    .delete()
+    .eq("org_id", orgId)
+    .eq("hubspot_deal_id", hubspotDealId);
+
+  if (error && error.code !== "42P01" && error.code !== "PGRST205") {
+    throw new Error(`Impossible d'invalider le cache d'analyses IA du deal: ${error.message}`);
+  }
+};
+
 const runHubSpotDealReanalysis = async (runId: string): Promise<void> => {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
@@ -1025,6 +1040,8 @@ const runHubSpotDealReanalysis = async (runId: string): Promise<void> => {
   }
 
   try {
+    await invalidateDealAiAnalyses(run.org_id, run.hubspot_deal_id);
+
     const { data: prospectData, error: prospectError } = await supabase
       .from("prospects")
       .select("id")

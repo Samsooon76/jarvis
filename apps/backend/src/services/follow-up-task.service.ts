@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { getSupabaseAdmin } from "../db/client.js";
 import type { Json } from "../db/database.types.js";
+import { formatHubSpotTimelineForPrompt } from "./hubspot-history-formatting.service.js";
 import { hubSpotService } from "./hubspot.service.js";
 import { getHubSpotAccessToken } from "./hubspot-auth.service.js";
 import { buildBusinessDueAtFromDays } from "./business-days.js";
@@ -227,34 +228,6 @@ const withStageError = (stage: string, error: unknown, debug: FollowUpTaskDebugI
   addDebugStep(debug, stage, "error", toErrorMessage(error));
   throw new Error(`Etape ${stage}: ${toErrorMessage(error)}`);
 };
-
-const buildHistoryText = (
-  timeline: Array<{
-    timestamp: string | null;
-    type: string;
-    title: string;
-    body: string | null;
-    metadata: Record<string, string | null>;
-  }>,
-): string =>
-  timeline
-    .map((item) => {
-      const metadataSummary = Object.entries(item.metadata)
-        .filter(([, value]) => Boolean(value))
-        .map(([key, value]) => `${key}: ${value}`)
-        .join(", ");
-
-      return [
-        item.timestamp ?? "date inconnue",
-        `[${item.type}]`,
-        item.title,
-        item.body?.trim() ?? "",
-        metadataSummary,
-      ]
-        .filter(Boolean)
-        .join(" | ");
-    })
-    .join("\n");
 
 const getDaysSinceIsoDate = (value: string | null): number | null => {
   if (!value) {

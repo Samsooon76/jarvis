@@ -1,3 +1,10 @@
+import {
+  API_BASE_URL,
+  API_AUTH_SESSION_STORAGE_KEY,
+  API_AUTH_TOKEN_STORAGE_KEY,
+  PULSE_SHOWN_IDS_STORAGE_KEY,
+} from "./config/runtime";
+
 const configureSidePanel = async () => {
   await chrome.sidePanel.setPanelBehavior({
     openPanelOnActionClick: true,
@@ -8,16 +15,15 @@ const configureSidePanel = async () => {
 
 const PULSE_ALARM_NAME = "jarvis-pulse-poll";
 const PULSE_ALARM_PERIOD_MINUTES = 1;
-const PULSE_TOKEN_STORAGE_KEY = "jarvis.apiAuthToken";
-const PULSE_SESSION_STORAGE_KEY = "jarvis.apiAuthSession";
-const PULSE_SHOWN_IDS_STORAGE_KEY = "jarvis.pulse.shownNotificationIds";
+const PULSE_TOKEN_STORAGE_KEY = API_AUTH_TOKEN_STORAGE_KEY;
+const PULSE_SESSION_STORAGE_KEY = API_AUTH_SESSION_STORAGE_KEY;
 const PULSE_SHOWN_IDS_MAX = 200;
 const PULSE_MAX_NATIVE_NOTIFICATIONS_PER_CYCLE = 3;
 const PULSE_NOTIFICATION_ID_PREFIX = "jarvis-pulse:";
 const PULSE_ICON_URL = "icons/icon128.png";
+const PULSE_SESSION_UPDATED_MESSAGE = "jarvis:pulse-session-updated";
 
-const resolvePulseApiBaseUrl = (): string =>
-  import.meta.env.VITE_API_URL || "https://jarvisapi-production-10cd.up.railway.app";
+const resolvePulseApiBaseUrl = (): string => API_BASE_URL;
 
 const resolveSupabaseUrl = (): string => import.meta.env.VITE_SUPABASE_URL?.trim() ?? "";
 const resolveSupabaseAnonKey = (): string =>
@@ -46,6 +52,13 @@ type PulseApiResponse = {
   };
   error?: string;
 };
+
+type RuntimeMessage = {
+  type?: unknown;
+};
+
+const isRuntimeMessage = (value: unknown): value is RuntimeMessage =>
+  Boolean(value && typeof value === "object" && !Array.isArray(value));
 
 const readStoredString = async (key: string): Promise<string | null> => {
   const stored = await chrome.storage.local.get(key);
@@ -107,7 +120,12 @@ const refreshPulseSession = async (): Promise<string | null> => {
   });
 
   if (!response.ok) {
-    await clearStoredPulseSession();
+    // On ne purge la session que sur un refus d'auth definitif: une erreur
+    // reseau ou un 5xx transitoire ne doit pas tuer le polling Pulse.
+    if ([400, 401, 403].includes(response.status)) {
+      await clearStoredPulseSession();
+    }
+
     return null;
   }
 
@@ -124,7 +142,7 @@ const refreshPulseSession = async (): Promise<string | null> => {
       : session.refreshToken;
 
   if (!accessToken) {
-    await clearStoredPulseSession();
+    // Reponse 2xx sans token: on garde la session et on saute ce cycle.
     return null;
   }
 
@@ -263,10 +281,23 @@ const schedulePulseAlarm = async (): Promise<void> => {
   });
 };
 
+const startPulsePolling = async (): Promise<void> => {
+  await schedulePulseAlarm();
+  await pollPulseNotifications();
+};
+
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === PULSE_ALARM_NAME) {
     void pollPulseNotifications();
   }
+});
+
+chrome.runtime.onMessage.addListener((message) => {
+  if (!isRuntimeMessage(message) || message.type !== PULSE_SESSION_UPDATED_MESSAGE) {
+    return;
+  }
+
+  void startPulsePolling();
 });
 
 chrome.notifications.onClicked.addListener((notificationId) => {
@@ -284,10 +315,10 @@ chrome.notifications.onClicked.addListener((notificationId) => {
 
 chrome.runtime.onInstalled.addListener(() => {
   void configureSidePanel();
-  void schedulePulseAlarm();
+  void startPulsePolling();
 });
 
 chrome.runtime.onStartup.addListener(() => {
   void configureSidePanel();
-  void schedulePulseAlarm();
+  void startPulsePolling();
 });

@@ -214,6 +214,31 @@ export type DealAnalysisBundleResult = {
   activityPlan: DealActivityPlanResult;
 };
 
+type DealActivityPlanCacheContext = {
+  recentActivities: DealRecentActivity[];
+  channelEngagement: DealChannelEngagement[];
+};
+
+// Le payload cache du plan d'activite embarque le contexte CRM (activites recentes,
+// engagement par canal) pour eviter de re-fetcher l'historique HubSpot sur cache hit.
+type DealActivityPlanCachePayload = DealActivityPlanAnalysis & {
+  cachedContext?: DealActivityPlanCacheContext;
+};
+
+const splitDealActivityPlanCachePayload = (
+  payload: DealActivityPlanCachePayload,
+): { activityPlan: DealActivityPlanAnalysis; cachedContext: DealActivityPlanCacheContext | null } => {
+  const { cachedContext, ...activityPlan } = payload;
+
+  return {
+    activityPlan,
+    cachedContext:
+      cachedContext && Array.isArray(cachedContext.recentActivities) && Array.isArray(cachedContext.channelEngagement)
+        ? cachedContext
+        : null,
+  };
+};
+
 const isUuid = (value: string): boolean => UUID_V4_LIKE_PATTERN.test(value.trim());
 
 const parseCompositeProspectId = (prospectId: string): { hubspotContactId: string; hubspotDealId: string | null } | null => {
@@ -1652,6 +1677,37 @@ export const analyzeDealActivityPlanForProspect = async (
     provider: context.llmProvider,
     model: context.llmModel,
   });
+
+  if (!context.refresh) {
+    const earlyCachedActivityPlan = await loadCachedAnalysis<DealActivityPlanCachePayload>(
+      "deal_activity_plan",
+      target.orgId,
+      target.hubspotDealId,
+      provider.providerName,
+      provider.modelName,
+    );
+
+    if (earlyCachedActivityPlan) {
+      const { activityPlan, cachedContext } = splitDealActivityPlanCachePayload(earlyCachedActivityPlan.analysis);
+
+      if (cachedContext) {
+        return {
+          prospectId: target.prospect?.id ?? prospectId,
+          orgId: target.orgId,
+          hubspotDealId: target.hubspotDealId,
+          cached: true,
+          provider: earlyCachedActivityPlan.provider,
+          model: earlyCachedActivityPlan.model,
+          generatedAt: earlyCachedActivityPlan.generated_at,
+          expiresAt: earlyCachedActivityPlan.expires_at,
+          recentActivities: cachedContext.recentActivities,
+          channelEngagement: cachedContext.channelEngagement,
+          activityPlan: sanitizeDealActivityPlanAnalysis(activityPlan, new Date()),
+        };
+      }
+    }
+  }
+
   const accessToken = await getHubSpotAccessToken(target.orgId);
   const [dealHistory, hubspotDeal, ownerNameFromUser, pendingActions] = await Promise.all([
     loadDealHistoryForAnalysis(target.orgId, accessToken, target.hubspotDealId),
@@ -1735,7 +1791,7 @@ export const analyzeDealActivityPlanForProspect = async (
   );
 
   if (!context.refresh) {
-    const cachedActivityPlan = await loadReusableCachedAnalysis<DealActivityPlanAnalysis>(
+    const cachedActivityPlan = await loadReusableCachedAnalysis<DealActivityPlanCachePayload>(
       "deal_activity_plan",
       target.orgId,
       target.hubspotDealId,
@@ -1756,7 +1812,10 @@ export const analyzeDealActivityPlanForProspect = async (
         expiresAt: cachedActivityPlan.expires_at,
         recentActivities,
         channelEngagement,
-        activityPlan: sanitizeDealActivityPlanAnalysis(cachedActivityPlan.analysis, today),
+        activityPlan: sanitizeDealActivityPlanAnalysis(
+          splitDealActivityPlanCachePayload(cachedActivityPlan.analysis).activityPlan,
+          today,
+        ),
       };
     }
   }
@@ -1782,14 +1841,14 @@ export const analyzeDealActivityPlanForProspect = async (
     channelEngagementSummary,
   }), today);
   const expiresAt = buildExpiresAt();
-  const savedActivityPlan = await persistAnalysis<DealActivityPlanAnalysis>({
+  const savedActivityPlan = await persistAnalysis<DealActivityPlanCachePayload>({
     analysisType: "deal_activity_plan",
     orgId: target.orgId,
     hubspotDealId: target.hubspotDealId,
     provider: provider.providerName,
     model: provider.modelName,
     inputHash,
-    analysis: activityPlan,
+    analysis: { ...activityPlan, cachedContext: { recentActivities, channelEngagement } },
     closeWonProbability: currentCloseProbability ?? 0,
     expiresAt,
   });
@@ -1805,7 +1864,7 @@ export const analyzeDealActivityPlanForProspect = async (
     expiresAt: savedActivityPlan?.expires_at ?? expiresAt,
     recentActivities,
     channelEngagement,
-    activityPlan: savedActivityPlan?.analysis ?? activityPlan,
+    activityPlan,
   };
 };
 
@@ -1935,7 +1994,7 @@ const buildDealAnalysisBundleWithSingleCompletion = async (
       closeWonProbability: currentCloseProbability ?? 0,
       expiresAt,
     }),
-    persistAnalysis<DealActivityPlanAnalysis>({
+    persistAnalysis<DealActivityPlanCachePayload>({
       analysisType: "deal_activity_plan",
       orgId: target.orgId,
       hubspotDealId: target.hubspotDealId,
@@ -1948,7 +2007,7 @@ const buildDealAnalysisBundleWithSingleCompletion = async (
         channelEngagement,
         pendingActionsSummary: summarizePendingActions(pendingActions),
       })),
-      analysis: fullAnalysis.activityPlan,
+      analysis: { ...fullAnalysis.activityPlan, cachedContext: { recentActivities, channelEngagement } },
       closeWonProbability: currentCloseProbability ?? 0,
       expiresAt,
     }),
@@ -2003,7 +2062,7 @@ const buildDealAnalysisBundleWithSingleCompletion = async (
       expiresAt: savedActivityPlan?.expires_at ?? expiresAt,
       recentActivities,
       channelEngagement,
-      activityPlan: sanitizeDealActivityPlanAnalysis(savedActivityPlan?.analysis ?? fullAnalysis.activityPlan, today),
+      activityPlan: sanitizeDealActivityPlanAnalysis(fullAnalysis.activityPlan, today),
     },
   };
 };
@@ -2036,7 +2095,7 @@ export const buildDealAnalysisBundleForProspect = async (
       provider.providerName,
       provider.modelName,
     ),
-    loadCachedAnalysis<DealActivityPlanAnalysis>(
+    loadCachedAnalysis<DealActivityPlanCachePayload>(
       "deal_activity_plan",
       target.orgId,
       target.hubspotDealId,
@@ -2071,10 +2130,19 @@ export const buildDealAnalysisBundleForProspect = async (
     crmFacts: buildCrmFacts(snapshot, cachedIntelligence.analysis),
     lastSyncedAt: snapshot.syncedAt,
   };
-  const accessToken = await getHubSpotAccessToken(target.orgId);
-  const dealHistory = await loadDealHistoryForAnalysis(target.orgId, accessToken, target.hubspotDealId);
-  const recentActivities = buildRecentActivities(dealHistory.timeline, snapshot.ownerName);
-  const channelEngagement = buildChannelEngagement(dealHistory.timeline);
+  const { activityPlan: cachedPlanAnalysis, cachedContext } = splitDealActivityPlanCachePayload(
+    cachedActivityPlan.analysis,
+  );
+  let recentActivities = cachedContext?.recentActivities ?? null;
+  let channelEngagement = cachedContext?.channelEngagement ?? null;
+
+  if (!recentActivities || !channelEngagement) {
+    const accessToken = await getHubSpotAccessToken(target.orgId);
+    const dealHistory = await loadDealHistoryForAnalysis(target.orgId, accessToken, target.hubspotDealId);
+    recentActivities = buildRecentActivities(dealHistory.timeline, snapshot.ownerName);
+    channelEngagement = buildChannelEngagement(dealHistory.timeline);
+  }
+
   const qualification: DealQualificationResult = {
     prospectId: target.prospect?.id ?? prospectId,
     orgId: target.orgId,
@@ -2097,7 +2165,7 @@ export const buildDealAnalysisBundleForProspect = async (
     expiresAt: cachedActivityPlan.expires_at,
     recentActivities,
     channelEngagement,
-    activityPlan: sanitizeDealActivityPlanAnalysis(cachedActivityPlan.analysis, new Date()),
+    activityPlan: sanitizeDealActivityPlanAnalysis(cachedPlanAnalysis, new Date()),
   };
 
   return {

@@ -16,6 +16,8 @@ import { getHubSpotAccessToken, upsertHubSpotIntegration } from "../services/hub
 import { scoreProspect } from "../services/scoring.service.js";
 import { createJob, getJob, updateJob } from "../services/job-store.js";
 import { getHubSpotSyncStatus, upsertHubSpotSyncStatus, type HubSpotSyncStatusSnapshot } from "../services/hubspot-sync-status.service.js";
+import { runAutomaticFollowUpTasksForOrg } from "../services/follow-up-task.service.js";
+import { captureServerError } from "../lib/sentry.js";
 import { assertManagerOrAdmin, assertOrgAccess } from "../services/app-auth.service.js";
 
 type HubSpotStartQuery = {
@@ -1637,6 +1639,13 @@ const syncHubSpotProspects = async (
       progress: 100,
       currentStep: "Sync terminee",
     }).catch(() => undefined);
+
+    // Relances automatiques hors du chemin critique de la sync (route sync et callback OAuth).
+    setImmediate(() => {
+      void runAutomaticFollowUpTasksForOrg(orgId).catch((followUpError: unknown) => {
+        void captureServerError(followUpError, { scope: "auto-follow-up", orgId });
+      });
+    });
 
     return result;
   } catch (error) {

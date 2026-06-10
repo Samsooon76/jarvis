@@ -1,26 +1,23 @@
 import type { ApiResponse } from "@jarvis/shared";
 import type { Session } from "@supabase/supabase-js";
+import {
+  API_BASE_URL,
+  API_AUTH_SESSION_STORAGE_KEY,
+  API_AUTH_TOKEN_STORAGE_KEY as API_AUTH_STORAGE_KEY,
+} from "../../config/runtime";
 
-const resolveApiBaseUrl = (): string => {
-  if (import.meta.env.VITE_API_URL) {
-    return import.meta.env.VITE_API_URL;
-  }
-
-  if (import.meta.env.DEV && typeof window !== "undefined" && ["127.0.0.1", "localhost"].includes(window.location.hostname)) {
-    return "http://127.0.0.1:4000";
-  }
-
-  return "https://jarvisapi-production-10cd.up.railway.app";
-};
-
-export const API_BASE_URL = resolveApiBaseUrl();
-const API_AUTH_STORAGE_KEY = "jarvis.apiAuthToken";
-const API_AUTH_SESSION_STORAGE_KEY = "jarvis.apiAuthSession";
+export { API_BASE_URL };
 
 type StoredApiAuthSession = {
   accessToken: string;
   refreshToken: string;
   expiresAt: number | null;
+};
+
+const PULSE_SESSION_UPDATED_MESSAGE = "jarvis:pulse-session-updated";
+
+type ChromeRuntimeLike = {
+  sendMessage?: (message: { type: string }) => void;
 };
 
 // Le service worker de l'extension (Jarvis Pulse) n'a pas acces au localStorage
@@ -61,6 +58,16 @@ const mirrorAuthSessionToChromeStorage = (session: StoredApiAuthSession | null):
   }
 };
 
+const notifyPulseSessionUpdated = (): void => {
+  try {
+    const runtime = (globalThis as { chrome?: { runtime?: ChromeRuntimeLike } }).chrome?.runtime;
+
+    runtime?.sendMessage?.({ type: PULSE_SESSION_UPDATED_MESSAGE });
+  } catch {
+    // Hors contexte extension ou service worker non disponible: l'alarme prendra le relais.
+  }
+};
+
 export const setApiAuthSession = (session: Session): void => {
   const storedSession: StoredApiAuthSession = {
     accessToken: session.access_token,
@@ -71,11 +78,13 @@ export const setApiAuthSession = (session: Session): void => {
   window.localStorage.setItem(API_AUTH_STORAGE_KEY, session.access_token);
   mirrorAuthTokenToChromeStorage(session.access_token);
   mirrorAuthSessionToChromeStorage(storedSession);
+  notifyPulseSessionUpdated();
 };
 
 export const setApiAuthToken = (token: string): void => {
   window.localStorage.setItem(API_AUTH_STORAGE_KEY, token);
   mirrorAuthTokenToChromeStorage(token);
+  notifyPulseSessionUpdated();
 };
 
 export const clearApiAuthToken = (): void => {
