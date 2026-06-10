@@ -35,8 +35,6 @@ let processor: HubSpotRealtimeProcessor | null = null;
 let redisConnection: Redis | null = null;
 let fallbackLogger: LoggerLike | null = null;
 
-const canUseInMemoryFallback = (): boolean => env.nodeEnv === "development" || env.nodeEnv === "test";
-
 const getRedisConnection = (): Redis | null => {
   if (!env.redisUrl) {
     return null;
@@ -131,16 +129,13 @@ export const enqueueHubSpotRealtimeJob = async (
   const delayMs = typeof options.delay === "number" ? options.delay : 0;
 
   if (!activeQueue) {
-    if (!canUseInMemoryFallback()) {
-      throw new Error("REDIS_URL est obligatoire hors dev/test pour les jobs HubSpot realtime.");
-    }
-
     fallbackLogger?.warn(
       {
         queue: QUEUE_NAME,
         jobType: job.type,
+        nodeEnv: env.nodeEnv,
       },
-      "Fallback memoire HubSpot realtime utilise faute de REDIS_URL.",
+      "Fallback memoire HubSpot realtime utilise faute de REDIS_URL. Configure Redis pour une file durable en production.",
     );
     enqueueInMemory(job, delayMs);
     return;
@@ -159,15 +154,12 @@ export const startHubSpotRealtimeWorker = (
   const connection = getRedisConnection();
 
   if (!connection) {
-    if (!canUseInMemoryFallback()) {
-      throw new Error("REDIS_URL est obligatoire hors dev/test pour demarrer le worker HubSpot realtime.");
-    }
-
     logger.warn(
       {
         queue: QUEUE_NAME,
+        nodeEnv: env.nodeEnv,
       },
-      "REDIS_URL absent: les jobs HubSpot realtime tournent en memoire locale.",
+      "REDIS_URL absent: les jobs HubSpot realtime tournent en memoire locale. Configure Redis pour une file durable en production.",
     );
     return;
   }
