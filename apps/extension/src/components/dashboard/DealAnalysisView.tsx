@@ -1247,6 +1247,9 @@ export const DealAnalysisView = ({
 
       const result = await fetchDealQualification(activeProspect, orgId, selectedAiProvider, refresh);
       qualificationCache.set(cacheKey, result);
+      if (activeProspectIdRef.current !== activeProspect.id) {
+        return;
+      }
       setQualification(result);
     } catch (error) {
       captureAppError(error, {
@@ -1288,6 +1291,9 @@ export const DealAnalysisView = ({
 
       const result = await fetchDealActivityPlan(activeProspect, orgId, selectedAiProvider, refresh);
       activityPlanCache.set(cacheKey, result);
+      if (activeProspectIdRef.current !== activeProspect.id) {
+        return;
+      }
       setActivityPlan(result);
     } catch (error) {
       captureAppError(error, {
@@ -1408,6 +1414,9 @@ export const DealAnalysisView = ({
 
     if (activeProspect) {
       void loadPage(false);
+      // Warm the other sections in parallel so switching tabs is instant.
+      void loadQualification(false);
+      void loadActivityPlan(false);
     }
   }, [activeProspect?.id, orgId, ownerName, selectedAiProvider.id, selectedAiProvider.model]);
 

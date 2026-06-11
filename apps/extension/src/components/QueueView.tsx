@@ -7,7 +7,16 @@ import { OverviewView } from "./dashboard/OverviewView";
 import { Sidebar } from "./dashboard/Sidebar";
 import type { PlannedProspectTask, QueueViewProps } from "./dashboard/types";
 import { useQueueDashboard } from "../hooks/dashboard/useQueueDashboard";
-import { fetchCloseLostOverview, fetchForecastOverview, fetchHubSpotTasks, type HubSpotTaskListItem } from "../services/api";
+import {
+  fetchCloseLostOverview,
+  fetchForecastOverview,
+  fetchHubSpotLeadAccounts,
+  fetchHubSpotTasks,
+  fetchManagerDigest,
+  fetchTeamCoaching,
+  fetchWinAnalysisOverview,
+  type HubSpotTaskListItem,
+} from "../services/api";
 import "./QueueView.css";
 
 const CloseLostAnalysisView = lazy(async () => {
@@ -263,6 +272,12 @@ export const QueueView = ({
     void import("./dashboard/CloseLostAnalysisView");
     void import("./dashboard/ForecastView");
     void import("./dashboard/LeadsView");
+    void import("./dashboard/DealAnalysisView");
+    void import("./dashboard/DigestView");
+    void import("./dashboard/CoachingView");
+    void import("./dashboard/WinAnalysisView");
+    void import("./dashboard/TasksView");
+    void import("./dashboard/StatsView");
   }, []);
 
   const closeLostOwnerIds = useMemo(() => {
@@ -308,6 +323,29 @@ export const QueueView = ({
       aiProvider: dashboard.selectedAiProvider,
     }).catch(() => undefined);
   }, [closeLostOwnerIds, dashboard.selectedAiProvider, isConnected, orgId]);
+
+  // Warm the manager tabs (digest, coaching, win analysis) and leads caches in
+  // the background so switching to those views renders instantly. Delayed so
+  // the initial queue render and forecast prefetch keep network priority.
+  useEffect(() => {
+    if (!isConnected || !orgId) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      if (canViewTeamForecast) {
+        void fetchManagerDigest("daily").catch(() => undefined);
+        void fetchTeamCoaching().catch(() => undefined);
+        void fetchWinAnalysisOverview(orgId).catch(() => undefined);
+      }
+
+      if (selectedOwnerId) {
+        void fetchHubSpotLeadAccounts(orgId, selectedOwnerId, 500).catch(() => undefined);
+      }
+    }, 2_000);
+
+    return () => window.clearTimeout(timer);
+  }, [canViewTeamForecast, isConnected, orgId, selectedOwnerId]);
 
   useEffect(() => {
     if (!isConnected || !orgId || !selectedOwnerId) {
