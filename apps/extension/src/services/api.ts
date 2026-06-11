@@ -14,6 +14,7 @@ export type {
   AppUserRole,
   RepCoaching,
   RepCoachingAnalysis,
+  RepCoachingSourceDeal,
   RepCoachingStats,
   TeamCoachingCard,
   TeamCoachingJobSnapshot,

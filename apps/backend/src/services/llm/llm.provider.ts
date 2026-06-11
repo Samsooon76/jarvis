@@ -163,6 +163,15 @@ export type CloseLostRiskSignal = {
   detail: string;
 };
 
+export type CloseLostEvidenceSource = {
+  activityId: string;
+  type: "deal" | "note" | "call" | "meeting" | "email" | "sms" | "communication" | "task";
+  channel: string | null;
+  occurredAt: string | null;
+  title: string;
+  quote: string;
+};
+
 export type CloseLostHealthDimension = {
   label: string;
   score: number;
@@ -189,6 +198,7 @@ export type CloseLostDealAnalysis = {
   reactivationRationale: string;
   playbook: CloseLostReactivationAction[];
   evidence: string[];
+  evidenceSources: CloseLostEvidenceSource[];
   confidence: "low" | "medium" | "high";
 };
 
@@ -499,6 +509,7 @@ export type AnalyzeDealActivityPlanInput = AnalyzeDealQualificationInput & {
 
 export type AnalyzeCloseLostDealInput = {
   history: string;
+  sourceActivities?: CloseLostEvidenceSource[];
   companyName?: string | null;
   dealName?: string | null;
   companyContext?: string | null;

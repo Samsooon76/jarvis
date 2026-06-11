@@ -2,6 +2,7 @@ import { env } from "../config/env.js";
 import { getSupabaseAdmin } from "../db/client.js";
 import { captureServerError } from "../lib/sentry.js";
 import { analyzeDealActivityPlanForProspect } from "./deal-intelligence.service.js";
+import { analyzeCloseLostDeal } from "./close-lost-analysis.service.js";
 import {
   CLOSING_PROBABILITY_PROPERTY,
   recordDealProbabilityPoint,
@@ -18,8 +19,13 @@ import {
   type HubSpotRealtimeJob,
 } from "./hubspot-realtime-queue.service.js";
 import { loadHubSpotRealtimeOwnerIds } from "./hubspot-owner-scope.service.js";
-import { generatePulseNotificationsForDealWebhookEvent } from "./pulse.service.js";
+import {
+  buildPulseDealCreatedSourceEventId,
+  generatePulseNotificationsForDealWebhookEvent,
+  generatePulseNotificationsForNewDeal,
+} from "./pulse.service.js";
 import { resolveForecastSnapshotsForDeal } from "./forecast-snapshot.service.js";
+import { analyzeWinDeal } from "./win-analysis.service.js";
 
 type HubSpotWebhookEventRow = {
   id: string;
@@ -75,6 +81,17 @@ type HubSpotDealLookupRow = {
   hubspot_deal_id: string;
   hubspot_owner_id?: string | null;
 };
+
+type HubSpotDealStageLookupRow = {
+  stage_id: string;
+  stage_label: string;
+  pipeline_id: string;
+  pipeline_label: string | null;
+  is_closed: boolean | null;
+  probability: number | string | null;
+};
+
+type DealLifecycleStatus = "pending" | "won" | "lost";
 
 type HubSpotActivityLookupRow = {
   hubspot_activity_id: string;
@@ -311,7 +328,11 @@ const loadRealtimeOwnerIds = async (orgId: string): Promise<Set<string>> => {
   return loadHubSpotRealtimeOwnerIds(orgId);
 };
 
-const filterEligibleRealtimeDealIds = async (orgId: string, dealIds: string[]): Promise<string[]> => {
+const filterEligibleRealtimeDealIds = async (
+  orgId: string,
+  dealIds: string[],
+  options: { includeClosed?: boolean } = {},
+): Promise<string[]> => {
   const uniqueDealIds = Array.from(new Set(dealIds.filter(Boolean)));
 
   if (uniqueDealIds.length === 0) {
@@ -325,8 +346,11 @@ const filterEligibleRealtimeDealIds = async (orgId: string, dealIds: string[]): 
     .from("hubspot_deals")
     .select("hubspot_deal_id, hubspot_owner_id")
     .eq("org_id", orgId)
-    .eq("deal_lifecycle_status", "pending")
     .in("hubspot_deal_id", uniqueDealIds);
+
+  if (options.includeClosed !== true) {
+    query = query.eq("deal_lifecycle_status", "pending");
+  }
 
   if (realtimeOwnerIds.size > 0) {
     query = query.in("hubspot_owner_id", Array.from(realtimeOwnerIds));
@@ -558,6 +582,130 @@ const normalizeWebhookDate = (value: string | null): string | null => {
   return Number.isFinite(timestamp) && !Number.isNaN(timestamp) ? new Date(timestamp).toISOString() : null;
 };
 
+const normalizeStageText = (value: string | null | undefined): string =>
+  (value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+
+const compactStageText = (value: string | null | undefined): string =>
+  normalizeStageText(value).replace(/[^a-z0-9]+/g, "");
+
+const parseStageProbability = (value: number | string | null): number | null => {
+  const parsed = typeof value === "string" ? Number(value) : value;
+
+  return parsed !== null && Number.isFinite(parsed) ? Number(parsed) : null;
+};
+
+const normalizeStageProbability = (value: number | string | null): number => {
+  const parsed = parseStageProbability(value);
+
+  if (parsed === null) {
+    return 0;
+  }
+
+  const percentage = parsed >= 0 && parsed <= 1 ? parsed * 100 : parsed;
+
+  return Math.max(0, Math.min(100, Math.round(percentage)));
+};
+
+const resolveDealLifecycleStatusFromStage = (
+  dealStageId: string | null,
+  stage: HubSpotDealStageLookupRow | null,
+): DealLifecycleStatus => {
+  const normalizedStage = normalizeStageText(`${dealStageId ?? ""} ${stage?.stage_label ?? ""}`);
+  const compactStage = compactStageText(normalizedStage);
+  const probability = parseStageProbability(stage?.probability ?? null);
+
+  if (
+    compactStage.includes("closedlost") ||
+    compactStage.includes("closelost") ||
+    compactStage === "lost" ||
+    normalizedStage.includes(" lost") ||
+    normalizedStage.includes("perdu") ||
+    normalizedStage.includes("perdue")
+  ) {
+    return "lost";
+  }
+
+  if (
+    compactStage.includes("closedwon") ||
+    compactStage === "won" ||
+    normalizedStage.includes(" won") ||
+    normalizedStage.includes("gagne") ||
+    normalizedStage.includes("gagnee")
+  ) {
+    return "won";
+  }
+
+  if (probability !== null) {
+    if (probability <= 0) {
+      return "lost";
+    }
+
+    if (probability >= 1) {
+      return "won";
+    }
+  }
+
+  return stage?.is_closed === true ? "won" : "pending";
+};
+
+const loadDealStageLookupRow = async (
+  orgId: string,
+  stageId: string | null,
+): Promise<HubSpotDealStageLookupRow | null> => {
+  if (!stageId) {
+    return null;
+  }
+
+  const { data, error } = await getSupabaseAdmin()
+    .from("hubspot_deal_stages")
+    .select("stage_id, stage_label, pipeline_id, pipeline_label, is_closed, probability")
+    .eq("org_id", orgId)
+    .eq("stage_id", stageId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Impossible de charger le stage HubSpot: ${error.message}`);
+  }
+
+  return data as HubSpotDealStageLookupRow | null;
+};
+
+const runClosedDealAutomation = async (
+  orgId: string,
+  hubspotDealId: string,
+  lifecycleStatus: DealLifecycleStatus,
+  eventId: string | null,
+): Promise<void> => {
+  if (lifecycleStatus === "pending") {
+    return;
+  }
+
+  try {
+    await resolveForecastSnapshotsForDeal(orgId, hubspotDealId);
+  } catch (snapshotError) {
+    void captureServerError(snapshotError, { scope: "forecast-snapshots", eventId, orgId, hubspotDealId });
+  }
+
+  try {
+    if (lifecycleStatus === "won") {
+      await analyzeWinDeal(orgId, hubspotDealId, false);
+    } else {
+      await analyzeCloseLostDeal(orgId, hubspotDealId, null, null, false);
+    }
+  } catch (analysisError) {
+    void captureServerError(analysisError, {
+      scope: lifecycleStatus === "won" ? "close-won-auto-analysis" : "close-lost-auto-analysis",
+      eventId,
+      orgId,
+      hubspotDealId,
+    });
+  }
+};
+
 // Applique directement la nouvelle valeur portee par le webhook HubSpot
 // (property_name / property_value) sur la base Jarvis, sans rappeler l'API.
 const applyDealPropertyChangeFromWebhook = async (
@@ -566,14 +714,15 @@ const applyDealPropertyChangeFromWebhook = async (
   propertyName: string | null,
   propertyValue: string | null,
   occurredAt: string | null,
-): Promise<void> => {
+): Promise<{ lifecycleStatus: DealLifecycleStatus | null }> => {
   if (
     propertyName !== "amount" &&
     propertyName !== "closedate" &&
+    propertyName !== "dealstage" &&
     propertyName !== "hs_deal_stage_probability" &&
     propertyName !== "probabilite_de__closing"
   ) {
-    return;
+    return { lifecycleStatus: null };
   }
 
   const supabase = getSupabaseAdmin();
@@ -586,7 +735,7 @@ const applyDealPropertyChangeFromWebhook = async (
         : parseWebhookProbability(propertyValue);
 
     if (closeProbability === null) {
-      return;
+      return { lifecycleStatus: null };
     }
 
     const { error: dealError } = await supabase
@@ -628,7 +777,7 @@ const applyDealPropertyChangeFromWebhook = async (
       });
     }
 
-    return;
+    return { lifecycleStatus: null };
   }
 
   if (propertyName === "amount") {
@@ -653,7 +802,64 @@ const applyDealPropertyChangeFromWebhook = async (
       throw new Error(`Impossible de mettre a jour le montant du prospect HubSpot: ${prospectError.message}`);
     }
 
-    return;
+    return { lifecycleStatus: null };
+  }
+
+  if (propertyName === "dealstage") {
+    const stage = await loadDealStageLookupRow(orgId, propertyValue);
+    const lifecycleStatus = resolveDealLifecycleStatusFromStage(propertyValue, stage);
+    const closedAt = normalizeWebhookDate(occurredAt) ?? new Date().toISOString();
+    const updates: {
+      deal_stage: string | null;
+      deal_stage_label: string | null;
+      pipeline: string | null;
+      pipeline_label: string | null;
+      deal_lifecycle_status: DealLifecycleStatus;
+      is_closed_deal: boolean;
+      close_probability: number;
+      closed_at?: string;
+      synced_at: string;
+    } = {
+      deal_stage: propertyValue,
+      deal_stage_label: stage?.stage_label ?? propertyValue,
+      pipeline: stage?.pipeline_id ?? null,
+      pipeline_label: stage?.pipeline_label ?? null,
+      deal_lifecycle_status: lifecycleStatus,
+      is_closed_deal: lifecycleStatus !== "pending",
+      close_probability:
+        lifecycleStatus === "won" ? 100 : lifecycleStatus === "lost" ? 0 : normalizeStageProbability(stage?.probability ?? null),
+      synced_at: syncedAt,
+    };
+
+    if (lifecycleStatus !== "pending") {
+      updates.closed_at = closedAt;
+    }
+
+    const { error: dealError } = await supabase
+      .from("hubspot_deals")
+      .update(updates)
+      .eq("org_id", orgId)
+      .eq("hubspot_deal_id", hubspotDealId);
+
+    if (dealError) {
+      throw new Error(`Impossible de mettre a jour le stage du deal HubSpot: ${dealError.message}`);
+    }
+
+    const { error: prospectError } = await supabase
+      .from("prospects")
+      .update({
+        deal_stage: stage?.stage_label ?? propertyValue,
+        close_probability: updates.close_probability,
+        synced_at: syncedAt,
+      })
+      .eq("org_id", orgId)
+      .eq("hubspot_deal_id", hubspotDealId);
+
+    if (prospectError) {
+      throw new Error(`Impossible de mettre a jour le stage du prospect HubSpot: ${prospectError.message}`);
+    }
+
+    return { lifecycleStatus };
   }
 
   const closedAt = normalizeWebhookDate(propertyValue);
@@ -666,6 +872,8 @@ const applyDealPropertyChangeFromWebhook = async (
   if (closedError) {
     throw new Error(`Impossible de mettre a jour la date de closing du deal HubSpot: ${closedError.message}`);
   }
+
+  return { lifecycleStatus: null };
 };
 
 const scheduleDealReanalysis = async (
@@ -917,8 +1125,30 @@ const processHubSpotWebhookEvent = async (eventId: string): Promise<void> => {
       associationDealId ??
       legacyDealId;
 
+    if (dealId && (event.subscription_type === "object.creation" || event.subscription_type === "deal.creation")) {
+      try {
+        await generatePulseNotificationsForNewDeal({
+          orgId: event.org_id,
+          sourceEventId: buildPulseDealCreatedSourceEventId(event.org_id, dealId),
+          hubspotDealId: dealId,
+          dealName: null,
+          amount: null,
+          stageLabel: null,
+          occurredAt: event.occurred_at,
+        });
+      } catch (pulseError) {
+        void captureServerError(pulseError, { scope: "jarvis-pulse", eventId: event.id });
+      }
+
+      await updateWebhookEventStatus(event.id, "completed");
+      return;
+    }
+
     if (dealId && isInterestingDealProperty(event.property_name)) {
-      const [eligibleDealId] = await filterEligibleRealtimeDealIds(event.org_id, [dealId]);
+      const isStageChange = event.property_name === "dealstage";
+      const [eligibleDealId] = await filterEligibleRealtimeDealIds(event.org_id, [dealId], {
+        includeClosed: isStageChange,
+      });
 
       if (!eligibleDealId) {
         await updateWebhookEventStatus(event.id, "ignored", "Deal hors scope realtime: ferme ou hors Sales AE.");
@@ -942,7 +1172,7 @@ const processHubSpotWebhookEvent = async (eventId: string): Promise<void> => {
         void captureServerError(pulseError, { scope: "jarvis-pulse", eventId: event.id });
       }
 
-      await applyDealPropertyChangeFromWebhook(
+      const appliedChange = await applyDealPropertyChangeFromWebhook(
         event.org_id,
         eligibleDealId,
         event.property_name,
@@ -950,17 +1180,13 @@ const processHubSpotWebhookEvent = async (eventId: string): Promise<void> => {
         event.occurred_at,
       );
 
-      // Forecast vs realite: un changement de stage peut clore le deal -> on fige
-      // l'outcome sur les snapshots. Best-effort, ne bloque jamais le pipeline.
-      if (event.property_name === "dealstage") {
-        try {
-          await resolveForecastSnapshotsForDeal(event.org_id, eligibleDealId);
-        } catch (snapshotError) {
-          void captureServerError(snapshotError, { scope: "forecast-snapshots", eventId: event.id });
-        }
+      if (isStageChange && appliedChange.lifecycleStatus) {
+        await runClosedDealAutomation(event.org_id, eligibleDealId, appliedChange.lifecycleStatus, event.id);
       }
 
-      await scheduleDealReanalysis(event.org_id, eligibleDealId, event.id, "Changement HubSpot sur le deal");
+      if (appliedChange.lifecycleStatus !== "won" && appliedChange.lifecycleStatus !== "lost") {
+        await scheduleDealReanalysis(event.org_id, eligibleDealId, event.id, "Changement HubSpot sur le deal");
+      }
       await updateWebhookEventStatus(event.id, "completed");
       return;
     }

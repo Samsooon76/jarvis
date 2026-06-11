@@ -1,18 +1,26 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import {
   fetchRepCoaching,
   fetchTeamCoaching,
   fetchTeamCoachingJob,
   startTeamCoachingRun,
   type RepCoaching,
+  type RepCoachingSourceDeal,
   type TeamCoachingCard,
   type TeamCoachingJobSnapshot,
 } from "../../services/api";
+import { LoadingState } from "./LoadingState";
 
 const TREND_LABELS: Record<string, string> = {
   improving: "En progression",
   stable: "Stable",
   declining: "En difficulte",
+};
+
+const TREND_BADGE_LABELS: Record<string, string> = {
+  improving: "Progresse",
+  stable: "Stable",
+  declining: "A coacher",
 };
 
 const FREQUENCY_LABELS: Record<string, string> = {
@@ -33,6 +41,121 @@ const formatDateTime = (value: string): string =>
 
 const formatAmount = (value: number): string =>
   new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(value);
+
+const formatDate = (value: string | null): string | null =>
+  value
+    ? new Intl.DateTimeFormat("fr-FR", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      }).format(new Date(value))
+    : null;
+
+const SOURCE_DEAL_STATUS_LABELS: Record<RepCoachingSourceDeal["status"], string> = {
+  open: "Ouvert",
+  won: "Gagne",
+  lost: "Perdu",
+};
+
+const ACTIVITY_TYPE_LABELS: Record<RepCoachingSourceDeal["evidenceSources"][number]["type"], string> = {
+  deal: "Deal",
+  note: "Note",
+  call: "Appel",
+  meeting: "Reunion",
+  email: "Email",
+  sms: "SMS",
+  communication: "Message",
+  task: "Tache",
+};
+
+const getCardTrendClass = (card: TeamCoachingCard): string => {
+  if (card.status === "pending" || card.trend === null) {
+    return "pending";
+  }
+
+  return card.trend;
+};
+
+const getCardActionLabel = (card: TeamCoachingCard): string => {
+  if (card.status === "pending" || card.headline === null) {
+    return "Analyser le profil";
+  }
+
+  return card.trend === "stable" || card.trend === "improving" ? "Preparer le 1:1" : "Voir le plan coaching";
+};
+
+const getWinRateRingStyle = (winRate: number | null): CSSProperties =>
+  ({
+    "--ae-coaching-ring-value": `${Math.max(0, Math.min(100, winRate ?? 0)) * 3.6}deg`,
+  }) as CSSProperties;
+
+const getSourceDealsForText = (repCoaching: RepCoaching, text: string): RepCoachingSourceDeal[] => {
+  const normalizedText = text.toLowerCase();
+  const sourceDeals = new Map<string, RepCoachingSourceDeal>();
+
+  const addDeals = (deals: RepCoachingSourceDeal[]): void => {
+    for (const deal of deals) {
+      sourceDeals.set(deal.hubspotDealId, deal);
+    }
+  };
+
+  for (const reason of repCoaching.stats.lossReasons) {
+    if (normalizedText.includes(reason.category.toLowerCase())) {
+      addDeals(reason.sourceDeals);
+    }
+  }
+
+  for (const signal of repCoaching.stats.topRiskSignals) {
+    if (normalizedText.includes(signal.title.toLowerCase())) {
+      addDeals(signal.sourceDeals);
+    }
+  }
+
+  return Array.from(sourceDeals.values()).slice(0, 8);
+};
+
+const SourceDealList = ({ deals, label }: { deals: RepCoachingSourceDeal[]; label: string }) => {
+  if (deals.length === 0) {
+    return null;
+  }
+
+  return (
+    <details className="ae-coaching-source-deals">
+      <summary>
+        {label} ({deals.length})
+      </summary>
+      <div>
+        {deals.map((deal) => {
+          const closedDate = formatDate(deal.closedAt);
+
+          return (
+            <article key={deal.hubspotDealId}>
+              <strong>{deal.dealName}</strong>
+              <span>
+                {SOURCE_DEAL_STATUS_LABELS[deal.status]} - {deal.stage} - {formatAmount(deal.amount)}
+                {closedDate ? ` - cloture ${closedDate}` : ""}
+              </span>
+              {deal.evidenceSources.length > 0 ? (
+                <div className="ae-coaching-evidence-source-list">
+                  {deal.evidenceSources.map((source) => (
+                    <section key={source.activityId}>
+                      <small>
+                        {ACTIVITY_TYPE_LABELS[source.type] ?? source.type}
+                        {source.channel ? ` - ${source.channel}` : ""}
+                        {source.occurredAt ? ` - ${formatDateTime(source.occurredAt)}` : ""}
+                      </small>
+                      <p>{source.quote}</p>
+                    </section>
+                  ))}
+                </div>
+              ) : null}
+            </article>
+          );
+        })}
+      </div>
+    </details>
+  );
+};
 
 export const CoachingView = () => {
   const [cards, setCards] = useState<TeamCoachingCard[]>([]);
@@ -142,6 +265,17 @@ export const CoachingView = () => {
   };
 
   const isRunInProgress = runJob !== null && (runJob.status === "queued" || runJob.status === "running");
+  const analyzedCards = cards.filter((card) => card.status === "ready" && card.headline !== null);
+  const cardsWithWinRate = cards.filter((card) => card.winRate !== null);
+  const teamAverageWinRate =
+    cardsWithWinRate.length > 0
+      ? Math.round(
+          cardsWithWinRate.reduce((total, card) => total + (card.winRate ?? 0), 0) / cardsWithWinRate.length,
+        )
+      : null;
+  const priorityCards = cards.filter(
+    (card) => card.trend === "declining" || (card.winRate !== null && card.winRate < 25),
+  );
 
   if (selectedUserId) {
     const funnelMax = Math.max(
@@ -184,7 +318,9 @@ export const CoachingView = () => {
         </div>
 
         {repError ? <p className="ae-admin-feedback error">{repError}</p> : null}
-        {isLoadingRep ? <p className="ae-empty">Chargement du profil...</p> : null}
+        {isLoadingRep ? (
+          <LoadingState detail="On reconstruit le profil de coaching du commercial." label="Chargement du profil" />
+        ) : null}
 
         {repCoaching && !isLoadingRep ? (
           <>
@@ -267,6 +403,7 @@ export const CoachingView = () => {
                       <small>
                         {stage.openCount} ouverts - {stage.wonCount} gagnes - {stage.lostCount} perdus
                       </small>
+                      <SourceDealList deals={stage.sourceDeals} label="Voir les deals du stage" />
                     </div>
                   );
                 })}
@@ -303,15 +440,18 @@ export const CoachingView = () => {
                       {repCoaching.analysis.weaknesses.length === 0 ? (
                         <p className="ae-empty">Aucun axe identifie.</p>
                       ) : (
-                        repCoaching.analysis.weaknesses.map((weakness) => (
-                          <article className="ae-coaching-insight-card growth" key={weakness.title}>
-                            <span>{weakness.stage ?? "A travailler"}</span>
-                            <strong>
-                              {weakness.title}
-                            </strong>
-                            <p>{weakness.evidence}</p>
-                          </article>
-                        ))
+                        repCoaching.analysis.weaknesses.map((weakness) => {
+                          const sourceDeals = getSourceDealsForText(repCoaching, `${weakness.title} ${weakness.evidence}`);
+
+                          return (
+                            <article className="ae-coaching-insight-card growth" key={weakness.title}>
+                              <span>{weakness.stage ?? "A travailler"}</span>
+                              <strong>{weakness.title}</strong>
+                              <p>{weakness.evidence}</p>
+                              <SourceDealList deals={sourceDeals} label="Deals qui expliquent ce signal" />
+                            </article>
+                          );
+                        })
                       )}
                     </div>
                   </article>
@@ -321,12 +461,47 @@ export const CoachingView = () => {
                   <article className="ae-forecast-panel">
                     <div className="ae-panel-heading">
                       <h4>Patterns de pertes</h4>
+                      <small>Les listes ci-dessous viennent des analyses close-lost en cache.</small>
                     </div>
                     <div className="ae-coaching-loss-patterns">
-                      {repCoaching.analysis.lossPatterns.map((pattern) => (
-                        <article className="ae-coaching-loss-pattern" key={pattern.pattern}>
-                          <span>{FREQUENCY_LABELS[pattern.frequency] ?? pattern.frequency}</span>
-                          <strong>{pattern.pattern}</strong>
+                      {repCoaching.analysis.lossPatterns.map((pattern) => {
+                        const sourceDeals = getSourceDealsForText(repCoaching, pattern.pattern);
+
+                        return (
+                          <article className="ae-coaching-loss-pattern" key={pattern.pattern}>
+                            <span>{FREQUENCY_LABELS[pattern.frequency] ?? pattern.frequency}</span>
+                            <strong>{pattern.pattern}</strong>
+                            <SourceDealList deals={sourceDeals} label="Deals concernes" />
+                          </article>
+                        );
+                      })}
+                    </div>
+                  </article>
+                ) : null}
+
+                {repCoaching.stats.lossReasons.length > 0 || repCoaching.stats.topRiskSignals.length > 0 ? (
+                  <article className="ae-forecast-panel">
+                    <div className="ae-panel-heading">
+                      <h4>Sources des compteurs</h4>
+                      <small>Les nombres entre parentheses correspondent a ces deals analyses.</small>
+                    </div>
+                    <div className="ae-coaching-source-grid">
+                      {repCoaching.stats.lossReasons.map((reason) => (
+                        <article className="ae-coaching-source-card" key={`reason-${reason.category}`}>
+                          <span>Raison de perte</span>
+                          <strong>
+                            {reason.category} ({reason.count})
+                          </strong>
+                          <SourceDealList deals={reason.sourceDeals} label="Deals sources" />
+                        </article>
+                      ))}
+                      {repCoaching.stats.topRiskSignals.map((signal) => (
+                        <article className="ae-coaching-source-card" key={`signal-${signal.title}`}>
+                          <span>Signal de risque</span>
+                          <strong>
+                            {signal.title} ({signal.count})
+                          </strong>
+                          <SourceDealList deals={signal.sourceDeals} label="Deals sources" />
                         </article>
                       ))}
                     </div>
@@ -368,20 +543,45 @@ export const CoachingView = () => {
   }
 
   return (
-    <section className="ae-view-panel ae-coaching-page" aria-label="Coaching equipe">
-      <div className="ae-forecast-header">
-        <span className="ae-forecast-last-update">
-          Profil de coaching par commercial (periode glissante de 90 jours).
-        </span>
-        <div className="ae-forecast-header-meta">
+    <section className="ae-view-panel ae-coaching-page ae-team-coaching-page" aria-label="Coaching equipe">
+      <div className="ae-coaching-hero">
+        <div>
+          <span className="ae-coaching-kicker">Coaching equipe</span>
+          <h3>Qui coacher cette semaine ?</h3>
+          <p>
+            Vue manager sur les commerciaux, les signaux de conversion et les profils a preparer pour les prochains
+            1:1.
+          </p>
+        </div>
+        <div className="ae-coaching-hero-actions">
           <button className="ae-forecast-link" disabled={isLoadingTeam} onClick={() => loadTeam(true)} type="button">
             Actualiser
           </button>
-          <button className="ae-forecast-link" disabled={isRunInProgress} onClick={handleRunTeam} type="button">
-            {isRunInProgress ? "Analyse en cours..." : "Analyser toute l'equipe"}
+          <button className="ae-forecast-link primary" disabled={isRunInProgress} onClick={handleRunTeam} type="button">
+            {isRunInProgress ? "Analyse en cours..." : "Analyser l'equipe"}
           </button>
         </div>
       </div>
+
+      <section className="ae-coaching-team-summary" aria-label="Synthese coaching equipe">
+        <article>
+          <small>Profils analyses</small>
+          <strong>
+            {analyzedCards.length}/{cards.length}
+          </strong>
+          <span>periode 90 jours</span>
+        </article>
+        <article>
+          <small>Win rate moyen</small>
+          <strong>{teamAverageWinRate !== null ? `${teamAverageWinRate}%` : "n/a"}</strong>
+          <span>{cardsWithWinRate.length} commerciaux avec donnees</span>
+        </article>
+        <article className={priorityCards.length > 0 ? "attention" : ""}>
+          <small>A prioriser</small>
+          <strong>{priorityCards.length}</strong>
+          <span>{priorityCards.length > 0 ? "profil(s) sous surveillance" : "aucun signal critique"}</span>
+        </article>
+      </section>
 
       {runJob && isRunInProgress ? (
         <div className="ae-sync-progress" aria-live="polite">
@@ -399,39 +599,65 @@ export const CoachingView = () => {
       ) : null}
 
       {teamError ? <p className="ae-admin-feedback error">{teamError}</p> : null}
-      {isLoadingTeam ? <p className="ae-empty">Chargement de l'equipe...</p> : null}
+      {isLoadingTeam ? (
+        <LoadingState detail="On charge les profils de coaching disponibles." label="Chargement de l'equipe" />
+      ) : null}
 
       {!isLoadingTeam && cards.length === 0 ? (
         <p className="ae-empty">Aucun commercial (role sales) dans cette organisation.</p>
       ) : null}
 
-      <section className="ae-forecast-layout three">
-        {cards.map((card) => (
-          <article className="ae-forecast-panel" key={card.userId}>
-            <div className="ae-panel-heading">
-              <h4>{card.repName}</h4>
-              <small>{card.trend ? TREND_LABELS[card.trend] ?? card.trend : "En attente d'analyse"}</small>
-            </div>
-            <div className="ae-forecast-list">
-              <div>
-                <strong>Win rate: {card.winRate !== null ? `${card.winRate}%` : "n/a"}</strong>
-                <p>
-                  {card.closedWonCount} gagnes / {card.closedLostCount} perdus - {card.openDealCount} ouverts
-                </p>
+      <section className="ae-coaching-rep-grid">
+        {cards.map((card) => {
+          const cardTrendClass = getCardTrendClass(card);
+
+          return (
+            <article className={`ae-coaching-rep-card ${cardTrendClass}`} key={card.userId}>
+              <div className="ae-coaching-rep-head">
+                <div>
+                  <h4>{card.repName}</h4>
+                  <small>{card.generatedAt ? `Analyse du ${formatDateTime(card.generatedAt)}` : "A analyser"}</small>
+                </div>
+                <span className={`ae-coaching-status ${cardTrendClass}`}>
+                  {card.trend ? TREND_BADGE_LABELS[card.trend] ?? card.trend : "En attente"}
+                </span>
               </div>
-              <div>
-                {card.headline ? (
-                  <p>{card.headline}</p>
-                ) : (
-                  <p className="ae-empty">Pas encore de synthese IA: lancez l'analyse equipe ou ouvrez le profil.</p>
-                )}
+
+              <div className="ae-coaching-score-ring-row">
+                <div
+                  aria-label={`Win rate ${card.winRate !== null ? `${card.winRate}%` : "non disponible"}`}
+                  className={`ae-coaching-win-ring ${cardTrendClass}`}
+                  style={getWinRateRingStyle(card.winRate)}
+                >
+                  <span>Win rate</span>
+                  <strong>{card.winRate !== null ? `${card.winRate}%` : "n/a"}</strong>
+                </div>
+                <dl className="ae-coaching-deal-breakdown">
+                  <div>
+                    <dt>Gagnes</dt>
+                    <dd>{card.closedWonCount}</dd>
+                  </div>
+                  <div>
+                    <dt>Perdus</dt>
+                    <dd>{card.closedLostCount}</dd>
+                  </div>
+                  <div>
+                    <dt>Ouverts</dt>
+                    <dd>{card.openDealCount}</dd>
+                  </div>
+                </dl>
               </div>
-            </div>
-            <button className="ae-forecast-link" onClick={() => loadRep(card.userId)} type="button">
-              Voir le profil
-            </button>
-          </article>
-        ))}
+
+              <p className={card.headline ? "ae-coaching-headline" : "ae-coaching-headline muted"}>
+                {card.headline ?? "Pas encore de synthese IA. Lancez l'analyse equipe ou ouvrez le profil."}
+              </p>
+
+              <button className="ae-coaching-profile-button" onClick={() => loadRep(card.userId)} type="button">
+                {getCardActionLabel(card)}
+              </button>
+            </article>
+          );
+        })}
       </section>
     </section>
   );

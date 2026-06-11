@@ -10,6 +10,10 @@ import { createJob, getJob, updateJob } from "../../services/job-store.js";
 import { upsertHubSpotSyncStatus, type HubSpotSyncStatusSnapshot } from "../../services/hubspot-sync-status.service.js";
 import { runAutomaticFollowUpTasksForOrg } from "../../services/follow-up-task.service.js";
 import { captureServerError } from "../../lib/sentry.js";
+import {
+  buildPulseDealCreatedSourceEventId,
+  generatePulseNotificationsForNewDeal,
+} from "../../services/pulse.service.js";
 
 export type SyncResult = {
   orgId: string;
@@ -551,7 +555,7 @@ const upsertHubSpotCrmSnapshot = async (
   const dealRows: HubSpotDealUpsertRow[] = snapshot.deals.map((deal) => {
     const dealStageId = readHubSpotProperty(deal.properties, "dealstage");
     const stage = stageLabelById.get(dealStageId ?? "");
-    const lifecycleStatus = resolveHubSpotDealLifecycleStatus(dealStageId, stage);
+    const lifecycleStatus = resolveHubSpotDealLifecycleStatus(dealStageId, stage ?? undefined);
 
     return {
       org_id: orgId,
@@ -632,6 +636,77 @@ const upsertHubSpotCrmSnapshot = async (
 const getProspectSyncKey = (prospect: { hubspotContactId: string; hubspotDealId: string | null }): string =>
   `${prospect.hubspotContactId}:${prospect.hubspotDealId ?? "contact"}`;
 
+const loadExistingHubSpotDealIds = async (orgId: string, dealIds: string[]): Promise<Set<string> | null> => {
+  if (dealIds.length === 0) {
+    return new Set();
+  }
+
+  const { count, error: countError } = await getSupabaseAdmin()
+    .from("hubspot_deals")
+    .select("hubspot_deal_id", { count: "exact", head: true })
+    .eq("org_id", orgId);
+
+  if (countError) {
+    throw new Error(`Impossible de verifier les deals HubSpot existants: ${countError.message}`);
+  }
+
+  // Premier snapshot CRM: ne pas spammer Pulse avec tout le pipe historique.
+  if ((count ?? 0) === 0) {
+    return null;
+  }
+
+  const { data, error } = await getSupabaseAdmin()
+    .from("hubspot_deals")
+    .select("hubspot_deal_id")
+    .eq("org_id", orgId)
+    .in("hubspot_deal_id", dealIds);
+
+  if (error) {
+    throw new Error(`Impossible de charger les deals HubSpot existants: ${error.message}`);
+  }
+
+  return new Set(((data ?? []) as Array<{ hubspot_deal_id: string }>).map((row) => row.hubspot_deal_id));
+};
+
+const notifyPulseForNewSyncedDeals = async (
+  orgId: string,
+  snapshot: HubSpotCrmSyncSnapshot,
+  existingDealIds: Set<string> | null,
+  occurredAt: string,
+): Promise<void> => {
+  if (!existingDealIds) {
+    return;
+  }
+
+  for (const deal of snapshot.deals) {
+    if (existingDealIds.has(deal.id)) {
+      continue;
+    }
+
+    const dealStageId = readHubSpotProperty(deal.properties, "dealstage");
+    const stage = snapshot.dealStages.find((candidate) => candidate.stageId === dealStageId) ?? null;
+    const lifecycleStatus = resolveHubSpotDealLifecycleStatus(dealStageId, stage ?? undefined);
+
+    if (lifecycleStatus !== "pending") {
+      continue;
+    }
+
+    try {
+      await generatePulseNotificationsForNewDeal({
+        orgId,
+        sourceEventId: buildPulseDealCreatedSourceEventId(orgId, deal.id),
+        hubspotDealId: deal.id,
+        dealName: readHubSpotProperty(deal.properties, "dealname"),
+        amount: parseHubSpotNumericProperty(deal.properties, "amount"),
+        stageLabel: stage?.stageLabel ?? dealStageId,
+        occurredAt,
+      });
+    } catch (error) {
+      void captureServerError(error, { scope: "jarvis-pulse-sync", orgId, hubspotDealId: deal.id });
+    }
+  }
+};
+
 export const syncHubSpotProspects = async (
   orgId: string,
   contactNames: string[] = DEFAULT_TARGET_HUBSPOT_CONTACT_NAMES,
@@ -669,6 +744,12 @@ export const syncHubSpotProspects = async (
     const fullCrmSnapshot =
       includeFullSync ? await hubSpotService.fetchCrmSnapshot(accessToken) : null;
     const crmSnapshot = ownerCrmSnapshot ?? fullCrmSnapshot;
+    const existingDealIdsBeforeSync = crmSnapshot
+      ? await loadExistingHubSpotDealIds(
+          orgId,
+          crmSnapshot.deals.map((deal) => deal.id),
+        )
+      : null;
     const ownerProspects = ownerCrmSnapshot?.prospects ?? [];
 
     const [allProspects, targetedProspects] = await Promise.all([
@@ -697,6 +778,7 @@ export const syncHubSpotProspects = async (
           message: "Aucun prospect a mettre a jour, persistance du snapshot CRM.",
         });
         await upsertHubSpotCrmSnapshot(orgId, crmSnapshot, syncedAt);
+        await notifyPulseForNewSyncedDeals(orgId, crmSnapshot, existingDealIdsBeforeSync, syncedAt);
       }
 
       const emptyResult = {
@@ -790,6 +872,7 @@ export const syncHubSpotProspects = async (
         message: `${crmSnapshot.deals.length} deal(s), ${crmSnapshot.contacts.length} contact(s), ${crmSnapshot.companies.length} entreprise(s), ${crmSnapshot.leads.length} lead(s).`,
       });
       await upsertHubSpotCrmSnapshot(orgId, crmSnapshot, syncedAt);
+      await notifyPulseForNewSyncedDeals(orgId, crmSnapshot, existingDealIdsBeforeSync, syncedAt);
     }
 
     const rowBatches = createBatches(rows, PROSPECT_UPSERT_BATCH_SIZE);

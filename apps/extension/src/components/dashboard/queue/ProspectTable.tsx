@@ -2,6 +2,7 @@ import type { QueueProspect } from "@jarvis/shared";
 import { BarChart3 } from "lucide-react";
 import { buckets, dealStatusLabels, priorityLabels } from "../config";
 import type { PlannedProspectTask } from "../types";
+import { LoadingState } from "../LoadingState";
 import { formatAmount, formatDate } from "../../../utils/dashboard/formatters";
 import { getBucket, getDaysSince, getDealStatus, getInitials } from "../../../utils/dashboard/prospects";
 
@@ -135,10 +136,11 @@ export const ProspectTable = ({
         })}
       </tbody>
     </table>
-    {filteredProspects.length === 0 ? (
-      <p className="ae-empty">
-        {isLoadingLiveDeals ? "Chargement des deals HubSpot..." : "Aucun deal ne correspond a ce filtre."}
-      </p>
+    {filteredProspects.length === 0 && isLoadingLiveDeals ? (
+      <LoadingState detail="On synchronise la liste avec les donnees live HubSpot." label="Chargement des deals HubSpot" />
+    ) : null}
+    {filteredProspects.length === 0 && !isLoadingLiveDeals ? (
+      <p className="ae-empty">Aucun deal ne correspond a ce filtre.</p>
     ) : null}
   </div>
 );

@@ -1031,3 +1031,25 @@ export const getWinAnalysisDealDetail = async (
     generatedAt: row?.generated_at ?? null,
   };
 };
+
+export const analyzeWinDeal = async (
+  orgId: string,
+  hubspotDealId: string,
+  refresh = false,
+): Promise<{ deal: WinAnalysisDealListItem; analysis: SharedCloseWonDealAnalysis | null; generatedAt: string | null }> => {
+  const provider = await resolveProvider(orgId);
+  const contexts = await loadWonDealContexts(orgId, "1970-01-01", "2999-12-31", hubspotDealId);
+  const context = contexts.find((candidate) => candidate.row.hubspot_deal_id === hubspotDealId) ?? null;
+
+  if (!context) {
+    throw new Error("Deal gagne introuvable dans Supabase.");
+  }
+
+  const cachedAnalyses = refresh
+    ? new Map<string, CloseWonAnalysisRow>()
+    : await loadLatestWinAnalyses(orgId, [hubspotDealId], provider.providerName, provider.modelName);
+
+  await analyzeWonDealContext(orgId, context, provider, cachedAnalyses.get(hubspotDealId) ?? null);
+
+  return getWinAnalysisDealDetail(orgId, hubspotDealId);
+};

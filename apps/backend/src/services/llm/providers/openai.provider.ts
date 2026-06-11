@@ -690,7 +690,11 @@ export class OpenAiProvider implements LlmProvider {
   }
 
   async analyzeCloseLostDeal(input: AnalyzeCloseLostDealInput): Promise<CloseLostDealAnalysis> {
-    return parseCloseLostDealAnalysis(await this.completeJson(buildCloseLostDealPrompt(input), 5_000), "OpenAI");
+    return parseCloseLostDealAnalysis(
+      await this.completeJson(buildCloseLostDealPrompt(input), 5_000),
+      "OpenAI",
+      input.sourceActivities,
+    );
   }
 
   async analyzeCloseLostPortfolio(input: AnalyzeCloseLostPortfolioInput): Promise<CloseLostPortfolioAnalysis> {

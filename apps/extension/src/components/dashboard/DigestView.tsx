@@ -5,6 +5,7 @@ import {
   type ManagerDigest,
   type ManagerDigestPeriod,
 } from "../../services/api";
+import { LoadingState } from "./LoadingState";
 
 type DigestViewProps = {
   prospects: QueueProspect[];
@@ -175,7 +176,9 @@ export const DigestView = ({ prospects, onOpenDealAnalysis }: DigestViewProps) =
 
       {error ? <p className="ae-admin-feedback error">{error}</p> : null}
 
-      {isLoading && !digest ? <p className="ae-empty">Generation du digest...</p> : null}
+      {isLoading && !digest ? (
+        <LoadingState detail="On agrege les mouvements, risques et coups de main." label="Generation du digest" />
+      ) : null}
 
       {digest ? (
         <>

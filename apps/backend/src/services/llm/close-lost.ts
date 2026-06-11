@@ -2,6 +2,7 @@ import type {
   AnalyzeCloseLostDealInput,
   AnalyzeCloseLostPortfolioInput,
   CloseLostDealAnalysis,
+  CloseLostEvidenceSource,
   CloseLostHealthDimension,
   CloseLostPortfolioAnalysis,
   CloseLostPortfolioFactor,
@@ -24,6 +25,7 @@ type ParsedCloseLostDealAnalysis = {
   reactivationRationale?: unknown;
   playbook?: unknown;
   evidence?: unknown;
+  evidenceSources?: unknown;
   confidence?: unknown;
 };
 
@@ -38,6 +40,11 @@ type ParsedCloseLostRiskSignal = {
   title?: unknown;
   severity?: unknown;
   detail?: unknown;
+};
+
+type ParsedCloseLostEvidenceSource = {
+  activityId?: unknown;
+  quote?: unknown;
 };
 
 type ParsedCloseLostReactivationAction = {
@@ -236,6 +243,48 @@ const parsePlaybook = (value: unknown, providerName: string): CloseLostReactivat
   });
 };
 
+const parseEvidenceSources = (
+  value: unknown,
+  sourceActivities: CloseLostEvidenceSource[] | undefined,
+  providerName: string,
+): CloseLostEvidenceSource[] => {
+  if (value === undefined || value === null) {
+    return [];
+  }
+
+  if (!Array.isArray(value)) {
+    throw new Error(`${providerName} a renvoye des sources d'evidence invalides.`);
+  }
+
+  const sourceById = new Map((sourceActivities ?? []).map((source) => [source.activityId, source]));
+  const sources: CloseLostEvidenceSource[] = [];
+
+  for (const item of value.slice(0, 5)) {
+    if (!isRecord(item)) {
+      throw new Error(`${providerName} a renvoye une source d'evidence invalide.`);
+    }
+
+    const parsedSource = item as ParsedCloseLostEvidenceSource;
+
+    if (typeof parsedSource.activityId !== "string" || typeof parsedSource.quote !== "string") {
+      throw new Error(`${providerName} a renvoye une source d'evidence non conforme.`);
+    }
+
+    const sourceActivity = sourceById.get(parsedSource.activityId);
+
+    if (!sourceActivity) {
+      continue;
+    }
+
+    sources.push({
+      ...sourceActivity,
+      quote: compactText(parsedSource.quote, 220),
+    });
+  }
+
+  return sources;
+};
+
 const parsePortfolioFactors = (value: unknown, providerName: string): CloseLostPortfolioFactor[] => {
   if (!Array.isArray(value)) {
     throw new Error(`${providerName} a renvoye des facteurs close lost invalides.`);
@@ -309,6 +358,7 @@ export const buildCloseLostDealPrompt = ({
   ownerName,
   contactNames,
   today,
+  sourceActivities,
 }: AnalyzeCloseLostDealInput): string => `Tu es Jarvis, un sales copilot B2B. Analyse un deal HubSpot deja perdu et reponds uniquement en JSON valide.
 
 Schema JSON exact:
@@ -344,6 +394,12 @@ Schema JSON exact:
     }
   ],
   "evidence": string[],
+  "evidenceSources": [
+    {
+      "activityId": string,
+      "quote": string
+    }
+  ],
   "confidence": "low" | "medium" | "high"
 }
 
@@ -359,6 +415,8 @@ Regles strictes:
 - reactivationScore: entier 0-100; 0 si aucune reactivation credible dans les donnees.
 - playbook: 2 a 5 actions maximum, orientees win-back ou prevention future.
 - evidence: 2 a 5 faits CRM observes, sans citer de donnees sensibles inutiles.
+- evidenceSources: 1 a 5 sources conversationnelles qui justifient les raisons/signaux. activityId doit etre recopie exactement depuis la liste "Activites sources autorisees"; quote est un extrait court tire de cette activite. Si aucune activite ne justifie un point, n'invente rien et renvoie [].
+- N'utilise jamais un activityId absent de "Activites sources autorisees".
 - Si l'historique est pauvre, mets confidence a low et explique l'incertitude.
 - Contenu en francais, concis, actionnable pour un manager Sales.
 
@@ -379,7 +437,25 @@ Contexte deal:
 ${dealContext ?? "non disponible"}
 
 Historique HubSpot:
-${history}`;
+${history}
+
+Activites sources autorisees:
+${
+  sourceActivities && sourceActivities.length > 0
+    ? sourceActivities
+        .map((source) =>
+          [
+            `activityId=${source.activityId}`,
+            `type=${source.type}`,
+            `canal=${source.channel ?? "inconnu"}`,
+            `date=${source.occurredAt ?? "inconnue"}`,
+            `titre=${source.title}`,
+            `extrait=${source.quote}`,
+          ].join(" | "),
+        )
+        .join("\n")
+    : "Aucune activite conversationnelle source disponible."
+}`;
 
 export const buildCloseLostPortfolioPrompt = ({
   dealsSummary,
@@ -433,7 +509,11 @@ Contexte:
 Analyses compactes:
 ${dealsSummary}`;
 
-export const parseCloseLostDealAnalysis = (value: string, providerName: string): CloseLostDealAnalysis => {
+export const parseCloseLostDealAnalysis = (
+  value: string,
+  providerName: string,
+  sourceActivities?: CloseLostEvidenceSource[],
+): CloseLostDealAnalysis => {
   const parsed = parseJsonObject<ParsedCloseLostDealAnalysis>(value, providerName, "l'analyse close lost du deal");
 
   if (
@@ -462,6 +542,7 @@ export const parseCloseLostDealAnalysis = (value: string, providerName: string):
     reactivationRationale: compactText(parsed.reactivationRationale, 180),
     playbook: parsePlaybook(parsed.playbook, providerName),
     evidence: parsed.evidence.map((item) => compactText(item, 140)).slice(0, 5),
+    evidenceSources: parseEvidenceSources(parsed.evidenceSources, sourceActivities, providerName),
     confidence: parsed.confidence,
   };
 };

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  buildPulseDealCreatedSourceEventId,
   buildPulseChange,
   mapDealPropertyToPulseEventType,
   parsePulsePreferencesInput,
@@ -67,6 +68,7 @@ test("valide des preferences Pulse completes", () => {
   const preferences = parsePulsePreferencesInput({
     pulseEnabled: true,
     events: {
+      deal_created: true,
       probability: true,
       amount: false,
       stage: true,
@@ -78,6 +80,7 @@ test("valide des preferences Pulse completes", () => {
 
   assert.ok(preferences);
   assert.equal(preferences.pulseEnabled, true);
+  assert.equal(preferences.events.deal_created, true);
   assert.equal(preferences.events.amount, false);
   assert.equal(preferences.events.stage, true);
 });
@@ -89,6 +92,7 @@ test("rejette des preferences Pulse incompletes ou invalides", () => {
     parsePulsePreferencesInput({
       pulseEnabled: "yes",
       events: {
+        deal_created: true,
         probability: true,
         amount: true,
         stage: true,
@@ -103,6 +107,7 @@ test("rejette des preferences Pulse incompletes ou invalides", () => {
     parsePulsePreferencesInput({
       pulseEnabled: true,
       events: {
+        deal_created: true,
         probability: true,
         amount: true,
         stage: true,
@@ -118,6 +123,7 @@ test("rejette des preferences Pulse incompletes ou invalides", () => {
     parsePulsePreferencesInput({
       pulseEnabled: true,
       events: {
+        deal_created: true,
         probability: true,
         amount: true,
         stage: true,
@@ -127,4 +133,14 @@ test("rejette des preferences Pulse incompletes ou invalides", () => {
     }),
     null,
   );
+});
+
+test("genere un identifiant source stable pour une creation de deal", () => {
+  const first = buildPulseDealCreatedSourceEventId("org-1", "deal-1");
+  const second = buildPulseDealCreatedSourceEventId("org-1", "deal-1");
+  const other = buildPulseDealCreatedSourceEventId("org-1", "deal-2");
+
+  assert.equal(first, second);
+  assert.notEqual(first, other);
+  assert.match(first, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-8[0-9a-f]{3}-[0-9a-f]{12}$/);
 });

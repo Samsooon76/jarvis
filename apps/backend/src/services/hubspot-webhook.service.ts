@@ -324,6 +324,10 @@ const resolveCandidateDealId = (event: NormalizedHubSpotWebhookEvent): string | 
 const isPrivacyDeletionEvent = (event: NormalizedHubSpotWebhookEvent): boolean =>
   event.subscriptionType === "contact.privacyDeletion";
 
+const isDealCreationEvent = (event: NormalizedHubSpotWebhookEvent): boolean =>
+  (event.subscriptionType === "object.creation" && isDealObjectTypeId(event.objectTypeId)) ||
+  event.subscriptionType === "deal.creation";
+
 const normalizeTimestamp = (value: string | number | null): string | null => {
   if (typeof value === "number" && Number.isFinite(value)) {
     return new Date(value).toISOString();
@@ -625,6 +629,10 @@ const filterRealtimeScopedEvents = async (
       continue;
     }
 
+    if (isDealCreationEvent(event)) {
+      continue;
+    }
+
     const dealIds = dealIdsByOrg.get(orgId) ?? new Set<string>();
     dealIds.add(dealId);
     dealIdsByOrg.set(orgId, dealIds);
@@ -643,6 +651,14 @@ const filterRealtimeScopedEvents = async (
     }
 
     const dealId = resolveCandidateDealId(event);
+
+    if (dealId && isDealCreationEvent(event)) {
+      return true;
+    }
+
+    if (dealId && event.propertyName === "dealstage" && isInterestingDealProperty(event.propertyName)) {
+      return true;
+    }
 
     if (dealId) {
       return Boolean(isInterestingDealProperty(event.propertyName) && eligibleDealIdsByOrg.get(orgId)?.has(dealId));

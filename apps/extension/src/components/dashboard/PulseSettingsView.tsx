@@ -5,8 +5,14 @@ import {
   type PulseEventType,
   type PulsePreferences,
 } from "../../services/api";
+import { LoadingState } from "./LoadingState";
 
 const pulseEventOptions: Array<{ id: PulseEventType; label: string; description: string }> = [
+  {
+    id: "deal_created",
+    label: "Nouveau deal",
+    description: "Un nouveau deal entre dans le pipeline HubSpot.",
+  },
   {
     id: "probability",
     label: "Probabilite de closing",
@@ -88,7 +94,7 @@ export const PulseSettingsView = () => {
   };
 
   if (isLoading) {
-    return <p className="ae-empty">Chargement des preferences Jarvis Pulse...</p>;
+    return <LoadingState detail="On recupere vos reglages de notifications." label="Chargement des preferences Pulse" />;
   }
 
   if (!preferences) {

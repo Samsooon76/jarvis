@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { QueueView } from "./components/QueueView";
 import { AuthLanding, OnboardingGate } from "./components/auth/AuthLanding";
 import { FirstRunOnboarding } from "./components/dashboard/FirstRunOnboarding";
+import { LoadingState } from "./components/dashboard/LoadingState";
 import { DEFAULT_ORG_ID, getHubSpotOwnerStorageKey, isAbortError } from "./config/runtime";
 import { useQueue } from "./hooks/useQueue";
 import {
@@ -470,7 +471,7 @@ export const ExtensionApp = () => {
     return (
       <main className="ae-loading-screen">
         <h1>Jarvis</h1>
-        <p>Verification de la session...</p>
+        <LoadingState detail="Verification de la session Jarvis." label="Chargement du profil" tone="inline" />
       </main>
     );
   }
@@ -535,7 +536,7 @@ export const ExtensionApp = () => {
     return (
       <main className="ae-loading-screen">
         <h1>Jarvis</h1>
-        <p>Chargement des deals HubSpot...</p>
+        <LoadingState detail="On recupere la queue, les deals et le statut HubSpot." label="Chargement des donnees" tone="inline" />
       </main>
     );
   }

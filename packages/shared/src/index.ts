@@ -31,7 +31,14 @@ export type QueueData = {
   prospects: QueueProspect[];
 };
 
-export type PulseEventType = "probability" | "amount" | "stage" | "close_date" | "owner" | "pipeline";
+export type PulseEventType =
+  | "deal_created"
+  | "probability"
+  | "amount"
+  | "stage"
+  | "close_date"
+  | "owner"
+  | "pipeline";
 
 export type PulseNotification = {
   id: string;
@@ -130,6 +137,25 @@ export type ManagerDigestHistoryEntry = {
 
 export type RepCoachingTrend = "improving" | "stable" | "declining";
 
+export type RepCoachingEvidenceSource = {
+  activityId: string;
+  type: "deal" | "note" | "call" | "meeting" | "email" | "sms" | "communication" | "task";
+  channel: string | null;
+  occurredAt: string | null;
+  title: string;
+  quote: string;
+};
+
+export type RepCoachingSourceDeal = {
+  hubspotDealId: string;
+  dealName: string;
+  amount: number;
+  stage: string;
+  status: "open" | "won" | "lost";
+  closedAt: string | null;
+  evidenceSources: RepCoachingEvidenceSource[];
+};
+
 export type RepCoachingStrength = {
   title: string;
   evidence: string;
@@ -168,6 +194,7 @@ export type RepCoachingFunnelStage = {
   openAmount: number;
   lostCount: number;
   wonCount: number;
+  sourceDeals: RepCoachingSourceDeal[];
 };
 
 export type RepCoachingStats = {
@@ -182,8 +209,8 @@ export type RepCoachingStats = {
   openDealCount: number;
   openPipelineAmount: number;
   funnel: RepCoachingFunnelStage[];
-  lossReasons: Array<{ category: string; count: number }>;
-  topRiskSignals: Array<{ title: string; count: number }>;
+  lossReasons: Array<{ category: string; count: number; sourceDeals: RepCoachingSourceDeal[] }>;
+  topRiskSignals: Array<{ title: string; count: number; sourceDeals: RepCoachingSourceDeal[] }>;
   topObjections: Array<{ objection: string; count: number }>;
   activity: {
     callsMade: number;

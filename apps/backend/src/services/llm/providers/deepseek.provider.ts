@@ -512,7 +512,11 @@ export class DeepSeekProvider implements LlmProvider {
   }
 
   async analyzeCloseLostDeal(input: AnalyzeCloseLostDealInput): Promise<CloseLostDealAnalysis> {
-    return parseCloseLostDealAnalysis(await this.completeJson(buildCloseLostDealPrompt(input), 3_800), "DeepSeek");
+    return parseCloseLostDealAnalysis(
+      await this.completeJson(buildCloseLostDealPrompt(input), 3_800),
+      "DeepSeek",
+      input.sourceActivities,
+    );
   }
 
   async analyzeCloseLostPortfolio(input: AnalyzeCloseLostPortfolioInput): Promise<CloseLostPortfolioAnalysis> {

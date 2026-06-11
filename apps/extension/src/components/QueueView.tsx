@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import type { QueueProspect } from "@jarvis/shared";
 import { AdminFeedback } from "./dashboard/AdminFeedback";
 import { HubSpotHeader } from "./dashboard/HubSpotHeader";
+import { LoadingState } from "./dashboard/LoadingState";
 import { PulseNotificationCenter } from "./dashboard/PulseNotificationCenter";
 import { OverviewView } from "./dashboard/OverviewView";
 import { Sidebar } from "./dashboard/Sidebar";
@@ -72,7 +73,7 @@ const TasksView = lazy(async () => {
 
 const WorkspaceFallback = () => (
   <section className="ae-view-panel" aria-busy="true">
-    <p className="ae-empty">Chargement de la vue...</p>
+    <LoadingState detail="La vue demandee arrive." label="Chargement de la vue" />
   </section>
 );
 

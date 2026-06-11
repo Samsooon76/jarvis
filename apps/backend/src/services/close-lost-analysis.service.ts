@@ -6,6 +6,7 @@ import { getHubSpotAccessToken } from "./hubspot-auth.service.js";
 import { createLlmProvider } from "./llm/provider.factory.js";
 import type {
   CloseLostDealAnalysis,
+  CloseLostEvidenceSource,
   CloseLostPortfolioAnalysis,
   LlmProvider,
 } from "./llm/llm.provider.js";
@@ -297,6 +298,39 @@ const isLostDeal = (row: HubSpotDealRow): boolean => {
 };
 
 const buildHistoryText = (timeline: HubSpotDealHistoryItem[]): string => formatHubSpotTimelineForPrompt(timeline);
+
+const SOURCE_ACTIVITY_TYPES = new Set<HubSpotDealHistoryItem["type"]>([
+  "note",
+  "call",
+  "meeting",
+  "email",
+  "sms",
+  "communication",
+]);
+
+const compactSourceText = (value: string | null, maxLength: number): string => {
+  const compacted = (value ?? "").replace(/\s+/g, " ").trim();
+
+  if (compacted.length <= maxLength) {
+    return compacted;
+  }
+
+  return `${compacted.slice(0, maxLength - 1).trim()}...`;
+};
+
+const buildEvidenceSources = (timeline: HubSpotDealHistoryItem[]): CloseLostEvidenceSource[] =>
+  timeline
+    .filter((item) => SOURCE_ACTIVITY_TYPES.has(item.type))
+    .map((item) => ({
+      activityId: item.id,
+      type: item.type,
+      channel: item.metadata.channel ?? null,
+      occurredAt: item.timestamp,
+      title: compactSourceText(item.title, 120) || `${item.type} ${item.id}`,
+      quote: compactSourceText(item.body, 260),
+    }))
+    .filter((source) => source.quote.length > 0)
+    .slice(-80);
 
 const normalizeLogs = (value: unknown): CloseLostRunLog[] =>
   Array.isArray(value)
@@ -814,6 +848,7 @@ const analyzeContext = async (
   const accessToken = await getHubSpotAccessToken(orgId);
   const history = await hubSpotService.fetchDealHistory(accessToken, context.row.hubspot_deal_id);
   const historyText = buildHistoryText(history.timeline);
+  const sourceActivities = buildEvidenceSources(history.timeline);
   const inputHash = buildAnalysisInputHash(context, historyText);
 
   if (!refresh) {
@@ -835,6 +870,7 @@ const analyzeContext = async (
 
   const analysis = await provider.analyzeCloseLostDeal({
     history: historyText || "Aucun historique HubSpot exploitable.",
+    sourceActivities,
     companyName: history.companyName ?? context.company?.name ?? context.contact?.company_name ?? null,
     dealName: history.dealName ?? context.row.deal_name,
     companyContext: history.companyContext,

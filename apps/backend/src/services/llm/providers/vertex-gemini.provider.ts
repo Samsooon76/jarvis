@@ -500,7 +500,7 @@ export class VertexGeminiProvider implements LlmProvider {
 
     const payload = (await response.json()) as GeminiGenerateContentResponse;
 
-    return parseCloseLostDealAnalysis(extractText(payload), "Vertex AI");
+    return parseCloseLostDealAnalysis(extractText(payload), "Vertex AI", input.sourceActivities);
   }
 
   async analyzeCloseLostPortfolio(input: AnalyzeCloseLostPortfolioInput): Promise<CloseLostPortfolioAnalysis> {

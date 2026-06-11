@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { PulseEventType, PulseNotification, PulseNotificationList, PulsePreferences } from "@jarvis/shared";
 import { getSupabaseAdmin } from "../db/client.js";
 
@@ -41,6 +42,7 @@ type PulseDealSnapshotRow = {
 type PulsePreferencesRow = {
   user_id: string;
   pulse_enabled: boolean;
+  notify_deal_created: boolean;
   notify_probability: boolean;
   notify_amount: boolean;
   notify_stage: boolean;
@@ -88,6 +90,7 @@ export const PULSE_NOTIFICATIONS_DEFAULT_LIMIT = 30;
 export const PULSE_NOTIFICATIONS_MAX_LIMIT = 100;
 
 export const PULSE_EVENT_TYPES: readonly PulseEventType[] = [
+  "deal_created",
   "probability",
   "amount",
   "stage",
@@ -107,6 +110,7 @@ const PULSE_EVENT_TYPE_BY_PROPERTY: Record<string, PulseEventType> = {
 };
 
 const PULSE_EVENT_TITLES: Record<PulseEventType, string> = {
+  deal_created: "Nouveau deal dans le pipe",
   probability: "Probabilite de closing mise a jour",
   amount: "Montant du deal mis a jour",
   stage: "Changement de stage",
@@ -116,6 +120,7 @@ const PULSE_EVENT_TITLES: Record<PulseEventType, string> = {
 };
 
 const PULSE_EVENT_FIELD_LABELS: Record<PulseEventType, string> = {
+  deal_created: "creation",
   probability: "probabilite",
   amount: "montant",
   stage: "stage",
@@ -377,7 +382,7 @@ const loadPulsePreferenceRows = async (orgId: string, userIds: string[]): Promis
   const { data, error } = await getSupabaseAdmin()
     .from("pulse_preferences")
     .select(
-      "user_id, pulse_enabled, notify_probability, notify_amount, notify_stage, notify_close_date, notify_owner, notify_pipeline",
+      "user_id, pulse_enabled, notify_deal_created, notify_probability, notify_amount, notify_stage, notify_close_date, notify_owner, notify_pipeline",
     )
     .eq("org_id", orgId)
     .in("user_id", userIds);
@@ -399,7 +404,9 @@ const isEventTypeEnabled = (preferences: PulsePreferencesRow | undefined, eventT
     return false;
   }
 
-  switch (eventType) {
+    switch (eventType) {
+    case "deal_created":
+      return preferences.notify_deal_created;
     case "probability":
       return preferences.notify_probability;
     case "amount":
@@ -415,6 +422,84 @@ const isEventTypeEnabled = (preferences: PulsePreferencesRow | undefined, eventT
     default:
       return true;
   }
+};
+
+export type PulseDealCreatedInput = {
+  orgId: string;
+  sourceEventId: string;
+  hubspotDealId: string;
+  dealName: string | null;
+  amount: number | null;
+  stageLabel: string | null;
+  occurredAt: string | null;
+};
+
+const formatDealCreatedMessage = (input: PulseDealCreatedInput): string => {
+  const dealLabel = input.dealName?.trim() || `Deal HubSpot ${input.hubspotDealId}`;
+  const details = [
+    formatPulseAmount(input.amount),
+    input.stageLabel?.trim() || null,
+  ].filter((detail): detail is string => Boolean(detail));
+
+  return details.length > 0
+    ? `${dealLabel} vient d'entrer dans le pipe (${details.join(", ")}).`
+    : `${dealLabel} vient d'entrer dans le pipe.`;
+};
+
+export const buildPulseDealCreatedSourceEventId = (orgId: string, hubspotDealId: string): string => {
+  const hash = createHash("sha256").update(`pulse:deal_created:${orgId}:${hubspotDealId}`, "utf8").digest("hex");
+
+  return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-4${hash.slice(13, 16)}-8${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
+};
+
+export const generatePulseNotificationsForNewDeal = async (input: PulseDealCreatedInput): Promise<number> => {
+  const recipients = await loadPulseRecipients(input.orgId);
+
+  if (recipients.length === 0) {
+    return 0;
+  }
+
+  const preferenceRows = await loadPulsePreferenceRows(
+    input.orgId,
+    recipients.map((recipient) => recipient.id),
+  );
+  const preferencesByUserId = new Map(preferenceRows.map((row) => [row.user_id, row]));
+  const eligibleRecipients = recipients.filter((recipient) =>
+    isEventTypeEnabled(preferencesByUserId.get(recipient.id), "deal_created"),
+  );
+
+  if (eligibleRecipients.length === 0) {
+    return 0;
+  }
+
+  const occurredAt = input.occurredAt ?? new Date().toISOString();
+  const message = formatDealCreatedMessage(input);
+  const amountLabel = formatPulseAmount(input.amount);
+  const rows = eligibleRecipients.map((recipient) => ({
+    org_id: input.orgId,
+    user_id: recipient.id,
+    source_event_id: input.sourceEventId,
+    event_type: "deal_created" satisfies PulseEventType,
+    hubspot_deal_id: input.hubspotDealId,
+    deal_name: input.dealName,
+    title: PULSE_EVENT_TITLES.deal_created,
+    message,
+    previous_value: null,
+    new_value: amountLabel ?? input.stageLabel,
+    occurred_at: occurredAt,
+  }));
+
+  const { error } = await getSupabaseAdmin()
+    .from("pulse_notifications")
+    .upsert(rows, { onConflict: "user_id,source_event_id", ignoreDuplicates: true });
+
+  if (error) {
+    throw new Error(`Impossible de creer les notifications Jarvis Pulse: ${error.message}`);
+  }
+
+  await purgeOldPulseNotifications(input.orgId);
+
+  return rows.length;
 };
 
 const purgeOldPulseNotifications = async (orgId: string): Promise<void> => {
@@ -632,6 +717,7 @@ export const markAllPulseNotificationsRead = async (recipient: PulseRecipientPro
 const DEFAULT_PULSE_PREFERENCES: PulsePreferences = {
   pulseEnabled: true,
   events: {
+    deal_created: true,
     probability: true,
     amount: true,
     stage: true,
@@ -647,6 +733,7 @@ const toPulsePreferences = (row: PulsePreferencesRow | null): PulsePreferences =
         pulseEnabled: row.pulse_enabled,
         events: {
           probability: row.notify_probability,
+          deal_created: row.notify_deal_created,
           amount: row.notify_amount,
           stage: row.notify_stage,
           close_date: row.notify_close_date,
@@ -712,6 +799,7 @@ export const updatePulsePreferences = async (
         user_id: recipient.userId,
         pulse_enabled: preferences.pulseEnabled,
         notify_probability: preferences.events.probability,
+        notify_deal_created: preferences.events.deal_created,
         notify_amount: preferences.events.amount,
         notify_stage: preferences.events.stage,
         notify_close_date: preferences.events.close_date,

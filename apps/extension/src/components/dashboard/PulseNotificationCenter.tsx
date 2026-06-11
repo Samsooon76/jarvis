@@ -3,8 +3,10 @@ import { Bell, CheckCheck } from "lucide-react";
 import type { PulseEventType, PulseNotification } from "../../services/api";
 import { usePulseNotifications } from "../../hooks/usePulseNotifications";
 import { formatDateTime } from "../../utils/dashboard/formatters";
+import { LoadingState } from "./LoadingState";
 
 const eventTypeLabels: Record<PulseEventType, string> = {
+  deal_created: "Nouveau deal",
   probability: "Probabilite",
   amount: "Montant",
   stage: "Stage",
@@ -135,7 +137,7 @@ export const PulseNotificationCenter = () => {
           {error ? <p className="pulse-panel-error">{error}</p> : null}
 
           {isLoading && notifications.length === 0 ? (
-            <p className="pulse-panel-empty">Chargement des notifications...</p>
+            <LoadingState detail="On recupere les derniers changements de deals." label="Chargement Pulse" tone="inline" />
           ) : null}
 
           {!isLoading && notifications.length === 0 && !error ? (

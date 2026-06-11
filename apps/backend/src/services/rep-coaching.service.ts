@@ -1,8 +1,10 @@
 import { createHash } from "node:crypto";
 import type {
   RepCoaching,
+  RepCoachingEvidenceSource,
   RepCoachingStats,
   RepCoachingFunnelStage,
+  RepCoachingSourceDeal,
   TeamCoachingCard,
   TeamCoachingRunResult,
 } from "@jarvis/shared";
@@ -35,6 +37,7 @@ type SalesUserRow = {
 type CoachingDealRow = {
   hubspot_deal_id: string;
   hubspot_owner_id: string | null;
+  deal_name: string | null;
   amount: number | string | null;
   deal_stage: string | null;
   deal_stage_label: string | null;
@@ -49,6 +52,7 @@ type CloseLostAnalysisRow = {
   analysis: {
     lossReasonCategory?: string;
     riskSignals?: Array<{ title?: string }>;
+    evidenceSources?: RepCoachingEvidenceSource[];
   } | null;
 };
 
@@ -111,6 +115,31 @@ const isLostDeal = (deal: CoachingDealRow): boolean =>
 
 const isWonDeal = (deal: CoachingDealRow): boolean =>
   !isLostDeal(deal) && (deal.deal_lifecycle_status === "won" || deal.is_closed_deal === true);
+
+const getDealStatus = (deal: CoachingDealRow): RepCoachingSourceDeal["status"] => {
+  if (isLostDeal(deal)) {
+    return "lost";
+  }
+
+  if (isWonDeal(deal)) {
+    return "won";
+  }
+
+  return "open";
+};
+
+const toSourceDeal = (
+  deal: CoachingDealRow,
+  evidenceSources: RepCoachingEvidenceSource[] = [],
+): RepCoachingSourceDeal => ({
+  hubspotDealId: deal.hubspot_deal_id,
+  dealName: deal.deal_name?.trim() || `Deal ${deal.hubspot_deal_id}`,
+  amount: Math.round(parseAmount(deal.amount)),
+  stage: deal.deal_stage_label ?? deal.deal_stage ?? "Stage inconnu",
+  status: getDealStatus(deal),
+  closedAt: deal.closed_at,
+  evidenceSources,
+});
 
 const isClosedInRange = (deal: CoachingDealRow, dateFrom: string, dateTo: string): boolean => {
   if (!deal.closed_at) {
@@ -192,7 +221,7 @@ const loadOrgDeals = async (orgId: string): Promise<CoachingDealRow[]> => {
   const { data, error } = await getSupabaseAdmin()
     .from("hubspot_deals")
     .select(
-      "hubspot_deal_id, hubspot_owner_id, amount, deal_stage, deal_stage_label, deal_lifecycle_status, is_closed_deal, hubspot_created_at, closed_at",
+      "hubspot_deal_id, hubspot_owner_id, deal_name, amount, deal_stage, deal_stage_label, deal_lifecycle_status, is_closed_deal, hubspot_created_at, closed_at",
     )
     .eq("org_id", orgId)
     .limit(10000);
@@ -306,7 +335,14 @@ const buildFunnel = (deals: CoachingDealRow[]): RepCoachingFunnelStage[] => {
 
   for (const deal of deals) {
     const stage = deal.deal_stage_label ?? deal.deal_stage ?? "Stage inconnu";
-    const entry = byStage.get(stage) ?? { stage, openCount: 0, openAmount: 0, lostCount: 0, wonCount: 0 };
+    const entry = byStage.get(stage) ?? {
+      stage,
+      openCount: 0,
+      openAmount: 0,
+      lostCount: 0,
+      wonCount: 0,
+      sourceDeals: [],
+    };
 
     if (isLostDeal(deal)) {
       entry.lostCount += 1;
@@ -317,11 +353,16 @@ const buildFunnel = (deals: CoachingDealRow[]): RepCoachingFunnelStage[] => {
       entry.openAmount += parseAmount(deal.amount);
     }
 
+    entry.sourceDeals.push(toSourceDeal(deal));
     byStage.set(stage, entry);
   }
 
   return Array.from(byStage.values())
-    .map((entry) => ({ ...entry, openAmount: Math.round(entry.openAmount) }))
+    .map((entry) => ({
+      ...entry,
+      openAmount: Math.round(entry.openAmount),
+      sourceDeals: entry.sourceDeals.sort((left, right) => right.amount - left.amount).slice(0, 8),
+    }))
     .sort((left, right) => right.openCount + right.lostCount + right.wonCount - (left.openCount + left.lostCount + left.wonCount));
 };
 
@@ -368,16 +409,33 @@ export const computeRepStats = async (
     loadForecastVerdicts(orgId, target.hubspotOwnerId),
   ]);
 
+  const lostDealsById = new Map(lostDeals.map((deal) => [deal.hubspot_deal_id, deal]));
+  const closeLostByDealId = new Map(closeLostRows.map((row) => [row.hubspot_deal_id, row]));
   const lossReasons = countBy(closeLostRows, (row) => row.analysis?.lossReasonCategory ?? null).map(({ key, count }) => ({
     category: key,
     count,
+    sourceDeals: closeLostRows
+      .filter((row) => row.analysis?.lossReasonCategory === key)
+      .map((row) => lostDealsById.get(row.hubspot_deal_id))
+      .filter((deal): deal is CoachingDealRow => Boolean(deal))
+      .map((deal) => toSourceDeal(deal, closeLostByDealId.get(deal.hubspot_deal_id)?.analysis?.evidenceSources ?? []))
+      .slice(0, 8),
   }));
   const topRiskSignals = countBy(
     closeLostRows.flatMap((row) => row.analysis?.riskSignals ?? []),
     (signal) => signal.title ?? null,
   )
     .slice(0, 5)
-    .map(({ key, count }) => ({ title: key, count }));
+    .map(({ key, count }) => ({
+      title: key,
+      count,
+      sourceDeals: closeLostRows
+        .filter((row) => (row.analysis?.riskSignals ?? []).some((signal) => signal.title === key))
+        .map((row) => lostDealsById.get(row.hubspot_deal_id))
+        .filter((deal): deal is CoachingDealRow => Boolean(deal))
+        .map((deal) => toSourceDeal(deal, closeLostByDealId.get(deal.hubspot_deal_id)?.analysis?.evidenceSources ?? []))
+        .slice(0, 8),
+    }));
 
   const sumKpis = (rows: KpiRow[]) =>
     rows.reduce(

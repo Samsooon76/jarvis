@@ -633,6 +633,118 @@ body {
   line-height: 1.45;
 }
 
+.ae-coaching-source-deals {
+  min-width: 0;
+  margin-top: 2px;
+}
+
+.ae-coaching-source-deals summary {
+  width: fit-content;
+  max-width: 100%;
+  color: var(--ae-accent);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.ae-coaching-source-deals summary:hover {
+  color: var(--ae-accent-strong);
+}
+
+.ae-coaching-source-deals > div {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.ae-coaching-source-deals article {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--ae-line);
+  border-radius: 7px;
+  background: var(--ae-surface);
+}
+
+.ae-coaching-source-deals article strong {
+  overflow: hidden;
+  color: var(--ae-ink);
+  font-size: 13px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ae-coaching-source-deals article span,
+.ae-coaching-source-deals article small {
+  color: var(--ae-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.ae-coaching-evidence-source-list {
+  display: grid;
+  gap: 7px;
+  margin-top: 7px;
+}
+
+.ae-coaching-evidence-source-list section {
+  display: grid;
+  gap: 4px;
+  padding: 8px 9px;
+  border-radius: 7px;
+  background: #fff7f2;
+}
+
+.ae-coaching-evidence-source-list section small {
+  color: #b95734;
+  font-weight: 700;
+}
+
+.ae-coaching-evidence-source-list section p {
+  margin: 0;
+  color: var(--ae-ink-soft);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.ae-coaching-source-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 12px;
+}
+
+.ae-coaching-source-card {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--ae-line);
+  border-radius: 8px;
+  background: var(--ae-surface-subtle);
+}
+
+.ae-coaching-source-card > span {
+  width: fit-content;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #f5efe9;
+  color: var(--ae-muted);
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: uppercase;
+}
+
+.ae-coaching-source-card > strong {
+  color: var(--ae-ink);
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
 .ae-coaching-loss-patterns {
   display: grid;
   gap: 10px;
@@ -750,6 +862,358 @@ body {
   width: 100%;
   margin-top: 0;
   text-align: left;
+}
+
+.ae-view-panel.ae-team-coaching-page {
+  gap: 18px;
+  border: 0;
+  background:
+    radial-gradient(circle at top left, rgba(212, 113, 74, 0.12), transparent 28%),
+    linear-gradient(180deg, #ffffff 0%, #fbfaf8 100%);
+  box-shadow: 0 18px 54px rgba(28, 25, 23, 0.055);
+}
+
+.ae-coaching-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px;
+  align-items: end;
+  padding: 6px 2px 2px;
+}
+
+.ae-coaching-kicker {
+  color: #b95734;
+  display: block;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+}
+
+.ae-coaching-hero h3 {
+  color: var(--ae-ink);
+  font-size: 28px;
+  font-weight: 650;
+  letter-spacing: 0;
+  line-height: 1.08;
+  margin: 0;
+}
+
+.ae-coaching-hero p {
+  color: var(--ae-muted);
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 9px 0 0;
+  max-width: 680px;
+}
+
+.ae-coaching-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.ae-team-coaching-page .ae-forecast-link {
+  align-items: center;
+  border: 1px solid var(--ae-line-strong);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--ae-ink);
+  display: inline-flex;
+  font-weight: 580;
+  justify-content: center;
+  margin: 0;
+  min-height: 40px;
+  padding: 0 15px;
+}
+
+.ae-team-coaching-page .ae-forecast-link.primary {
+  border-color: #1f1d1a;
+  background: #1f1d1a;
+  color: #ffffff;
+}
+
+.ae-coaching-team-summary {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.ae-coaching-team-summary article {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid rgba(28, 25, 23, 0.09);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 1px 0 rgba(28, 25, 23, 0.035);
+}
+
+.ae-coaching-team-summary article.attention {
+  border-color: rgba(212, 113, 74, 0.34);
+  background: #fff8f4;
+}
+
+.ae-coaching-team-summary small,
+.ae-coaching-team-summary span {
+  color: var(--ae-muted);
+  display: block;
+  font-size: 12px;
+  font-weight: 550;
+}
+
+.ae-coaching-team-summary strong {
+  color: var(--ae-ink);
+  display: block;
+  font-size: 26px;
+  font-weight: 650;
+  line-height: 1.05;
+  margin: 8px 0 6px;
+}
+
+.ae-coaching-rep-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.ae-coaching-rep-card {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid rgba(28, 25, 23, 0.09);
+  border-top: 3px solid #d8d8d8;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 12px 30px rgba(28, 25, 23, 0.045);
+}
+
+.ae-coaching-rep-card.declining {
+  border-top-color: #d4714a;
+}
+
+.ae-coaching-rep-card.improving {
+  border-top-color: #1c9b5a;
+}
+
+.ae-coaching-rep-card.stable {
+  border-top-color: #416fc4;
+}
+
+.ae-coaching-rep-head {
+  align-items: flex-start;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.ae-coaching-rep-head h4 {
+  color: var(--ae-ink);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.2;
+  margin: 0;
+}
+
+.ae-coaching-rep-head small {
+  color: var(--ae-muted);
+  display: block;
+  font-size: 12px;
+  margin-top: 5px;
+}
+
+.ae-coaching-status {
+  flex: 0 0 auto;
+  max-width: 132px;
+  overflow: hidden;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: var(--ae-surface-muted);
+  color: var(--ae-muted);
+  font-size: 11px;
+  font-weight: 720;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.ae-coaching-status.declining {
+  background: #fff2ec;
+  color: #b95734;
+}
+
+.ae-coaching-status.improving {
+  background: #eaf8f0;
+  color: #16834c;
+}
+
+.ae-coaching-status.stable {
+  background: #eef3ff;
+  color: #416fc4;
+}
+
+.ae-coaching-score-ring-row {
+  align-items: center;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.ae-coaching-win-ring {
+  --ae-coaching-ring-color: #8a8178;
+  --ae-coaching-ring-value: 0deg;
+  position: relative;
+  align-items: center;
+  display: grid;
+  width: 96px;
+  height: 96px;
+  justify-items: center;
+  overflow: hidden;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at center, #ffffff 0 57%, transparent 58%),
+    conic-gradient(var(--ae-coaching-ring-color) var(--ae-coaching-ring-value), #eee9e4 0);
+}
+
+.ae-coaching-win-ring::after {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border: 1px solid rgba(28, 25, 23, 0.08);
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.ae-coaching-win-ring.declining,
+.ae-coaching-win-ring.pending {
+  --ae-coaching-ring-color: #d4714a;
+}
+
+.ae-coaching-win-ring.stable {
+  --ae-coaching-ring-color: #416fc4;
+}
+
+.ae-coaching-win-ring.improving {
+  --ae-coaching-ring-color: #16834c;
+}
+
+.ae-coaching-win-ring span,
+.ae-coaching-win-ring strong {
+  position: relative;
+  z-index: 1;
+}
+
+.ae-coaching-win-ring span {
+  color: var(--ae-muted);
+  font-size: 10px;
+  font-weight: 760;
+  line-height: 1;
+  margin-top: 18px;
+  text-transform: uppercase;
+}
+
+.ae-coaching-win-ring strong {
+  color: var(--ae-ink);
+  font-size: 26px;
+  font-weight: 720;
+  letter-spacing: 0;
+  line-height: 1;
+  margin-top: -18px;
+}
+
+.ae-coaching-deal-breakdown {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.ae-coaching-deal-breakdown div {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(28, 25, 23, 0.08);
+}
+
+.ae-coaching-deal-breakdown div:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.ae-coaching-deal-breakdown dt {
+  color: var(--ae-muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.ae-coaching-deal-breakdown dd {
+  color: var(--ae-ink);
+  font-size: 14px;
+  font-weight: 720;
+  margin: 0;
+}
+
+.ae-coaching-headline {
+  color: var(--ae-ink-soft);
+  font-size: 14px;
+  line-height: 1.48;
+  margin: 0;
+  min-height: 62px;
+}
+
+.ae-coaching-headline.muted {
+  color: var(--ae-muted);
+}
+
+.ae-coaching-profile-button {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid rgba(212, 113, 74, 0.34);
+  border-radius: 8px;
+  background: #fff7f2;
+  color: #b95734;
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.ae-coaching-profile-button:hover {
+  border-color: #d4714a;
+  background: #fff2ec;
+}
+
+@media (max-width: 1180px) {
+  .ae-coaching-rep-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 860px) {
+  .ae-coaching-hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ae-coaching-hero-actions {
+    justify-content: flex-start;
+  }
+
+  .ae-coaching-team-summary,
+  .ae-coaching-rep-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ae-coaching-score-ring-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ae-coaching-win-ring {
+    justify-self: start;
+  }
 }
 
 .ae-forecast-months {
@@ -1376,6 +1840,10 @@ body {
   .ae-coaching-loss-patterns {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .ae-coaching-source-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 @media (max-width: 640px) {
@@ -1427,7 +1895,8 @@ body {
     white-space: normal;
   }
 
-  .ae-coaching-loss-patterns {
+  .ae-coaching-loss-patterns,
+  .ae-coaching-source-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 }
@@ -5627,6 +6096,68 @@ body,
   background: #f6faf8;
 }
 
+.ae-loading-orbit.small {
+  width: 42px;
+  height: 42px;
+}
+
+.ae-loading-orbit.small span {
+  width: 16px;
+  height: 16px;
+}
+
+.ae-loading-orbit.small i {
+  width: 6px;
+  height: 6px;
+}
+
+.ae-loading-state {
+  display: grid;
+  grid-template-columns: auto minmax(0, 360px);
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  min-height: 180px;
+  padding: 24px;
+  color: #223028;
+  text-align: left;
+}
+
+.ae-loading-state.inline {
+  min-height: 120px;
+  padding: 18px 16px;
+}
+
+.ae-loading-screen .ae-loading-state.inline {
+  min-height: 0;
+}
+
+.ae-loading-state.panel {
+  width: 100%;
+}
+
+.ae-loading-state strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 760;
+  line-height: 1.25;
+}
+
+.ae-loading-state p {
+  margin: 5px 0 0;
+  color: #647068;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+@media (max-width: 420px) {
+  .ae-loading-state {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    text-align: center;
+  }
+}
+
 .ae-loading-orbit::before {
   position: absolute;
   inset: -1px;
@@ -8868,6 +9399,7 @@ body,
 .ae-loading-screen {
   display: grid;
   align-content: center;
+  justify-items: center;
   gap: 8px;
   min-height: 100vh;
   width: 100vw;
@@ -8875,6 +9407,7 @@ body,
   padding: 28px;
   background: #f4f3f0;
   color: #1c1917;
+  text-align: center;
   font-family: "DM Sans", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
@@ -11624,6 +12157,10 @@ body,
 
 .pulse-panel-error {
   color: #c2402a;
+}
+
+.pulse-panel .ae-loading-state {
+  min-height: 168px;
 }
 
 .pulse-notification-list {
