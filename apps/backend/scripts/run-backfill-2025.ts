@@ -7,7 +7,7 @@ for (const line of readFileSync("/Users/hugo/Downloads/jarvis/.env", "utf8").spl
 
 const main = async () => {
   const orgId = process.env.VITE_DEFAULT_ORG_ID!;
-  const { backfillClosedDealActivities } = await import("./services/hubspot-activity.service.js");
+  const { backfillClosedDealActivities } = await import("../src/services/hubspot-activity.service.js");
   console.log("Backfill activites 2025 demarre pour org", orgId);
   const result = await backfillClosedDealActivities(orgId, {
     closedFrom: "2025-01-01",

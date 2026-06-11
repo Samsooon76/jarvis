@@ -10,6 +10,7 @@ import {
   requireAuth,
 } from "../services/app-auth.service.js";
 import { getQueueDebug, getUserQueue, type QueueDebugData } from "../services/queue.service.js";
+import { formatDurationMs, getNowMs } from "../lib/format.js";
 
 type QueueParams = {
   userId: string;
@@ -27,8 +28,6 @@ const UUID_V4_LIKE_PATTERN =
 const isValidOrgId = (value: string | undefined): value is string =>
   typeof value === "string" && UUID_V4_LIKE_PATTERN.test(value.trim());
 
-const getNowMs = (): number => performance.now();
-const formatDurationMs = (startedAtMs: number): number => Math.round((getNowMs() - startedAtMs) * 100) / 100;
 
 const getStatusCode = (message: string): number => {
   if (message.includes("introuvable")) {

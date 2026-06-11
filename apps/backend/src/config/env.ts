@@ -1,39 +1,21 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import dotenv from "dotenv";
 
 const currentFilePath = fileURLToPath(import.meta.url);
 const currentDirectoryPath = dirname(currentFilePath);
 const backendDirectoryPath = resolve(currentDirectoryPath, "..", "..");
 const workspaceRootPath = resolve(backendDirectoryPath, "..", "..");
 
+// Charge un fichier .env sans jamais ecraser les variables deja presentes dans
+// process.env (y compris celles chargees par un fichier precedent).
 const loadEnvFile = (filePath: string): void => {
   if (!existsSync(filePath)) {
     return;
   }
 
-  const fileContent = readFileSync(filePath, "utf8");
-
-  for (const line of fileContent.split("\n")) {
-    const trimmedLine = line.trim();
-
-    if (!trimmedLine || trimmedLine.startsWith("#")) {
-      continue;
-    }
-
-    const separatorIndex = trimmedLine.indexOf("=");
-
-    if (separatorIndex <= 0) {
-      continue;
-    }
-
-    const key = trimmedLine.slice(0, separatorIndex).trim();
-    const value = trimmedLine.slice(separatorIndex + 1).trim();
-
-    if (!process.env[key]) {
-      process.env[key] = value;
-    }
-  }
+  dotenv.config({ path: filePath, override: false, quiet: true });
 };
 
 loadEnvFile(resolve(workspaceRootPath, ".env"));
