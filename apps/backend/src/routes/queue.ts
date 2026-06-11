@@ -9,7 +9,7 @@ import {
   loadOptionalAuthenticatedAppUserProfile,
   requireAuth,
 } from "../services/app-auth.service.js";
-import { getQueueDebug, getUserQueue, type QueueDebugData } from "../services/queue.service.js";
+import { getQueueDebug, getUserQueue, type QueueDebugData } from "../services/prospects/queue.service.js";
 import { formatDurationMs, getNowMs } from "../lib/format.js";
 
 type QueueParams = {

@@ -1,130 +1,39 @@
 import { createHash } from "node:crypto";
-import { getSupabaseAdmin } from "../db/client.js";
-import type { Json } from "../db/database.types.js";
-import { formatHubSpotTimelineForPrompt } from "./hubspot-history-formatting.service.js";
-import { hubSpotService, type HubSpotDealHistoryItem } from "./hubspot.service.js";
-import { getHubSpotAccessToken } from "./hubspot-auth.service.js";
-import { buildBusinessDueAtFromDays } from "./business-days.js";
-import { createLlmProvider } from "./llm/provider.factory.js";
-import type { FollowUpTaskRecommendation } from "./llm/llm.provider.js";
+import { getSupabaseAdmin } from "../../db/client.js";
+import type { Json } from "../../db/database.types.js";
+import { formatHubSpotTimelineForPrompt } from "../hubspot-history-formatting.service.js";
+import { hubSpotService, type HubSpotDealHistoryItem } from "../hubspot.service.js";
+import { getHubSpotAccessToken } from "../hubspot-auth.service.js";
+import { buildBusinessDueAtFromDays } from "../business-days.js";
+import { createLlmProvider } from "../llm/provider.factory.js";
+import type { FollowUpTaskRecommendation } from "../llm/llm.provider.js";
+import type {
+  ActionInsertRow,
+  AutoFollowUpSyncSummary,
+  FollowUpAnalysisResult,
+  FollowUpTaskAnalysisRow,
+  FollowUpTaskDebugInfo,
+  FollowUpTaskDebugStep,
+  FollowUpTaskExecutionResult,
+  FollowUpTaskPreviewResult,
+  FollowUpTaskRequestContext,
+  ProspectRawData,
+  ProspectRow,
+  ResolvedFollowUpTarget,
+  UserRow,
+} from "./follow-up-task.types.js";
+export type {
+  AutoFollowUpSyncSummary,
+  FollowUpTaskDebugInfo,
+  FollowUpTaskExecutionResult,
+  FollowUpTaskPreviewResult,
+  FollowUpTaskRequestContext,
+} from "./follow-up-task.types.js";
 
 const UUID_V4_LIKE_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const AUTO_FOLLOW_UP_PROSPECT_LIMIT = 20;
 const FOLLOW_UP_TASK_CACHE_TTL_HOURS = 6;
-
-type ProspectRow = {
-  id: string;
-  org_id: string;
-  owner_user_id: string | null;
-  hubspot_contact_id: string;
-  hubspot_deal_id: string | null;
-  name: string;
-  company: string | null;
-  deal_stage: string | null;
-  last_contact_at: string | null;
-  next_action: string | null;
-  next_action_at: string | null;
-  raw_data: unknown;
-};
-
-type UserRow = {
-  hubspot_owner_id: string | null;
-};
-
-type ActionInsertRow = {
-  id: string;
-};
-
-type ProspectRawData = {
-  hubspotOwnerId?: string | null;
-  dealOwnerHubSpotId?: string | null;
-  contactOwnerHubSpotId?: string | null;
-};
-
-type FollowUpTaskAnalysisRow = {
-  recommendation: FollowUpTaskRecommendation;
-  provider: string;
-  model: string;
-  input_hash: string;
-  expires_at: string;
-};
-
-export type FollowUpTaskRequestContext = {
-  orgId?: string | null;
-  hubspotOwnerId?: string | null;
-  hubspotContactId?: string | null;
-  hubspotDealId?: string | null;
-  contactName?: string | null;
-  company?: string | null;
-  dealName?: string | null;
-  dealStage?: string | null;
-  lastContactAt?: string | null;
-  nextAction?: string | null;
-};
-
-type FollowUpTaskDebugStep = {
-  step: string;
-  status: "ok" | "skipped" | "error";
-  detail: string;
-};
-
-export type FollowUpTaskDebugInfo = {
-  llmProvider: string;
-  prospectResolution: "local-id" | "hubspot-identifiers" | "live-context";
-  resolvedProspectId: string | null;
-  orgId: string | null;
-  hubspotContactId: string | null;
-  hubspotDealId: string | null;
-  timelineItemCount: number;
-  historyLength: number;
-  createdHubspotTask: boolean;
-  persistedLocalAction: boolean;
-  steps: FollowUpTaskDebugStep[];
-};
-
-export type FollowUpTaskExecutionResult = {
-  prospectId: string;
-  created: boolean;
-  recommendation: FollowUpTaskRecommendation;
-  hubspotTaskId: string | null;
-  localActionId: string | null;
-  localActionPersisted: boolean;
-  debug: FollowUpTaskDebugInfo;
-};
-
-export type AutoFollowUpSyncSummary = {
-  analyzedCount: number;
-  createdCount: number;
-  skippedCount: number;
-  failedCount: number;
-};
-
-export type FollowUpTaskPreviewResult = {
-  prospectId: string;
-  recommendation: FollowUpTaskRecommendation;
-  debug: FollowUpTaskDebugInfo;
-};
-
-type ResolvedFollowUpTarget = {
-  prospect: ProspectRow | null;
-  orgId: string;
-  hubspotContactId: string;
-  hubspotDealId: string;
-  company: string | null;
-  dealName: string | null;
-  dealStage: string | null;
-  lastContactAt: string | null;
-  nextAction: string | null;
-  ownerHubSpotId: string | null;
-};
-
-type FollowUpAnalysisResult = {
-  accessToken: string;
-  recommendation: FollowUpTaskRecommendation;
-  resolvedTarget: ResolvedFollowUpTarget;
-  debug: FollowUpTaskDebugInfo;
-};
 
 const FOLLOW_UP_OVERDUE_KEYWORDS = [
   "follow up",

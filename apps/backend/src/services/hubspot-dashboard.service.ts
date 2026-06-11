@@ -3,7 +3,7 @@ import { getSupabaseAdmin } from "../db/client.js";
 import type { Json } from "../db/database.types.js";
 import { getHubSpotAccessToken } from "./hubspot-auth.service.js";
 import { hubSpotService } from "./hubspot.service.js";
-import { scoreProspect } from "./scoring.service.js";
+import { scoreProspect } from "./prospects/scoring.service.js";
 import { getHubSpotSyncStatus, type HubSpotSyncStatusSnapshot } from "./hubspot-sync-status.service.js";
 
 export type HubSpotConnectionStatusData = {

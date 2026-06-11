@@ -1,4 +1,4 @@
-import { getSupabaseAdmin } from "../db/client.js";
+import { getSupabaseAdmin } from "../../db/client.js";
 
 export const logProspectAccess = async (input: {
   orgId: string;

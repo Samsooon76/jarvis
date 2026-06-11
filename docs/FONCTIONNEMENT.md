@@ -64,9 +64,9 @@ L'isolation multi-tenant est garantie à deux niveaux :
 Liste quotidienne de prospects priorisés, affichée à l'ouverture du side panel.
 
 - **Source** : contacts + deals HubSpot synchronisés dans la table `prospects`.
-- **Scoring** : déterministe (`services/scoring.service.ts`) — récence du dernier contact, âge et montant du deal, probabilité, urgence de la prochaine action → `ai_priority_score`.
+- **Scoring** : déterministe (`services/prospects/scoring.service.ts`) — récence du dernier contact, âge et montant du deal, probabilité, urgence de la prochaine action → `ai_priority_score`.
 - **Actions** : *snooze* (reporter), *skip* (écarter), ouvrir le détail. Les ajustements manuels sont tracés dans `sales_queue_operating` (pas de suppression de données).
-- Routes : `routes/queue.ts`, service `queue.service.ts`, UI `components/QueueView.tsx`.
+- Routes : `routes/queue.ts`, service `services/prospects/queue.service.ts`, UI `components/QueueView.tsx` et sous-composants `components/dashboard/queue/`.
 
 ### 3.2 Analyse de deal (Deal Intelligence)
 
@@ -88,13 +88,13 @@ Pipeline avec probabilité de closing assistée par IA.
 - **Classification IA** par deal : *Commit* (haute confiance), *Best Case*, *At Risk*, *Slipping* — calculée par `services/forecast/` (point d'entrée `forecast.service.ts` ; modules : `data-access`, `deal-status`, `metrics`, `overview`, `analyze`, `synthesis`), synthèse narrative LLM via le prompt `forecast-synthesis`.
 - **Snapshots** : capture quotidienne du pipeline (`forecast_snapshots`) pour mesurer ensuite la **précision du forecast** (`forecast-accuracy.service.ts`) : biais, slippage, commit vs réel.
 - **Filtre équipe** : les managers peuvent filtrer le forecast par commercial (gating : `role !== "sales"`).
-- UI : `ForecastView.tsx`, `ForecastAccuracyPanel.tsx`, graphiques Chart.js dans `dashboard/charts/`.
+- UI : `components/dashboard/forecast/ForecastView.tsx`, sous-composants dans `dashboard/forecast/`, `ForecastAccuracyPanel.tsx`, graphiques Chart.js dans `dashboard/charts/`.
 
 ### 3.4 Dashboard manager
 
 - **Digest quotidien/hebdo** (`manager-digest.service.ts`) : synthèse LLM de l'activité équipe — victoires, risques, mouvements de deals, recommandations.
-- **Coaching par rep** (`rep-coaching.service.ts`) : analyse par commercial (win rate, volume d'activité, cycle de vente, patterns d'objection) avec forces/faiblesses et actions de coaching. Lancé en job asynchrone, l'UI poll le statut.
-- **Analyse close-lost** (`services/close-lost-analysis/`) : facteurs de perte récurrents et leçons — modules `data-access`, `presentation`, `analysis` (LLM par deal), `runs` (cycle de vie des analyses portfolio).
+- **Coaching par rep** (`rep-coaching.service.ts`) : analyse par commercial (win rate, volume d'activité, cycle de vente, patterns d'objection) avec forces/faiblesses et actions de coaching. Lancé en job asynchrone, l'UI poll le statut depuis `components/dashboard/coaching/`.
+- **Analyse close-lost** (`services/close-lost-analysis/`) : facteurs de perte récurrents et leçons — modules `data-access`, `presentation`, `analysis` (LLM par deal), `runs` (cycle de vie des analyses portfolio). UI dans `components/dashboard/close-lost/`.
 - **Analyse close-won** (`services/win-analysis/`) : facteurs de victoire (champion, timing, fit produit, pricing…) et plays réplicables — inclut un benchmark quantitatif sans LLM (`benchmark.ts`) comparant deals gagnés et pipeline.
 - **Stats d'activité** (`sales-activity-stats.service.ts`) : volumes calls/emails/meetings croisés avec les résultats.
 - **Objectifs** (`sales-targets.service.ts`) : cibles par commercial.
@@ -108,7 +108,7 @@ Pipeline avec probabilité de closing assistée par IA.
 ### 3.6 Tâches et follow-ups automatiques
 
 - **Analyse de tâches** (`task-analyzer.service.ts` + `services/task-planning/`) : classification par type (cold call, relance deal, post-meeting, admin, obsolète), suggestion de prochaine action avec priorité, normalisation sur les heures ouvrées (`business-days.ts`). Le module task-planning est découpé en `scheduling` (créneaux ouvrés), `scoring` (priorité), `planning` (plans déterministes par événement), `events` (ingestion des événements d'activité) et `tasks` (actions du jour : complete/snooze/skip).
-- **Follow-ups automatiques** (`follow-up-task.service.ts`) : création déterministe de tâches de relance après un événement (message sortant sans réponse, changement de stage…) ; une réponse client entrante annule la relance et crée une tâche urgente. Anti-doublons via `follow_up_cache`.
+- **Follow-ups automatiques** (`services/prospects/follow-up-task.service.ts`) : création déterministe de tâches de relance après un événement (message sortant sans réponse, changement de stage…) ; une réponse client entrante annule la relance et crée une tâche urgente. Anti-doublons via `follow_up_cache`.
 - Synchronisation bidirectionnelle des tâches avec HubSpot (lecture, création, priorité, complétion) via `routes/hubspot/tasks.routes.ts`.
 
 ### 3.7 Leads
@@ -197,8 +197,10 @@ db/                       # Client Supabase + types générés
 lib/                      # errors, sentry, format (utilitaires partagés)
 routes/                   # 1 module par domaine (queue, forecast, tasks, pulse, …)
 routes/hubspot/           # Routes HubSpot découpées par sous-domaine
-services/                 # Logique métier (1 service par domaine)
+services/                 # Logique métier par domaine
+services/prospects/       # Queue, scoring, follow-ups, journaux d'accès prospect, jobs d'analyse de deal
 services/hubspot/         # Wrapper API HubSpot découpé par domaine (cf. section 4)
+services/forecast/        # Construction forecast, métriques, synthèse, data-access
 services/deal-intelligence/ # Analyse de deal découpée par responsabilité (cf. section 3.2)
 services/llm/             # Abstraction LLM + providers + prompts
 ```
@@ -209,8 +211,14 @@ services/llm/             # Abstraction LLM + providers + prompts
 main.tsx / ExtensionApp.tsx   # Montage React, routing entre vues
 background.ts                 # Service worker : polling Pulse, badge
 services/api.ts               # Barrel — réexporte services/api/* (1 module par domaine + cache.ts + client.ts)
-components/dashboard/         # Vues du dashboard (1 fichier par vue, conteneurs) + sous-composants
-                              #   par domaine : deal/, tasks/, forecast/, queue/, charts/
+components/QueueView.tsx      # Shell du side panel + lazy-loading des vues dashboard
+components/dashboard/         # Modules dashboard partagés et features
+components/dashboard/close-lost/ # Close-lost : view, composants, utils
+components/dashboard/forecast/   # Forecast : view, filtres, KPI, tableaux, synthèse, projection
+components/dashboard/tasks/      # Tâches : view, filtres, métriques, listes, digest
+components/dashboard/coaching/   # Coaching manager
+components/dashboard/queue/      # Queue commerciale : table, détail prospect, filtres
+components/styles/            # CSS dashboard découpé par domaine/thème, importé depuis QueueView.css
 hooks/                        # useQueue, usePulseNotifications, useQueueDashboard
 utils/dashboard/              # Formatters, view models, helpers purs par vue (dealAnalysis, tasks, forecast)
 ```

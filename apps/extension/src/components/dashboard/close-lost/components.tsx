@@ -1,47 +1,25 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent } from "react";
 import { Bot, CircleX, Euro, RotateCcw, Sigma } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import type {
+  CloseLostBreakdownRow,
+  CloseLostDealDetailResult,
+  CloseLostDealListItem,
+  CloseLostMetric,
+  CloseLostOverviewResult,
+  CloseLostScope,
+  HubSpotOwnerOption,
+} from "../../../services/api";
+import { formatAmount, formatDate, formatDateTime } from "../../../utils/dashboard/formatters";
 import {
-  analyzeCloseLostDeal,
-  fetchCloseLostAnalysisRun,
-  fetchCloseLostDealDetail,
-  fetchCloseLostOverview,
-  startCloseLostAnalysisRun,
-  type AiProviderOption,
-  type CloseLostAnalysisRun,
-  type CloseLostBreakdownRow,
-  type CloseLostDealDetailResult,
-  type CloseLostDealListItem,
-  type CloseLostMetric,
-  type CloseLostOverviewResult,
-  type CloseLostScope,
-  type HubSpotOwnerOption,
-} from "../../services/api";
-import { formatAmount, formatDate, formatDateTime } from "../../utils/dashboard/formatters";
-
-type CloseLostAnalysisViewProps = {
-  orgId: string;
-  owners: HubSpotOwnerOption[];
-  selectedOwnerId?: string;
-  selectedAiProvider: AiProviderOption;
-};
-
-type BreakdownTableRow = {
-  id: string;
-  label: string;
-  dealCount: number;
-  lostValue: number;
-  averageLoss: number;
-  share: number;
-};
-
-type TrendPoint = {
-  key: string;
-  label: string;
-  value: number;
-  cumulativeValue: number;
-};
+  type BreakdownTableRow,
+  getDetailOwnerDisplayName,
+  getMetricTone,
+  formatMetricValue,
+  severityLabels,
+  type TrendPoint,
+} from "./utils";
 
 type TreemapRect = {
   row: CloseLostBreakdownRow;
@@ -49,63 +27,6 @@ type TreemapRect = {
   y: number;
   width: number;
   height: number;
-};
-
-const wait = async (durationMs: number): Promise<void> =>
-  new Promise((resolve) => {
-    window.setTimeout(resolve, durationMs);
-  });
-
-// Plafond de securite pour le polling du run close-lost (evite une boucle infinie
-// si le backend ne termine jamais le run).
-const CLOSE_LOST_POLL_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
-
-const formatInputDate = (date: Date): string => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-
-  return `${year}-${month}-${day}`;
-};
-
-const getDefaultDateRange = (): { dateFrom: string; dateTo: string } => {
-  const now = new Date();
-  const yearStart = new Date(now.getFullYear(), 0, 1);
-
-  return {
-    dateFrom: formatInputDate(yearStart),
-    dateTo: formatInputDate(now),
-  };
-};
-
-const getSalesAeOwners = (owners: HubSpotOwnerOption[]): HubSpotOwnerOption[] => {
-  const salesAeOwners = owners.filter((owner) => owner.teamName?.toLowerCase().includes("sales ae"));
-
-  return salesAeOwners.length > 0 ? salesAeOwners : owners;
-};
-
-const formatMetricValue = (metric: CloseLostMetric): string => {
-  if (metric.unit === "currency") {
-    return formatAmount(metric.value);
-  }
-
-  if (metric.unit === "score") {
-    return `${metric.value}/100`;
-  }
-
-  return String(metric.value);
-};
-
-const getMetricTone = (metric: CloseLostMetric): string => {
-  if (metric.id === "lostDeals" || metric.id === "analyzedDeals") {
-    return "down";
-  }
-
-  if (metric.id === "reactivationScore") {
-    return "up";
-  }
-
-  return "neutral";
 };
 
 const metricIcons: Record<CloseLostMetric["id"], LucideIcon> = {
@@ -122,142 +43,7 @@ const analysisStatusLabels: Record<CloseLostDealListItem["analysisStatus"], stri
   stale: "Analysee",
 };
 
-const severityLabels: Record<string, string> = {
-  high: "Eleve",
-  low: "Faible",
-  medium: "Moyen",
-};
-
-const getDateRangeLabel = (dateFrom: string, dateTo: string): string => {
-  const from = dateFrom ? formatDate(dateFrom) : "Debut";
-  const to = dateTo ? formatDate(dateTo) : "Aujourd'hui";
-
-  return `${from} - ${to}`;
-};
-
-const getKeyInsight = (overview: CloseLostOverviewResult | null): { title: string; detail: string } => {
-  if (overview?.portfolio) {
-    return {
-      title: overview.portfolio.keyInsight,
-      detail: overview.portfolio.executiveSummary,
-    };
-  }
-
-  const topReason = overview?.lossReasons[0] ?? null;
-
-  if (topReason) {
-    return {
-      title: `${topReason.label} est la premiere raison de perte (${topReason.share}% de la valeur perdue).`,
-      detail: "Lance l'analyse IA globale pour confirmer les causes recurrentes et generer les recommandations manager.",
-    };
-  }
-
-  return {
-    title: "Aucune perte analysee sur ce perimetre.",
-    detail: "Ajuste les filtres ou relance une synchronisation HubSpot pour alimenter cette vue.",
-  };
-};
-
-const getOwnerDisplayName = (
-  ownerHubSpotId: string | null,
-  fallbackName: string | null,
-  ownersById: Map<string, HubSpotOwnerOption>,
-): string => {
-  if (ownerHubSpotId) {
-    const owner = ownersById.get(ownerHubSpotId);
-
-    if (owner) {
-      return owner.name;
-    }
-  }
-
-  return fallbackName ?? "Owner non assigne";
-};
-
-const getDealOwnerDisplayName = (
-  deal: Pick<CloseLostDealListItem, "ownerHubSpotId" | "ownerName">,
-  ownersById: Map<string, HubSpotOwnerOption>,
-): string => getOwnerDisplayName(deal.ownerHubSpotId, deal.ownerName, ownersById);
-
-const getDetailOwnerDisplayName = (
-  detail: CloseLostDealDetailResult,
-  ownersById: Map<string, HubSpotOwnerOption>,
-): string => getOwnerDisplayName(detail.deal.ownerHubSpotId, detail.deal.ownerName, ownersById);
-
-const buildBreakdownRows = (
-  deals: CloseLostDealListItem[],
-  getKey: (deal: CloseLostDealListItem) => string | null,
-  fallbackLabel: string,
-): BreakdownTableRow[] => {
-  const lostValue = deals.reduce((sum, deal) => sum + deal.amount, 0);
-  const rowsByLabel = new Map<string, BreakdownTableRow>();
-
-  for (const deal of deals) {
-    const label = getKey(deal)?.trim() || fallbackLabel;
-    const id = label.toLowerCase();
-    const row = rowsByLabel.get(id) ?? {
-      id,
-      label,
-      dealCount: 0,
-      lostValue: 0,
-      averageLoss: 0,
-      share: 0,
-    };
-
-    row.dealCount += 1;
-    row.lostValue += deal.amount;
-    rowsByLabel.set(id, row);
-  }
-
-  return Array.from(rowsByLabel.values())
-    .map((row) => ({
-      ...row,
-      averageLoss: row.dealCount > 0 ? Math.round(row.lostValue / row.dealCount) : 0,
-      share: lostValue > 0 ? Math.round((row.lostValue / lostValue) * 100) : 0,
-    }))
-    .sort((left, right) => right.lostValue - left.lostValue)
-    .slice(0, 5);
-};
-
-const buildMonthlyTrend = (deals: CloseLostDealListItem[]): TrendPoint[] => {
-  const formatter = new Intl.DateTimeFormat("fr-FR", { month: "short" });
-  const rowsByMonth = new Map<string, { date: Date; value: number }>();
-
-  for (const deal of deals) {
-    if (!deal.closedAt) {
-      continue;
-    }
-
-    const closedAt = new Date(deal.closedAt);
-
-    if (Number.isNaN(closedAt.getTime())) {
-      continue;
-    }
-
-    const date = new Date(closedAt.getFullYear(), closedAt.getMonth(), 1);
-    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-    const current = rowsByMonth.get(key) ?? { date, value: 0 };
-    current.value += deal.amount;
-    rowsByMonth.set(key, current);
-  }
-
-  let cumulativeValue = 0;
-
-  return Array.from(rowsByMonth.entries())
-    .sort(([, left], [, right]) => left.date.getTime() - right.date.getTime())
-    .map(([key, row]) => {
-      cumulativeValue += row.value;
-
-      return {
-        key,
-        label: formatter.format(row.date).replace(".", ""),
-        value: row.value,
-        cumulativeValue,
-      };
-    });
-};
-
-const MetricCard = ({ metric }: { metric: CloseLostMetric }) => {
+export const MetricCard = ({ metric }: { metric: CloseLostMetric }) => {
   const Icon = metricIcons[metric.id];
 
   return (
@@ -274,7 +60,7 @@ const MetricCard = ({ metric }: { metric: CloseLostMetric }) => {
   );
 };
 
-const FilterToolbar = ({
+export const FilterToolbar = ({
   dateFrom,
   dateTo,
   isLoading,
@@ -330,7 +116,7 @@ const FilterToolbar = ({
   </div>
 );
 
-const KeyInsight = ({
+export const KeyInsight = ({
   detail,
   onRecommendationsClick,
   title,
@@ -354,7 +140,7 @@ const KeyInsight = ({
   </section>
 );
 
-const buildTreemapRects = (
+export const buildTreemapRects = (
   rows: CloseLostBreakdownRow[],
   x: number,
   y: number,
@@ -406,7 +192,7 @@ const buildTreemapRects = (
   ];
 };
 
-const LossTreemap = ({ rows }: { rows: CloseLostBreakdownRow[] }) => {
+export const LossTreemap = ({ rows }: { rows: CloseLostBreakdownRow[] }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const rectsRef = useRef<TreemapRect[]>([]);
   const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
@@ -538,7 +324,7 @@ const LossTreemap = ({ rows }: { rows: CloseLostBreakdownRow[] }) => {
   );
 };
 
-const ValueTrendChart = ({ points }: { points: TrendPoint[] }) => {
+export const ValueTrendChart = ({ points }: { points: TrendPoint[] }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const maxValue = useMemo(() => Math.max(...points.map((point) => point.cumulativeValue), 1), [points]);
@@ -717,7 +503,7 @@ const ValueTrendChart = ({ points }: { points: TrendPoint[] }) => {
   );
 };
 
-const SegmentTable = ({ rows }: { rows: BreakdownTableRow[] }) => (
+export const SegmentTable = ({ rows }: { rows: BreakdownTableRow[] }) => (
   <article className="ae-close-lost-panel">
     <div className="ae-close-lost-panel-head">
       <h3>Analyse par segment</h3>
@@ -746,7 +532,7 @@ const SegmentTable = ({ rows }: { rows: BreakdownTableRow[] }) => (
   </article>
 );
 
-const TopFactors = ({ overview }: { overview: CloseLostOverviewResult | null }) => {
+export const TopFactors = ({ overview }: { overview: CloseLostOverviewResult | null }) => {
   const factors =
     overview?.portfolio?.topFactors.map((factor) => ({
       title: factor.title,
@@ -782,7 +568,7 @@ const TopFactors = ({ overview }: { overview: CloseLostOverviewResult | null }) 
   );
 };
 
-const Recommendations = ({
+export const Recommendations = ({
   overview,
   panelRef,
 }: {
@@ -809,7 +595,7 @@ const Recommendations = ({
   </article>
 );
 
-const CompactBreakdown = ({ rows, title }: { rows: CloseLostBreakdownRow[]; title: string }) => (
+export const CompactBreakdown = ({ rows, title }: { rows: CloseLostBreakdownRow[]; title: string }) => (
   <article className="ae-close-lost-panel">
     <div className="ae-close-lost-panel-head">
       <h3>{title}</h3>
@@ -827,7 +613,7 @@ const CompactBreakdown = ({ rows, title }: { rows: CloseLostBreakdownRow[]; titl
   </article>
 );
 
-const DealTable = ({
+export const DealTable = ({
   activeDealId,
   deals,
   onDealSelect,
@@ -874,7 +660,7 @@ const DealTable = ({
   </article>
 );
 
-const DealDeepDive = ({
+export const DealDeepDive = ({
   detail,
   error,
   isAnalyzing,
@@ -991,276 +777,3 @@ const DealDeepDive = ({
     )}
   </aside>
 );
-
-export const CloseLostAnalysisView = ({
-  orgId,
-  owners,
-  selectedAiProvider,
-  selectedOwnerId,
-}: CloseLostAnalysisViewProps) => {
-  const defaultDates = useMemo(getDefaultDateRange, []);
-  const salesAeOwners = useMemo(() => getSalesAeOwners(owners), [owners]);
-  const [scope, setScope] = useState<CloseLostScope>("sales_ae");
-  const [ownerId, setOwnerId] = useState(selectedOwnerId ?? salesAeOwners[0]?.ownerId ?? owners[0]?.ownerId ?? "");
-  const [dateFrom, setDateFrom] = useState(defaultDates.dateFrom);
-  const [dateTo, setDateTo] = useState(defaultDates.dateTo);
-  const [overview, setOverview] = useState<CloseLostOverviewResult | null>(null);
-  const [overviewLoading, setOverviewLoading] = useState(false);
-  const [overviewError, setOverviewError] = useState<string | null>(null);
-  const [activeRun, setActiveRun] = useState<CloseLostAnalysisRun | null>(null);
-  const [runLoading, setRunLoading] = useState(false);
-  const [activeDealId, setActiveDealId] = useState<string | null>(null);
-  const [detail, setDetail] = useState<CloseLostDealDetailResult | null>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
-  const [detailError, setDetailError] = useState<string | null>(null);
-  const [dealAnalyzeLoading, setDealAnalyzeLoading] = useState(false);
-  const [recommendationsPanel, setRecommendationsPanel] = useState<HTMLElement | null>(null);
-
-  const salesAeOwnerIds = useMemo(() => salesAeOwners.map((owner) => owner.ownerId), [salesAeOwners]);
-  const salesAeOwnerKey = salesAeOwnerIds.join(",");
-  const ownersById = useMemo(
-    () => new Map(owners.map((owner) => [owner.ownerId, owner])),
-    [owners],
-  );
-  const resolvedOwnerId = scope === "owner" ? ownerId || selectedOwnerId || salesAeOwners[0]?.ownerId || null : null;
-  const keyInsight = useMemo(() => getKeyInsight(overview), [overview]);
-  const trendPoints = useMemo(() => buildMonthlyTrend(overview?.deals ?? []), [overview?.deals]);
-  const segmentRows = useMemo(
-    () => buildBreakdownRows(overview?.deals ?? [], (deal) => getDealOwnerDisplayName(deal, ownersById), "Owner non assigne"),
-    [overview?.deals, ownersById],
-  );
-  const significantDeals = useMemo(
-    () => [...(overview?.deals ?? [])].sort((left, right) => right.amount - left.amount),
-    [overview?.deals],
-  );
-
-  const loadOverview = useCallback(async (options: { forceRefresh?: boolean; silent?: boolean } = {}) => {
-    try {
-      if (!options.silent) {
-        setOverviewLoading(true);
-      }
-      setOverviewError(null);
-      const result = await fetchCloseLostOverview({
-        orgId,
-        scope,
-        hubspotOwnerId: resolvedOwnerId,
-        salesAeOwnerIds,
-        dateFrom,
-        dateTo,
-        aiProvider: selectedAiProvider,
-        forceRefresh: options.forceRefresh,
-      });
-      setOverview(result);
-      setActiveDealId((current) => current ?? result.deals[0]?.hubspotDealId ?? null);
-
-      const firstDealId = result.deals[0]?.hubspotDealId;
-
-      if (firstDealId) {
-        void fetchCloseLostDealDetail(orgId, firstDealId, selectedAiProvider).catch(() => undefined);
-      }
-    } catch (error) {
-      setOverviewError(error instanceof Error ? error.message : "Close lost analysis indisponible.");
-    } finally {
-      if (!options.silent) {
-        setOverviewLoading(false);
-      }
-    }
-  }, [orgId, scope, resolvedOwnerId, salesAeOwnerIds, dateFrom, dateTo, selectedAiProvider.id, selectedAiProvider.model]);
-
-  useEffect(() => {
-    void loadOverview();
-  }, [loadOverview, salesAeOwnerKey]);
-
-  useEffect(() => {
-    if (selectedOwnerId && !ownerId) {
-      setOwnerId(selectedOwnerId);
-    }
-  }, [ownerId, selectedOwnerId]);
-
-  useEffect(() => {
-    if (!activeDealId) {
-      setDetail(null);
-      return;
-    }
-
-    let cancelled = false;
-
-    const loadDetail = async () => {
-      try {
-        setDetailLoading(true);
-        setDetailError(null);
-        const result = await fetchCloseLostDealDetail(orgId, activeDealId, selectedAiProvider);
-
-        if (!cancelled) {
-          setDetail(result);
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setDetailError(error instanceof Error ? error.message : "Detail close lost indisponible.");
-        }
-      } finally {
-        if (!cancelled) {
-          setDetailLoading(false);
-        }
-      }
-    };
-
-    void loadDetail();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [activeDealId, orgId, selectedAiProvider.id, selectedAiProvider.model]);
-
-  const handleStartRun = async () => {
-    try {
-      setRunLoading(true);
-      setOverviewError(null);
-      const startedRun = await startCloseLostAnalysisRun({
-        orgId,
-        scope,
-        hubspotOwnerId: resolvedOwnerId,
-        salesAeOwnerIds,
-        dateFrom,
-        dateTo,
-        aiProvider: selectedAiProvider,
-        refresh: false,
-      });
-      setActiveRun(startedRun);
-
-      let currentRun = startedRun;
-      let lastProcessedDealCount =
-        startedRun.analyzedCount + startedRun.reusedCount + startedRun.failedCount;
-
-      const deadline = Date.now() + CLOSE_LOST_POLL_TIMEOUT_MS;
-
-      while (currentRun.status !== "completed" && currentRun.status !== "failed") {
-        if (Date.now() > deadline) {
-          throw new Error("Delai d'attente depasse pendant l'analyse close-lost. Veuillez reessayer.");
-        }
-        await wait(1200);
-        currentRun = await fetchCloseLostAnalysisRun(startedRun.id);
-        setActiveRun(currentRun);
-
-        const processedDealCount =
-          currentRun.analyzedCount + currentRun.reusedCount + currentRun.failedCount;
-
-        if (processedDealCount > lastProcessedDealCount) {
-          lastProcessedDealCount = processedDealCount;
-          await loadOverview({ forceRefresh: true, silent: true });
-        }
-      }
-
-      if (currentRun.status === "failed") {
-        throw new Error(currentRun.error ?? "Run close lost en erreur.");
-      }
-
-      await loadOverview({ forceRefresh: true });
-    } catch (error) {
-      setOverviewError(error instanceof Error ? error.message : "Impossible de lancer l'analyse close lost.");
-    } finally {
-      setRunLoading(false);
-    }
-  };
-
-  const handleAnalyzeDeal = async () => {
-    if (!activeDealId) {
-      return;
-    }
-
-    try {
-      setDealAnalyzeLoading(true);
-      setDetailError(null);
-      const result = await analyzeCloseLostDeal(orgId, activeDealId, selectedAiProvider, true);
-      setDetail(result);
-      await loadOverview({ forceRefresh: true });
-    } catch (error) {
-      setDetailError(error instanceof Error ? error.message : "Impossible d'analyser ce deal close lost.");
-    } finally {
-      setDealAnalyzeLoading(false);
-    }
-  };
-
-  return (
-    <section className="ae-close-lost-page" aria-label="Close lost analysis">
-      <div className="ae-close-lost-titlebar">
-        <div>
-          <h2>Close lost analysis</h2>
-          <p>Comprenez pourquoi vous perdez des deals et identifiez les leviers d'amelioration.</p>
-        </div>
-        <span>Derniere mise a jour : {overview?.generatedAt ? formatDateTime(overview.generatedAt) : getDateRangeLabel(dateFrom, dateTo)}</span>
-      </div>
-
-      <FilterToolbar
-        dateFrom={dateFrom}
-        dateTo={dateTo}
-        isLoading={runLoading || overviewLoading}
-        onDateFromChange={setDateFrom}
-        onDateToChange={setDateTo}
-        onOwnerChange={setOwnerId}
-        onRun={handleStartRun}
-        onScopeChange={setScope}
-        ownerId={ownerId}
-        owners={owners}
-        scope={scope}
-      />
-
-      {overviewError ? <p className="ae-detail-error">{overviewError}</p> : null}
-
-      {activeRun ? (
-        <section className="ae-close-lost-run" aria-live="polite">
-          <div>
-            <span>{activeRun.currentStep}</span>
-            <strong>{activeRun.progress}%</strong>
-          </div>
-          <i>
-            <span style={{ width: `${activeRun.progress}%` }} />
-          </i>
-          <small>
-            {activeRun.analyzedCount} analyse(s), {activeRun.reusedCount} cache(s), {activeRun.failedCount} erreur(s)
-          </small>
-        </section>
-      ) : null}
-
-      <KeyInsight
-        detail={keyInsight.detail}
-        onRecommendationsClick={() => recommendationsPanel?.scrollIntoView({ behavior: "smooth", block: "center" })}
-        title={keyInsight.title}
-      />
-
-      <section className="ae-close-lost-metrics">
-        {(overview?.metrics ?? []).map((metric) => (
-          <MetricCard key={metric.id} metric={metric} />
-        ))}
-      </section>
-
-      <section className="ae-close-lost-top-grid">
-        <LossTreemap rows={overview?.lossReasons ?? []} />
-        <ValueTrendChart points={trendPoints} />
-      </section>
-
-      <section className="ae-close-lost-middle-grid">
-        <SegmentTable rows={segmentRows} />
-        <TopFactors overview={overview} />
-        <Recommendations overview={overview} panelRef={setRecommendationsPanel} />
-      </section>
-
-      <section className="ae-close-lost-bottom-grid">
-        <DealTable activeDealId={activeDealId} deals={significantDeals} onDealSelect={(hubspotDealId) => setActiveDealId(hubspotDealId)} />
-        <CompactBreakdown rows={overview?.competitors ?? []} title="Patterns competitifs recurrents" />
-        <CompactBreakdown rows={overview?.stageBreakdown ?? []} title="Repartition des pertes par etape" />
-      </section>
-
-      <section className="ae-close-lost-workspace">
-        <DealDeepDive
-          detail={detail}
-          error={detailError}
-          isAnalyzing={dealAnalyzeLoading}
-          isLoading={detailLoading}
-          onAnalyze={handleAnalyzeDeal}
-          ownersById={ownersById}
-        />
-      </section>
-    </section>
-  );
-};

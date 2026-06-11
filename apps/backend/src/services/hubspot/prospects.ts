@@ -1,4 +1,4 @@
-import { scoreProspect } from "../scoring.service.js";
+import { scoreProspect } from "../prospects/scoring.service.js";
 import {
   HUBSPOT_COMPANY_PROPERTIES,
   HUBSPOT_CONTACT_PROPERTIES,

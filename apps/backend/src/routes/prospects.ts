@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import type { ApiResponse } from "@jarvis/shared";
 import {
@@ -15,120 +14,37 @@ import {
 } from "../services/deal-intelligence.service.js";
 import { getHubSpotAccessToken } from "../services/hubspot-auth.service.js";
 import { hubSpotService, type HubSpotDealActivityDebug } from "../services/hubspot.service.js";
-import type { FollowUpTaskRecommendation } from "../services/llm/llm.provider.js";
 import {
-  type FollowUpTaskDebugInfo,
   type FollowUpTaskRequestContext,
   previewFollowUpTaskForProspect,
   runFollowUpTaskForProspect,
-} from "../services/follow-up-task.service.js";
+} from "../services/prospects/follow-up-task.service.js";
 import { getSupabaseAdmin } from "../db/client.js";
-import type { Json } from "../db/database.types.js";
-import { createJob, getJob, updateJob, type PersistentJobSnapshot } from "../services/job-store.js";
-import { invalidateQueueCache } from "../services/queue.service.js";
+import { invalidateQueueCache } from "../services/prospects/queue.service.js";
 import { assertOrgAccess, requireAuth } from "../services/app-auth.service.js";
-import { logProspectAccess } from "../services/prospect-access-log.service.js";
-
-type FollowUpTaskParams = {
-  id: string;
-};
-
-type FollowUpTaskBody = {
-  dryRun?: boolean;
-  objective?: string | null;
-  orgId?: string | null;
-  hubspotOwnerId?: string | null;
-  hubspotContactId?: string | null;
-  hubspotDealId?: string | null;
-  contactName?: string | null;
-  company?: string | null;
-  dealName?: string | null;
-  dealStage?: string | null;
-  lastContactAt?: string | null;
-  nextAction?: string | null;
-};
-
-type DealIntelligenceQuery = {
-  orgId?: string;
-  hubspotDealId?: string;
-  llmProvider?: string;
-  llmModel?: string;
-  contactName?: string;
-  contactTitle?: string;
-  contactEmail?: string;
-  contactPhone?: string;
-  companyName?: string;
-  ownerName?: string;
-  closeDate?: string;
-  closeProbability?: string;
-  dealAmount?: string;
-  dealStage?: string;
-  lastContactAt?: string;
-  nextAction?: string;
-  refresh?: string;
-};
-
-type DealActivityDebugQuery = {
-  orgId?: string;
-  hubspotDealId?: string;
-};
-
-type DealAnalysisRunParams = {
-  id: string;
-};
-
-type DealAnalysisJobParams = {
-  jobId: string;
-};
-
-type DealAnalysisRunBody = {
-  orgId?: string | null;
-  hubspotDealId?: string | null;
-  llmProvider?: string | null;
-  llmModel?: string | null;
-  refresh?: boolean;
-};
-
-type ProspectParams = {
-  id: string;
-};
-
-type ProspectActionBody = {
-  userId?: string | null;
-  reason?: string | null;
-  snoozedUntil?: string | null;
-};
-
-type ProspectDetail = {
-  id: string;
-  orgId: string;
-  ownerUserId: string | null;
-  name: string;
-  company: string | null;
-  title: string | null;
-  email: string | null;
-  phone: string | null;
-  dealStage: string | null;
-  dealAmount: number | null;
-  closeProbability: number;
-  lastContactAt: string | null;
-  nextAction: string | null;
-  aiSummary: string | null;
-  aiPriorityScore: number;
-  snoozedUntil: string | null;
-  skippedAt: string | null;
-  hubspotContactId: string;
-  hubspotDealId: string | null;
-  syncedAt: string;
-  updatedAt: string;
-};
-
-type ProspectActionResult = {
-  prospectId: string;
-  action: "snooze" | "skip";
-  snoozedUntil: string | null;
-  skippedAt: string | null;
-};
+import { logProspectAccess } from "../services/prospects/prospect-access-log.service.js";
+import {
+  completeDealAnalysisJob,
+  createDealAnalysisJob,
+  failDealAnalysisJob,
+  loadDealAnalysisJob,
+  markDealAnalysisJobRunning,
+  type DealAnalysisJobSnapshot,
+} from "../services/prospects/deal-analysis-job.service.js";
+import type {
+  DealActivityDebugQuery,
+  DealAnalysisJobParams,
+  DealAnalysisRunBody,
+  DealAnalysisRunParams,
+  DealIntelligenceQuery,
+  FollowUpTaskBody,
+  FollowUpTaskParams,
+  FollowUpTaskResult,
+  ProspectActionBody,
+  ProspectActionResult,
+  ProspectDetail,
+  ProspectParams,
+} from "./prospects.types.js";
 
 const parseOptionalNumber = (value: string | undefined): number | null => {
   if (!value) {
@@ -172,202 +88,6 @@ const sanitizeReason = (reason: string | null | undefined): string | null => {
   }
 
   return trimmed.slice(0, 500);
-};
-
-type FollowUpTaskResult = {
-  prospectId: string;
-  created: boolean;
-  dryRun: boolean;
-  recommendation: FollowUpTaskRecommendation;
-  hubspotTaskId: string | null;
-  localActionId: string | null;
-  localActionPersisted: boolean;
-  debug: FollowUpTaskDebugInfo;
-};
-
-type DealAnalysisJobLog = {
-  at: string;
-  level: "info" | "success" | "error";
-  message: string;
-};
-
-type DealAnalysisJobStatus = "queued" | "running" | "completed" | "failed";
-
-type DealAnalysisJobSnapshot = {
-  jobId: string;
-  prospectId: string;
-  orgId: string | null;
-  hubspotDealId: string | null;
-  status: DealAnalysisJobStatus;
-  progress: number;
-  currentStep: string;
-  startedAt: string;
-  updatedAt: string;
-  finishedAt: string | null;
-  logs: DealAnalysisJobLog[];
-  result: DealAnalysisBundleResult | null;
-  error: string | null;
-};
-
-const DEAL_ANALYSIS_JOB_TYPE = "deal_analysis";
-const DEAL_ANALYSIS_JOB_LOG_LIMIT = 40;
-
-const toDealAnalysisJobSnapshot = (
-  job: PersistentJobSnapshot<Json | null>,
-): DealAnalysisJobSnapshot | null => {
-  if (job.type !== DEAL_ANALYSIS_JOB_TYPE) {
-    return null;
-  }
-
-  const result = job.result as DealAnalysisBundleResult | null;
-  const snapshot = result?.page.snapshot ?? null;
-
-  return {
-    jobId: job.id,
-    prospectId: snapshot?.prospectId ?? "",
-    orgId: job.orgId ?? snapshot?.orgId ?? null,
-    hubspotDealId: snapshot?.hubspotDealId ?? null,
-    status: job.status === "skipped" ? "failed" : job.status,
-    progress: job.progress,
-    currentStep: job.currentStep,
-    startedAt: job.startedAt,
-    updatedAt: job.updatedAt,
-    finishedAt: job.finishedAt,
-    logs: job.logs as DealAnalysisJobLog[],
-    result,
-    error: job.error,
-  };
-};
-
-const loadDealAnalysisJob = async (jobId: string): Promise<DealAnalysisJobSnapshot | null> => {
-  const job = await getJob(jobId);
-  return job ? toDealAnalysisJobSnapshot(job) : null;
-};
-
-const createDealAnalysisJob = async (
-  prospectId: string,
-  body: DealAnalysisRunBody,
-): Promise<DealAnalysisJobSnapshot> => {
-  const now = new Date().toISOString();
-  const job = await createJob({
-    id: randomUUID(),
-    orgId: body.orgId ?? null,
-    type: DEAL_ANALYSIS_JOB_TYPE,
-    currentStep: "Analyse du deal en attente",
-    logs: [
-      {
-        at: now,
-        level: "info",
-        message: "Job d'analyse complete du deal cree.",
-      },
-    ],
-  });
-
-  const snapshot = await loadDealAnalysisJob(job.id);
-
-  if (!snapshot) {
-    throw new Error("Job d'analyse deal invalide apres creation.");
-  }
-
-  return {
-    ...snapshot,
-    prospectId,
-    hubspotDealId: body.hubspotDealId ?? null,
-  };
-};
-
-const markDealAnalysisJobRunning = async (jobId: string, step: string, progress: number): Promise<void> => {
-  const job = await loadDealAnalysisJob(jobId);
-
-  if (!job || job.status === "completed" || job.status === "failed") {
-    return;
-  }
-
-  const now = new Date().toISOString();
-  job.status = "running";
-  job.progress = Math.max(job.progress, Math.min(99, Math.round(progress)));
-  job.currentStep = step;
-  job.logs = [
-    ...job.logs,
-    {
-      at: now,
-      level: "info" as const,
-      message: step,
-    },
-  ].slice(-DEAL_ANALYSIS_JOB_LOG_LIMIT);
-
-  await updateJob(jobId, {
-    status: "running",
-    progress: job.progress,
-    currentStep: job.currentStep,
-    logs: job.logs,
-  });
-};
-
-const completeDealAnalysisJob = async (jobId: string, result: DealAnalysisBundleResult): Promise<void> => {
-  const job = await loadDealAnalysisJob(jobId);
-
-  if (!job) {
-    return;
-  }
-
-  const now = new Date().toISOString();
-  job.status = "completed";
-  job.progress = 100;
-  job.currentStep = "Analyse complete du deal terminee";
-  job.finishedAt = now;
-  job.result = result;
-  job.error = null;
-  job.logs = [
-    ...job.logs,
-    {
-      at: now,
-      level: "success" as const,
-      message: "Analyse complete du deal disponible.",
-    },
-  ].slice(-DEAL_ANALYSIS_JOB_LOG_LIMIT);
-
-  await updateJob(jobId, {
-    status: "completed",
-    progress: 100,
-    currentStep: job.currentStep,
-    logs: job.logs,
-    result: result as unknown as Json,
-    error: null,
-    finishedAt: now,
-  });
-};
-
-const failDealAnalysisJob = async (jobId: string, error: unknown): Promise<void> => {
-  const job = await loadDealAnalysisJob(jobId);
-
-  if (!job) {
-    return;
-  }
-
-  const now = new Date().toISOString();
-  const message = error instanceof Error ? error.message : "Erreur inconnue pendant l'analyse du deal.";
-  job.status = "failed";
-  job.currentStep = "Analyse du deal en erreur";
-  job.finishedAt = now;
-  job.error = message;
-  job.logs = [
-    ...job.logs,
-    {
-      at: now,
-      level: "error" as const,
-      message,
-    },
-  ].slice(-DEAL_ANALYSIS_JOB_LOG_LIMIT);
-
-  await updateJob(jobId, {
-    status: "failed",
-    progress: job.progress,
-    currentStep: job.currentStep,
-    logs: job.logs,
-    error: message,
-    finishedAt: now,
-  });
 };
 
 export const registerProspectRoutes = async (app: FastifyInstance): Promise<void> => {

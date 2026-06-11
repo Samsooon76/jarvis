@@ -11,8 +11,8 @@ import {
   type ForecastOverviewResult,
   type ForecastScope,
   type ForecastSynthesis,
-} from "../../services/api";
-import { formatAmount, formatDateTime } from "../../utils/dashboard/formatters";
+} from "../../../services/api";
+import { formatAmount, formatDateTime } from "../../../utils/dashboard/formatters";
 import {
   buildProjection,
   getConfidenceLabel,
@@ -23,17 +23,17 @@ import {
   sortDealsByImpact,
   sortSignedDeals,
   type ForecastPeriodMode,
-} from "../../utils/dashboard/forecast";
-import { ForecastAccuracyPanel } from "./ForecastAccuracyPanel";
-import { ForecastFilters } from "./forecast/ForecastFilters";
-import { ForecastInsightPanels } from "./forecast/ForecastInsightPanels";
-import { ForecastJobProgress } from "./forecast/ForecastJobProgress";
-import { ForecastKpiCards } from "./forecast/ForecastKpiCards";
-import { MonthlyProjectionCards } from "./forecast/MonthlyProjectionCards";
-import { OpenDealsTable, SignedDealsTable, VsDealsTable } from "./forecast/ForecastDealTables";
-import { ProjectionChart } from "./forecast/ProjectionChart";
-import { SynthesisPanel } from "./forecast/SynthesisPanel";
-import type { HubSpotOwnerOption } from "../../services/api";
+} from "../../../utils/dashboard/forecast";
+import { ForecastAccuracyPanel } from "../ForecastAccuracyPanel";
+import { ForecastFilters } from "./ForecastFilters";
+import { ForecastInsightPanels } from "./ForecastInsightPanels";
+import { ForecastJobProgress } from "./ForecastJobProgress";
+import { ForecastKpiCards } from "./ForecastKpiCards";
+import { MonthlyProjectionCards } from "./MonthlyProjectionCards";
+import { OpenDealsTable, SignedDealsTable, VsDealsTable } from "./ForecastDealTables";
+import { ProjectionChart } from "./ProjectionChart";
+import { SynthesisPanel } from "./SynthesisPanel";
+import type { HubSpotOwnerOption } from "../../../services/api";
 
 type ForecastViewProps = {
   orgId: string;

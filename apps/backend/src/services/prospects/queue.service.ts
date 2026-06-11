@@ -1,9 +1,9 @@
 import type { QueueData, QueueProspect } from "@jarvis/shared";
-import { env } from "../config/env.js";
-import { getSupabaseAdmin } from "../db/client.js";
-import type { Json } from "../db/database.types.js";
+import { env } from "../../config/env.js";
+import { getSupabaseAdmin } from "../../db/client.js";
+import type { Json } from "../../db/database.types.js";
 import { scoreProspect } from "./scoring.service.js";
-import { computeWinActivityGapCounts } from "./win-analysis.service.js";
+import { computeWinActivityGapCounts } from "../win-analysis.service.js";
 
 type QueueUserRow = {
   id: string;

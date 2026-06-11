@@ -21,7 +21,7 @@ import {
 import "./QueueView.css";
 
 const CloseLostAnalysisView = lazy(async () => {
-  const module = await import("./dashboard/CloseLostAnalysisView");
+  const module = await import("./dashboard/close-lost/CloseLostAnalysisView");
 
   return { default: module.CloseLostAnalysisView };
 });
@@ -36,7 +36,7 @@ const WinAnalysisView = lazy(async () => {
   return { default: module.WinAnalysisView };
 });
 const CoachingView = lazy(async () => {
-  const module = await import("./dashboard/CoachingView");
+  const module = await import("./dashboard/coaching/CoachingView");
 
   return { default: module.CoachingView };
 });
@@ -46,7 +46,7 @@ const DigestView = lazy(async () => {
   return { default: module.DigestView };
 });
 const ForecastView = lazy(async () => {
-  const module = await import("./dashboard/ForecastView");
+  const module = await import("./dashboard/forecast/ForecastView");
 
   return { default: module.ForecastView };
 });
@@ -66,7 +66,7 @@ const StatsView = lazy(async () => {
   return { default: module.StatsView };
 });
 const TasksView = lazy(async () => {
-  const module = await import("./dashboard/TasksView");
+  const module = await import("./dashboard/tasks/TasksView");
 
   return { default: module.TasksView };
 });
@@ -270,14 +270,14 @@ export const QueueView = ({
   );
 
   useEffect(() => {
-    void import("./dashboard/CloseLostAnalysisView");
-    void import("./dashboard/ForecastView");
+    void import("./dashboard/close-lost/CloseLostAnalysisView");
+    void import("./dashboard/forecast/ForecastView");
     void import("./dashboard/LeadsView");
     void import("./dashboard/DealAnalysisView");
     void import("./dashboard/DigestView");
-    void import("./dashboard/CoachingView");
+    void import("./dashboard/coaching/CoachingView");
     void import("./dashboard/WinAnalysisView");
-    void import("./dashboard/TasksView");
+    void import("./dashboard/tasks/TasksView");
     void import("./dashboard/StatsView");
   }, []);
 

@@ -16,7 +16,7 @@ import {
   type SalesTaskListItem,
   type TaskAnalysis,
   type TaskAnalyzerApplyResult,
-} from "../../services/api";
+} from "../../../services/api";
 import {
   TASK_BATCH_SIZE,
   TASK_MAX_ATTEMPTS,
@@ -45,11 +45,11 @@ import {
   type TaskDateFilter,
   type TaskSection,
   type TaskSectionId,
-} from "../../utils/dashboard/tasks";
-import { TaskDigestSidebar, type SelectedTaskAnalysis } from "./tasks/TaskDigestSidebar";
-import { TaskFiltersBar } from "./tasks/TaskFiltersBar";
-import { TaskFilterTabs, TaskMetrics } from "./tasks/TaskMetrics";
-import { TaskSectionList } from "./tasks/TaskSectionList";
+} from "../../../utils/dashboard/tasks";
+import { TaskDigestSidebar, type SelectedTaskAnalysis } from "./TaskDigestSidebar";
+import { TaskFiltersBar } from "./TaskFiltersBar";
+import { TaskFilterTabs, TaskMetrics } from "./TaskMetrics";
+import { TaskSectionList } from "./TaskSectionList";
 
 type TasksViewProps = {
   hubspotPortalId?: string | null;

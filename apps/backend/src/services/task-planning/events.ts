@@ -1,5 +1,5 @@
 import { getSupabaseAdmin } from "../../db/client.js";
-import { scoreProspect } from "../scoring.service.js";
+import { scoreProspect } from "../prospects/scoring.service.js";
 import type {
   AcceptedSalesActivityEvent,
   NormalizedSalesActivityEventInput,

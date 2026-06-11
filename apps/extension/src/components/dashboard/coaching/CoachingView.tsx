@@ -8,8 +8,8 @@ import {
   type RepCoachingSourceDeal,
   type TeamCoachingCard,
   type TeamCoachingJobSnapshot,
-} from "../../services/api";
-import { LoadingState } from "./LoadingState";
+} from "../../../services/api";
+import { LoadingState } from "../LoadingState";
 
 const TREND_LABELS: Record<string, string> = {
   improving: "En progression",
