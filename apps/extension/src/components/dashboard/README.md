@@ -8,7 +8,9 @@ Ce dossier contient l'interface pipeline/manager affichee dans l'extension Jarvi
 components/dashboard/
 ├── charts/          # Graphiques SVG sans logique de fetch (ForecastChart, StageFunnelChart)
 ├── deal/            # Sous-composants de l'analyse deal (loading panel, icones, sections overview/qualification/activite)
+├── forecast/        # Sous-composants du forecast (filtres, KPI cards, projection Chart.js, tables deals, synthese IA, progression de job)
 ├── queue/           # Table, filtres et fiche prospect (ProspectTable, QueueFilters, ProspectDetail)
+├── tasks/           # Sous-composants des taches (barre de filtres, metriques/onglets, liste par sections, digest lateral)
 ├── config.ts        # Libelles, onglets, filtres et constantes UI
 ├── types.ts         # Types propres au dashboard
 ├── AdminFeedback.tsx
@@ -42,8 +44,10 @@ hooks/dashboard/
 utils/dashboard/
 ├── charts.ts        # Helpers de construction de chemins SVG
 ├── dealAnalysis.ts  # Labels, tons et formatage purs de l'analyse deal
+├── forecast.ts      # Helpers purs du forecast (periodes, projection, tris, labels, deltas)
 ├── formatters.ts    # Formatage dates / montants
-└── prospects.ts     # Statuts, buckets, filtres et helpers prospects
+├── prospects.ts     # Statuts, buckets, filtres et helpers prospects
+└── tasks.ts         # Labels, buckets d'echeance, cache local et helpers purs des taches
 ```
 
 ## Regles

@@ -73,14 +73,19 @@ Liste quotidienne de prospects priorisés, affichée à l'ouverture du side pane
 Fiche d'analyse approfondie d'un deal, générée par IA et mise en cache.
 
 - **Contenu** : identité contact/société, infos deal, comité d'achat (influence, sentiment, rôle de chaque contact), qualification type MEDDICC (budget, autorité, besoin, timing), signaux de risque, historique d'activité, points de discussion pré-call, plan d'action suggéré.
-- **Moteur** : `services/deal-intelligence.service.ts` agrège les données HubSpot, le LLM synthétise (prompts dans `services/llm/prompts/`), résultat caché dans `deal_ai_analyses` (TTL ~6 h) pour maîtriser les coûts.
+- **Moteur** : `services/deal-intelligence/` (point d'entrée : `deal-intelligence.service.ts`), découpé par responsabilité :
+  - `data-access.ts` — chargement des données deal/contacts/société/owner depuis Supabase et HubSpot
+  - `presentation.ts` — construction des vues dérivées (dimensions de santé, tendance de probabilité, actions prioritaires, engagement par canal)
+  - `analysis.ts` — orchestration des appels LLM (prompts dans `services/llm/prompts/`)
+  - `cache.ts` — cache des analyses dans `deal_ai_analyses` (TTL ~6 h) pour maîtriser les coûts
+  - `types.ts` / `shared.ts` — types publics et helpers purs
 - UI : `components/dashboard/DealAnalysisView.tsx` + sous-composants dans `dashboard/deal/`.
 
 ### 3.3 Forecast
 
 Pipeline avec probabilité de closing assistée par IA.
 
-- **Classification IA** par deal : *Commit* (haute confiance), *Best Case*, *At Risk*, *Slipping* — calculée par `services/forecast.service.ts`, synthèse narrative LLM via le prompt `forecast-synthesis`.
+- **Classification IA** par deal : *Commit* (haute confiance), *Best Case*, *At Risk*, *Slipping* — calculée par `services/forecast/` (point d'entrée `forecast.service.ts` ; modules : `data-access`, `deal-status`, `metrics`, `overview`, `analyze`, `synthesis`), synthèse narrative LLM via le prompt `forecast-synthesis`.
 - **Snapshots** : capture quotidienne du pipeline (`forecast_snapshots`) pour mesurer ensuite la **précision du forecast** (`forecast-accuracy.service.ts`) : biais, slippage, commit vs réel.
 - **Filtre équipe** : les managers peuvent filtrer le forecast par commercial (gating : `role !== "sales"`).
 - UI : `ForecastView.tsx`, `ForecastAccuracyPanel.tsx`, graphiques Chart.js dans `dashboard/charts/`.
@@ -89,8 +94,8 @@ Pipeline avec probabilité de closing assistée par IA.
 
 - **Digest quotidien/hebdo** (`manager-digest.service.ts`) : synthèse LLM de l'activité équipe — victoires, risques, mouvements de deals, recommandations.
 - **Coaching par rep** (`rep-coaching.service.ts`) : analyse par commercial (win rate, volume d'activité, cycle de vente, patterns d'objection) avec forces/faiblesses et actions de coaching. Lancé en job asynchrone, l'UI poll le statut.
-- **Analyse close-lost** (`close-lost-analysis.service.ts`) : facteurs de perte récurrents et leçons.
-- **Analyse close-won** (`win-analysis.service.ts`) : facteurs de victoire (champion, timing, fit produit, pricing…) et plays réplicables.
+- **Analyse close-lost** (`services/close-lost-analysis/`) : facteurs de perte récurrents et leçons — modules `data-access`, `presentation`, `analysis` (LLM par deal), `runs` (cycle de vie des analyses portfolio).
+- **Analyse close-won** (`services/win-analysis/`) : facteurs de victoire (champion, timing, fit produit, pricing…) et plays réplicables — inclut un benchmark quantitatif sans LLM (`benchmark.ts`) comparant deals gagnés et pipeline.
 - **Stats d'activité** (`sales-activity-stats.service.ts`) : volumes calls/emails/meetings croisés avec les résultats.
 - **Objectifs** (`sales-targets.service.ts`) : cibles par commercial.
 
@@ -102,7 +107,7 @@ Pipeline avec probabilité de closing assistée par IA.
 
 ### 3.6 Tâches et follow-ups automatiques
 
-- **Analyse de tâches** (`task-analyzer.service.ts` + `task-planning.service.ts`) : classification par type (cold call, relance deal, post-meeting, admin, obsolète), suggestion de prochaine action avec priorité, normalisation sur les heures ouvrées (`business-days.ts`).
+- **Analyse de tâches** (`task-analyzer.service.ts` + `services/task-planning/`) : classification par type (cold call, relance deal, post-meeting, admin, obsolète), suggestion de prochaine action avec priorité, normalisation sur les heures ouvrées (`business-days.ts`). Le module task-planning est découpé en `scheduling` (créneaux ouvrés), `scoring` (priorité), `planning` (plans déterministes par événement), `events` (ingestion des événements d'activité) et `tasks` (actions du jour : complete/snooze/skip).
 - **Follow-ups automatiques** (`follow-up-task.service.ts`) : création déterministe de tâches de relance après un événement (message sortant sans réponse, changement de stage…) ; une réponse client entrante annule la relance et crée une tâche urgente. Anti-doublons via `follow_up_cache`.
 - Synchronisation bidirectionnelle des tâches avec HubSpot (lecture, création, priorité, complétion) via `routes/hubspot/tasks.routes.ts`.
 
@@ -143,7 +148,7 @@ Le fichier historique `services/hubspot.service.ts` reste un point d'entrée (ba
 ### Synchronisation
 
 - **Initiale** : fetch complet contacts + deals + owners → upsert dans `prospects` et tables `hubspot_*`. Suivi de progression via job (`/api/sync/hubspot/jobs/:jobId`), statut visible dans le dashboard.
-- **Incrémentale** : webhooks HubSpot (`routes/webhooks.ts`) mis en file dans `hubspot-realtime-queue` puis traités ; fallback par polling si un webhook est manqué.
+- **Incrémentale** : webhooks HubSpot (`routes/webhooks.ts`) mis en file dans `hubspot-realtime-queue` puis traités par `services/hubspot-activity/` (modules : `webhook-processor` pour l'orchestration, `activity-ingestion`, `deal-property-sync`, `reanalysis` pour l'invalidation des caches IA avec debounce, `privacy-purge` pour le RGPD, `backfill`) ; fallback par polling si un webhook est manqué.
 - **Historique** : trajectoires des deals (`hubspot_deal_history`) et probabilités (`deal_probability_history`) conservées pour les timelines et l'accuracy.
 - **Déconnexion** : `/api/hubspot/disconnect` révoque et purge les données liées.
 
@@ -194,6 +199,7 @@ routes/                   # 1 module par domaine (queue, forecast, tasks, pulse,
 routes/hubspot/           # Routes HubSpot découpées par sous-domaine
 services/                 # Logique métier (1 service par domaine)
 services/hubspot/         # Wrapper API HubSpot découpé par domaine (cf. section 4)
+services/deal-intelligence/ # Analyse de deal découpée par responsabilité (cf. section 3.2)
 services/llm/             # Abstraction LLM + providers + prompts
 ```
 
@@ -203,9 +209,10 @@ services/llm/             # Abstraction LLM + providers + prompts
 main.tsx / ExtensionApp.tsx   # Montage React, routing entre vues
 background.ts                 # Service worker : polling Pulse, badge
 services/api.ts               # Barrel — réexporte services/api/* (1 module par domaine + cache.ts + client.ts)
-components/dashboard/         # Vues du dashboard (1 fichier par vue) + deal/ + queue/ + charts/
+components/dashboard/         # Vues du dashboard (1 fichier par vue, conteneurs) + sous-composants
+                              #   par domaine : deal/, tasks/, forecast/, queue/, charts/
 hooks/                        # useQueue, usePulseNotifications, useQueueDashboard
-utils/dashboard/              # Formatters, view models, helpers d'analyse de deal
+utils/dashboard/              # Formatters, view models, helpers purs par vue (dealAnalysis, tasks, forecast)
 ```
 
 ### Conventions

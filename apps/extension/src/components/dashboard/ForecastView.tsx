@@ -1,6 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import Chart from "chart.js/auto";
-import type { ChartConfiguration, TooltipItem } from "chart.js";
+import { useEffect, useMemo, useState } from "react";
 import { Bot } from "lucide-react";
 import {
   analyzeForecastDeal,
@@ -13,11 +11,28 @@ import {
   type ForecastOverviewResult,
   type ForecastScope,
   type ForecastSynthesis,
-  type ForecastSynthesisCategory,
-  type ForecastSynthesisDeal,
 } from "../../services/api";
-import { formatAmount, formatDate, formatDateTime } from "../../utils/dashboard/formatters";
+import { formatAmount, formatDateTime } from "../../utils/dashboard/formatters";
+import {
+  buildProjection,
+  getConfidenceLabel,
+  getPeriodBounds,
+  getScenarioClassName,
+  getTrend,
+  isTechnicalOwnerFallback,
+  sortDealsByImpact,
+  sortSignedDeals,
+  type ForecastPeriodMode,
+} from "../../utils/dashboard/forecast";
 import { ForecastAccuracyPanel } from "./ForecastAccuracyPanel";
+import { ForecastFilters } from "./forecast/ForecastFilters";
+import { ForecastInsightPanels } from "./forecast/ForecastInsightPanels";
+import { ForecastJobProgress } from "./forecast/ForecastJobProgress";
+import { ForecastKpiCards } from "./forecast/ForecastKpiCards";
+import { MonthlyProjectionCards } from "./forecast/MonthlyProjectionCards";
+import { OpenDealsTable, SignedDealsTable, VsDealsTable } from "./forecast/ForecastDealTables";
+import { ProjectionChart } from "./forecast/ProjectionChart";
+import { SynthesisPanel } from "./forecast/SynthesisPanel";
 import type { HubSpotOwnerOption } from "../../services/api";
 
 type ForecastViewProps = {
@@ -30,297 +45,6 @@ type ForecastViewProps = {
 };
 
 type ForecastTab = "overview" | "synthesis" | "vs" | "accuracy";
-
-const FORECAST_SYNTHESIS_CATEGORY_ORDER: ForecastSynthesisCategory[] = ["commit", "bestCase", "atRisk", "slipping"];
-
-const getSynthesisCategoryTone = (category: ForecastSynthesisCategory): string => {
-  if (category === "commit") {
-    return "commit";
-  }
-
-  if (category === "bestCase") {
-    return "best-case";
-  }
-
-  if (category === "atRisk") {
-    return "at-risk";
-  }
-
-  return "slipping";
-};
-
-const getConfidenceLabel = (confidence: ForecastSynthesis["confidence"]): string =>
-  confidence === "high" ? "Confiance elevee" : confidence === "medium" ? "Confiance moyenne" : "Confiance faible";
-
-const getPriorityLabel = (priority: "low" | "medium" | "high"): string =>
-  priority === "high" ? "Prioritaire" : priority === "medium" ? "A suivre" : "Optionnel";
-type ForecastPeriodMode = "currentMonth" | "nextMonth" | "custom";
-
-type ForecastPoint = {
-  date: string;
-  label: string;
-  commit: number;
-  forecast: number;
-  objective: number | null;
-  pipeline: number;
-  dealCount: number;
-  confidenceScore: number;
-};
-
-const getMonthBounds = (offsetMonths = 0): { dateFrom: string; dateTo: string } => {
-  const now = new Date();
-  const firstDay = new Date(Date.UTC(now.getFullYear(), now.getMonth() + offsetMonths, 1));
-  const lastDay = new Date(Date.UTC(now.getFullYear(), now.getMonth() + offsetMonths + 1, 0));
-
-  return {
-    dateFrom: firstDay.toISOString().slice(0, 10),
-    dateTo: lastDay.toISOString().slice(0, 10),
-  };
-};
-
-const getPeriodBounds = (mode: Exclude<ForecastPeriodMode, "custom">): { dateFrom: string; dateTo: string } => {
-  if (mode === "nextMonth") {
-    return getMonthBounds(1);
-  }
-
-  return getMonthBounds(0);
-};
-
-const formatPeriod = (dateFrom: string, dateTo: string): string => {
-  if (!dateFrom || !dateTo) {
-    return "Periode non definie";
-  }
-
-  return `${formatDate(dateFrom)} - ${formatDate(dateTo)}`;
-};
-
-const buildProjection = (overview: ForecastOverviewResult | null): ForecastPoint[] => {
-  if (!overview || overview.monthlyProjection.length === 0) {
-    return [];
-  }
-
-  return overview.monthlyProjection.map((month) => ({
-    date: month.month,
-    label: month.label,
-    commit: month.commitAmount,
-    forecast: month.landingAmount,
-    objective: month.objectiveAmount,
-    pipeline: month.pipelineAmount,
-    dealCount: month.dealCount,
-    confidenceScore: month.confidenceScore,
-  }));
-};
-
-const getScenarioClassName = (scenarioId: string): string =>
-  scenarioId === "likely" ? "ae-forecast-scenario active" : "ae-forecast-scenario";
-
-const getRiskClassName = (severity: string): string => `ae-forecast-risk-pill ${severity}`;
-
-const sortDealsByImpact = (deals: ForecastDeal[]): ForecastDeal[] =>
-  [...deals].sort((left, right) => right.impactAmount - left.impactAmount);
-
-const sortSignedDeals = (deals: ForecastDeal[]): ForecastDeal[] =>
-  [...deals].sort((left, right) => right.amount - left.amount);
-
-const isTechnicalOwnerFallback = (ownerName: string | null | undefined): boolean => /^Owner \d+$/i.test(ownerName ?? "");
-
-const getProbabilityLabel = (deal: ForecastDeal): string => {
-  if (deal.analysisStatus === "closed_won") {
-    return "100% factuel";
-  }
-
-  return deal.aiProbability === null ? "A analyser" : `${deal.aiProbability}%`;
-};
-
-const getSignedBucketLabel = (deal: ForecastDeal): string =>
-  deal.forecastBucket === "paymentReceived" ? "Paiement recu" : "Signe, paiement pending";
-
-const getDelta = (deal: ForecastDeal): number | null => (deal.aiProbability === null ? null : deal.aiProbability - deal.crmProbability);
-
-const getDeltaClassName = (delta: number | null): string => {
-  if (delta === null || delta === 0) {
-    return "flat";
-  }
-
-  return delta > 0 ? "positive" : "negative";
-};
-
-const formatDelta = (delta: number | null): string => {
-  if (delta === null) {
-    return "--";
-  }
-
-  return `${delta > 0 ? "+" : ""}${delta} pts`;
-};
-
-const getTrend = (current: number, previous: number): { value: number; className: string } => {
-  if (previous <= 0) {
-    return { value: current > 0 ? 100 : 0, className: current > 0 ? "positive" : "flat" };
-  }
-
-  const value = Math.round(((current - previous) / previous) * 100);
-
-  return {
-    value: Math.abs(value),
-    className: value > 0 ? "positive" : value < 0 ? "negative" : "flat",
-  };
-};
-
-const ProjectionChart = ({
-  points,
-  objectiveLabel,
-}: {
-  points: ForecastPoint[];
-  objectiveLabel: string;
-}) => {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-
-  useEffect(() => {
-    if (!canvasRef.current) {
-      return undefined;
-    }
-
-    const configuration: ChartConfiguration<"line", Array<number | null>, string> = {
-      type: "line",
-      data: {
-        labels: points.map((point) => point.label),
-        datasets: [
-          {
-            label: "Commit",
-            data: points.map((point) => point.commit),
-            borderColor: "#73bf69",
-            backgroundColor: "rgba(115, 191, 105, 0.12)",
-            borderWidth: 2,
-            pointBackgroundColor: "#73bf69",
-            pointBorderColor: "#ffffff",
-            pointBorderWidth: 2,
-            pointHoverRadius: 6,
-            pointRadius: 4,
-            tension: 0.28,
-          },
-          {
-            label: "Atterrissage",
-            data: points.map((point) => point.forecast),
-            borderColor: "#007a59",
-            backgroundColor: "rgba(0, 128, 96, 0.12)",
-            borderWidth: 3,
-            pointBackgroundColor: "#007a59",
-            pointBorderColor: "#ffffff",
-            pointBorderWidth: 2,
-            pointHoverRadius: 7,
-            pointRadius: 5,
-            tension: 0.28,
-          },
-          {
-            label: "Objectif",
-            data: points.map((point) => point.objective),
-            borderColor: "#94a3b8",
-            borderDash: [7, 6],
-            borderWidth: 2,
-            pointRadius: 0,
-            pointHoverRadius: 0,
-            tension: 0,
-          },
-        ],
-      },
-      options: {
-        animation: false,
-        interaction: {
-          intersect: false,
-          mode: "index",
-        },
-        maintainAspectRatio: false,
-        plugins: {
-          legend: {
-            display: false,
-          },
-          tooltip: {
-            backgroundColor: "#07111f",
-            bodyColor: "#dbeafe",
-            borderColor: "rgba(255, 255, 255, 0.08)",
-            borderWidth: 1,
-            callbacks: {
-              label: (context: TooltipItem<"line">) => {
-                const value = context.parsed.y ?? 0;
-
-                return `${context.dataset.label ?? ""} ${formatAmount(value)}`;
-              },
-              afterBody: (items) => {
-                const point = points[items[0]?.dataIndex ?? -1];
-
-                return point ? [`Pipeline ${formatAmount(point.pipeline)}`, `${point.dealCount} deal(s) | confiance ${point.confidenceScore}%`] : [];
-              },
-            },
-            displayColors: true,
-            padding: 11,
-            titleColor: "#ffffff",
-          },
-        },
-        responsive: true,
-        scales: {
-          x: {
-            border: {
-              display: false,
-            },
-            grid: {
-              display: false,
-            },
-            ticks: {
-              color: "#334155",
-              font: {
-                size: 12,
-                weight: 560,
-              },
-              maxRotation: 0,
-              minRotation: 0,
-            },
-          },
-          y: {
-            beginAtZero: true,
-            border: {
-              display: false,
-            },
-            grid: {
-              color: "rgba(15, 23, 42, 0.08)",
-            },
-            ticks: {
-              callback: (value) => formatAmount(Number(value)),
-              color: "#64748b",
-              font: {
-                size: 11,
-                weight: 560,
-              },
-              maxTicksLimit: 5,
-            },
-          },
-        },
-      },
-    };
-
-    const chart = new Chart(canvasRef.current, configuration);
-
-    return () => {
-      chart.destroy();
-    };
-  }, [points]);
-
-  return (
-    <div className="ae-forecast-chart-card">
-      <div className="ae-forecast-chart-legend" aria-label="Legende">
-        <span><i className="commit" /> Commit</span>
-        <span><i className="forecast" /> Atterrissage</span>
-        <span><i className="objective" /> Objectif</span>
-      </div>
-      <div
-        className="ae-forecast-canvas-stage"
-        role="img"
-        aria-label={`Projection d'atterrissage. Objectif ${objectiveLabel}.`}
-      >
-        <canvas ref={canvasRef} />
-      </div>
-    </div>
-  );
-};
 
 export const ForecastView = ({
   orgId,
@@ -540,66 +264,25 @@ export const ForecastView = ({
       </div>
 
       {forecastJob ? (
-        <div className="ae-sync-progress" aria-live="polite">
-          <div className="ae-sync-progress-head">
-            <span>{forecastJob.currentStep}</span>
-            <strong>{forecastJob.progress}%</strong>
-          </div>
-          <div className="ae-sync-progress-track">
-            <div style={{ width: `${forecastJob.progress}%` }} />
-          </div>
-          <button className="ae-forecast-link" onClick={() => setLogsOpen((isOpen) => !isOpen)} type="button">
-            {logsOpen ? "Masquer les logs" : "Voir les logs"}
-          </button>
-          {logsOpen ? (
-            <ol className="ae-sync-logs">
-              {forecastJob.logs.slice(-8).map((log) => (
-                <li className={log.level} key={`${log.at}:${log.message}`}>
-                  <time>{formatDateTime(log.at)}</time>
-                  <span>{log.message}</span>
-                </li>
-              ))}
-            </ol>
-          ) : null}
-        </div>
+        <ForecastJobProgress
+          forecastJob={forecastJob}
+          logsOpen={logsOpen}
+          onToggleLogs={() => setLogsOpen((isOpen) => !isOpen)}
+        />
       ) : null}
 
-      <div className="ae-forecast-filters">
-        <label>
-          Periode
-          <span className="ae-forecast-period-toggle">
-            <button className={periodMode === "currentMonth" ? "active" : ""} onClick={() => setPeriod("currentMonth")} type="button">
-              Ce mois
-            </button>
-            <button className={periodMode === "nextMonth" ? "active" : ""} onClick={() => setPeriod("nextMonth")} type="button">
-              Mois prochain
-            </button>
-            <button className={periodMode === "custom" ? "active" : ""} onClick={() => setPeriod("custom")} type="button">
-              Personnalise
-            </button>
-          </span>
-        </label>
-        <label>
-          Dates
-          <span>
-            <input onChange={(event) => handleDateFromChange(event.target.value)} type="date" value={dateFrom} />
-            <input onChange={(event) => handleDateToChange(event.target.value)} type="date" value={dateTo} />
-          </span>
-        </label>
-        {canViewTeamForecast ? (
-          <label>
-            Forecast
-            <select disabled={owners.length === 0} onChange={(event) => setOwnerId(event.target.value)} value={ownerId}>
-              <option value="">Equipe (tous les sales)</option>
-              {owners.map((owner) => (
-                <option key={owner.ownerId} value={owner.ownerId}>
-                  {owner.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : null}
-      </div>
+      <ForecastFilters
+        canViewTeamForecast={canViewTeamForecast}
+        dateFrom={dateFrom}
+        dateTo={dateTo}
+        onDateFromChange={handleDateFromChange}
+        onDateToChange={handleDateToChange}
+        onOwnerIdChange={setOwnerId}
+        onPeriodChange={setPeriod}
+        ownerId={ownerId}
+        owners={owners}
+        periodMode={periodMode}
+      />
 
       <div className="ae-forecast-tabs" aria-label="Forecast sections">
         <button className={activeTab === "overview" ? "active" : ""} onClick={() => setActiveTab("overview")} type="button">
@@ -644,40 +327,16 @@ export const ForecastView = ({
             </button>
           </article>
 
-          <section className="ae-forecast-kpis">
-            <article>
-              <span>Deja signe</span>
-              <strong>{overview ? formatAmount(overview.signedAmount) : "--"}</strong>
-              <small>{overview ? `${overview.signedDealCount} deal(s) a 100%` : "HubSpot"}</small>
-            </article>
-            <article>
-              <span>Paiement pending</span>
-              <strong>{overview ? formatAmount(overview.signedPaymentPendingAmount) : "--"}</strong>
-              <small>{overview ? `${overview.signedPaymentPendingDealCount} deal(s) signe(s)` : "HubSpot"}</small>
-            </article>
-            <article>
-              <span>Paiement recu</span>
-              <strong>{overview ? formatAmount(overview.paymentReceivedAmount) : "--"}</strong>
-              <small>{overview ? `${overview.paymentReceivedDealCount} deal(s) paye(s)` : "HubSpot"}</small>
-            </article>
-            <article>
-              <span>Atterrissage</span>
-              <strong>{overview ? formatAmount(landingAmount) : "--"}</strong>
-              <small className={trend.className}>{overview ? `${forecastShare}% du pipeline ouvert pondere` : "Supabase"}</small>
-            </article>
-            <article>
-              <span>Objectif</span>
-              <strong>{!overview ? "--" : objectiveAmount === null ? "Non defini" : formatAmount(objectiveAmount)}</strong>
-              <small>{formatPeriod(dateFrom, dateTo)}</small>
-            </article>
-            <article>
-              <span>Gap objectif</span>
-              <strong>{!overview || objectiveAmount === null ? "--" : formatAmount(gapToFill ?? 0)}</strong>
-              <small className={gapToFill && gapToFill > 0 ? "negative" : "positive"}>
-                {objectiveAmount === null ? "Objectif non defini" : gapToFill && gapToFill > 0 ? "A combler" : "Objectif couvert"}
-              </small>
-            </article>
-          </section>
+          <ForecastKpiCards
+            dateFrom={dateFrom}
+            dateTo={dateTo}
+            forecastShare={forecastShare}
+            gapToFill={gapToFill}
+            landingAmount={landingAmount}
+            objectiveAmount={objectiveAmount}
+            overview={overview}
+            trendClassName={trend.className}
+          />
 
           <section className="ae-forecast-layout">
             <article className="ae-forecast-panel large">
@@ -710,187 +369,21 @@ export const ForecastView = ({
           </section>
 
           {projection.length > 0 ? (
-            <section className="ae-forecast-months" aria-label="Detail par mois">
-              {(overview?.monthlyProjection ?? []).map((month) => {
-                const toFill = month.objectiveAmount === null ? null : Math.max(0, month.objectiveAmount - month.landingAmount);
-
-                return (
-                  <article className="ae-forecast-month-card" key={month.month}>
-                    <header>
-                      <strong>{month.label}</strong>
-                      <span>{month.dealCount} deal(s)</span>
-                    </header>
-                    <dl>
-                      <div>
-                        <dt>Deja signe</dt>
-                        <dd>
-                          {formatAmount(month.signedAmount)}
-                          <small>{month.signedDealCount} deal(s) a 100%</small>
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Reste a closer (pondere)</dt>
-                        <dd>
-                          {formatAmount(month.openForecastAmount)}
-                          <small>{month.openDealCount} ouvert(s) | {formatAmount(month.openPipelineAmount)} brut</small>
-                        </dd>
-                      </div>
-                      <div className="highlight">
-                        <dt>Atterrissage</dt>
-                        <dd>{formatAmount(month.landingAmount)}</dd>
-                      </div>
-                      <div>
-                        <dt>Objectif</dt>
-                        <dd>{month.objectiveAmount === null ? "--" : formatAmount(month.objectiveAmount)}</dd>
-                      </div>
-                      <div className={toFill === null ? "" : toFill > 0 ? "negative" : "positive"}>
-                        <dt>Gap objectif</dt>
-                        <dd>
-                          {toFill === null ? "--" : toFill > 0 ? formatAmount(toFill) : "Couvert"}
-                          {toFill !== null ? <small>{toFill > 0 ? "a combler" : "objectif atteint"}</small> : null}
-                        </dd>
-                      </div>
-                    </dl>
-                  </article>
-                );
-              })}
-            </section>
+            <MonthlyProjectionCards months={overview?.monthlyProjection ?? []} />
           ) : null}
 
-          <section className="ae-forecast-layout three">
-            <article className="ae-forecast-panel">
-              <div className="ae-panel-heading">
-                <span>Risques principaux</span>
-                <strong>{overview?.risks.length ?? 0}</strong>
-              </div>
-              <div className="ae-forecast-list">
-                {(overview?.risks ?? []).map((risk) => (
-                  <div key={risk.title}>
-                    <span>{risk.title}</span>
-                    <em className={getRiskClassName(risk.severity)}>
-                      {risk.severity === "high" ? "Eleve" : risk.severity === "medium" ? "Moyen" : "Faible"}
-                    </em>
-                  </div>
-                ))}
-              </div>
-            </article>
+          <ForecastInsightPanels analyzedRatio={analyzedRatio} overview={overview} />
 
-            <article className="ae-forecast-panel">
-              <div className="ae-panel-heading">
-                <span>Leviers prioritaires</span>
-                <strong>{overview?.levers.length ?? 0}</strong>
-              </div>
-              <div className="ae-forecast-list">
-                {(overview?.levers ?? []).map((lever) => (
-                  <div key={lever.title}>
-                    <span>{lever.title}</span>
-                    <em>{formatAmount(lever.amount)}</em>
-                  </div>
-                ))}
-              </div>
-            </article>
+          <SignedDealsTable getOwnerDisplayName={getOwnerDisplayName} isLoading={isLoading} signedDeals={signedDeals} />
 
-            <article className="ae-forecast-panel">
-              <div className="ae-panel-heading">
-                <span>Fiabilite du forecast</span>
-                <strong>{overview ? `${overview.confidenceScore}%` : "--"}</strong>
-              </div>
-              <div className="ae-forecast-confidence-ring" style={{ "--score": `${overview?.confidenceScore ?? 0}%` } as CSSProperties}>
-                <strong>{overview ? `${overview.confidenceScore}%` : "--"}</strong>
-                <span>{overview ? `${analyzedRatio}% couverture IA` : "Confiance globale"}</span>
-              </div>
-              <div className="ae-forecast-reliability">
-                {(overview?.reliability ?? []).map((item) => (
-                  <div key={item.id}>
-                    <span>{item.label}</span>
-                    <span className="ae-forecast-meter"><i style={{ "--value": `${item.score}%` } as CSSProperties} /></span>
-                    <strong>{item.score}%</strong>
-                  </div>
-                ))}
-              </div>
-            </article>
-          </section>
-
-          <article className="ae-forecast-panel">
-            <div className="ae-panel-heading">
-              <span>Deals signes</span>
-              <strong>{signedDeals.length} deal(s)</strong>
-            </div>
-            <div className="ae-forecast-deal-table signed" role="table">
-              <div className="header" role="row">
-                <span>Deal</span>
-                <span>Compte</span>
-                <span>Statut</span>
-                <span>Proprietaire</span>
-                <span>Montant</span>
-                <span>Close prevue</span>
-                <span>Sync CRM</span>
-              </div>
-              {signedDeals.length > 0 ? (
-                signedDeals.map((deal) => (
-                  <div key={deal.hubspotDealId} role="row">
-                    <span>{deal.dealName ?? deal.hubspotDealId}</span>
-                    <span>{deal.companyName}</span>
-                    <span>{getSignedBucketLabel(deal)}</span>
-                    <span>{getOwnerDisplayName(deal)}</span>
-                    <span>{formatAmount(deal.amount)}</span>
-                    <span>{deal.closeDate ? formatDate(deal.closeDate) : "Sans date"}</span>
-                    <span>{formatDateTime(deal.syncedAt)}</span>
-                  </div>
-                ))
-              ) : (
-                <p className="ae-empty">{isLoading ? "Chargement Supabase..." : "Aucun deal signe sur cette periode."}</p>
-              )}
-            </div>
-          </article>
-
-          <article className="ae-forecast-panel">
-            <div className="ae-panel-heading">
-              <span>Deals ouverts a closer</span>
-              <strong>{openDeals.length} deal(s)</strong>
-            </div>
-            <div className="ae-forecast-deal-table open" role="table">
-              <div className="header" role="row">
-                <span>Deal</span>
-                <span>Compte</span>
-                <span>Etape</span>
-                <span>Proprietaire</span>
-                <span>Montant</span>
-                <span>% CRM</span>
-                <span>% IA</span>
-                <span>Pondere</span>
-                <span>Close prevue</span>
-                <span>Action</span>
-              </div>
-              {openDeals.length > 0 ? (
-                openDeals.map((deal) => (
-                  <div key={deal.hubspotDealId} role="row">
-                    <span>{deal.dealName ?? deal.hubspotDealId}</span>
-                    <span>{deal.companyName}</span>
-                    <span>{deal.stage}</span>
-                    <span>{getOwnerDisplayName(deal)}</span>
-                    <span>{formatAmount(deal.amount)}</span>
-                    <span>{deal.crmProbability}%</span>
-                    <span>{getProbabilityLabel(deal)}</span>
-                    <span>{formatAmount(deal.forecastAmount)}</span>
-                    <span>{deal.closeDate ? formatDate(deal.closeDate) : "Sans date"}</span>
-                    <span>
-                      <button
-                        className="ae-forecast-row-action"
-                        disabled={isAnalyzing || analyzingDealId !== null}
-                        onClick={() => void handleAnalyzeDeal(deal)}
-                        type="button"
-                      >
-                        {analyzingDealId === deal.hubspotDealId ? "Analyse..." : deal.aiProbability === null ? "Analyser" : "Recalculer"}
-                      </button>
-                    </span>
-                  </div>
-                ))
-              ) : (
-                <p className="ae-empty">{isLoading ? "Chargement Supabase..." : "Aucun deal ouvert a closer sur cette periode."}</p>
-              )}
-            </div>
-          </article>
+          <OpenDealsTable
+            analyzingDealId={analyzingDealId}
+            getOwnerDisplayName={getOwnerDisplayName}
+            isAnalyzing={isAnalyzing}
+            isLoading={isLoading}
+            onAnalyzeDeal={(deal) => void handleAnalyzeDeal(deal)}
+            openDeals={openDeals}
+          />
         </>
       ) : activeTab === "accuracy" ? (
         <ForecastAccuracyPanel />
@@ -922,75 +415,7 @@ export const ForecastView = ({
           </article>
 
           {synthesis ? (
-            <>
-              <section className="ae-forecast-synthesis-board" aria-label="Classement des deals par l'IA">
-                {FORECAST_SYNTHESIS_CATEGORY_ORDER.map((category) => {
-                  const summary = synthesis.categories.find((item) => item.category === category);
-                  const categoryDeals: ForecastSynthesisDeal[] = synthesis.deals.filter((deal) => deal.category === category);
-
-                  return (
-                    <article className={`ae-forecast-synthesis-column ${getSynthesisCategoryTone(category)}`} key={category}>
-                      <header>
-                        <span>{summary?.label ?? category}</span>
-                        <strong>{formatAmount(summary?.amount ?? 0)}</strong>
-                        <small>{categoryDeals.length} deal(s) · {formatAmount(summary?.weightedAmount ?? 0)} pondere</small>
-                      </header>
-                      <div className="ae-forecast-synthesis-deals">
-                        {categoryDeals.length > 0 ? (
-                          categoryDeals.map((deal) => (
-                            <div className="ae-forecast-synthesis-deal" key={deal.hubspotDealId}>
-                              <div className="ae-forecast-synthesis-deal-head">
-                                <strong>{deal.companyName}</strong>
-                                <span>{formatAmount(deal.amount)}</span>
-                              </div>
-                              <div className="ae-forecast-synthesis-deal-meta">
-                                <span>{deal.dealName ?? deal.hubspotDealId}</span>
-                                <em>{deal.aiProbability === null ? "% IA n/a" : `${deal.aiProbability}% IA`}</em>
-                              </div>
-                              <p>{deal.reason}</p>
-                              {deal.recommendedAction ? (
-                                <p className="ae-forecast-synthesis-deal-action">→ {deal.recommendedAction}</p>
-                              ) : null}
-                            </div>
-                          ))
-                        ) : (
-                          <p className="ae-empty">Aucun deal</p>
-                        )}
-                      </div>
-                    </article>
-                  );
-                })}
-              </section>
-
-              <article className="ae-forecast-panel">
-                <div className="ae-panel-heading">
-                  <span>Plan d'action pour atteindre l'objectif</span>
-                  <strong>{synthesis.actionPlan.length}</strong>
-                </div>
-                <div className="ae-forecast-synthesis-plan">
-                  {synthesis.actionPlan.length > 0 ? (
-                    synthesis.actionPlan.map((action, index) => {
-                      const relatedDeals = action.relatedDealIds
-                        .map((id) => synthesis.deals.find((deal) => deal.hubspotDealId === id)?.companyName)
-                        .filter((name): name is string => Boolean(name));
-
-                      return (
-                        <div className="ae-forecast-synthesis-plan-item" key={`${action.title}-${index}`}>
-                          <div className="ae-forecast-synthesis-plan-head">
-                            <strong>{action.title}</strong>
-                            <em className={`ae-forecast-risk-pill ${action.priority}`}>{getPriorityLabel(action.priority)}</em>
-                          </div>
-                          <p>{action.rationale}</p>
-                          {relatedDeals.length > 0 ? <small>Deals : {relatedDeals.join(", ")}</small> : null}
-                        </div>
-                      );
-                    })
-                  ) : (
-                    <p className="ae-empty">Aucune action proposee par l'IA.</p>
-                  )}
-                </div>
-              </article>
-            </>
+            <SynthesisPanel synthesis={synthesis} />
           ) : (
             <p className="ae-empty">
               {isGeneratingSynthesis
@@ -1021,60 +446,14 @@ export const ForecastView = ({
             </button>
           </article>
 
-          <article className="ae-forecast-panel">
-            <div className="ae-panel-heading">
-              <span>Table VS</span>
-              <strong>{openDeals.length} deal(s) ouvert(s)</strong>
-            </div>
-            <div className="ae-forecast-deal-table vs" role="table">
-              <div className="header" role="row">
-                <span>Deal</span>
-                <span>Compte</span>
-                <span>Proprietaire</span>
-                <span>Montant</span>
-                <span>% CRM</span>
-                <span>% IA</span>
-                <span>Delta</span>
-                <span>Pondere IA</span>
-                <span>Close prevue</span>
-                <span>Factuel</span>
-                <span>Action</span>
-              </div>
-              {openDeals.length > 0 ? (
-                openDeals.map((deal) => {
-                  const delta = getDelta(deal);
-                  const signals = [...deal.positiveSignals, ...deal.risks].slice(0, 2);
-
-                  return (
-                    <div key={deal.hubspotDealId} role="row">
-                      <span>{deal.dealName ?? deal.hubspotDealId}</span>
-                      <span>{deal.companyName}</span>
-                      <span>{getOwnerDisplayName(deal)}</span>
-                      <span>{formatAmount(deal.amount)}</span>
-                      <span>{deal.crmProbability}%</span>
-                      <span>{getProbabilityLabel(deal)}</span>
-                      <span className={`ae-forecast-delta ${getDeltaClassName(delta)}`}>{formatDelta(delta)}</span>
-                      <span>{formatAmount(deal.forecastAmount)}</span>
-                      <span>{deal.closeDate ? formatDate(deal.closeDate) : "Sans date"}</span>
-                      <span>{signals.length > 0 ? signals.join(" / ") : deal.summary ?? "Analyse IA factuelle a lancer"}</span>
-                      <span>
-                        <button
-                          className="ae-forecast-row-action"
-                          disabled={isAnalyzing || analyzingDealId !== null}
-                          onClick={() => void handleAnalyzeDeal(deal)}
-                          type="button"
-                        >
-                          {analyzingDealId === deal.hubspotDealId ? "Analyse..." : deal.aiProbability === null ? "Analyser" : "Recalculer"}
-                        </button>
-                      </span>
-                    </div>
-                  );
-                })
-              ) : (
-                <p className="ae-empty">{isLoading ? "Chargement Supabase..." : "Aucun deal ouvert forecastable sur cette periode."}</p>
-              )}
-            </div>
-          </article>
+          <VsDealsTable
+            analyzingDealId={analyzingDealId}
+            getOwnerDisplayName={getOwnerDisplayName}
+            isAnalyzing={isAnalyzing}
+            isLoading={isLoading}
+            onAnalyzeDeal={(deal) => void handleAnalyzeDeal(deal)}
+            openDeals={openDeals}
+          />
         </>
       )}
     </section>
