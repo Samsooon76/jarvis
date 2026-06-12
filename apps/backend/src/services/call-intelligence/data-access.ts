@@ -20,7 +20,7 @@ type CallRow = {
 };
 
 type ProspectNoteRow = {
-  notes: string | null;
+  ai_summary: string | null;
   next_action: string | null;
   name: string;
   company: string;
@@ -78,7 +78,7 @@ const ensureOwnerScope = (auth: AuthContext, call: Pick<CallRow, "user_id">): vo
 const buildFallbackNotes = (call: CallRow, prospect: ProspectNoteRow | null): string | null => {
   const parts = [
     call.ai_summary ? `Resume IA existant: ${call.ai_summary}` : null,
-    prospect?.notes ? `Notes prospect: ${prospect.notes}` : null,
+    prospect?.ai_summary ? `Resume prospect: ${prospect.ai_summary}` : null,
     prospect?.next_action ? `Prochaine action: ${prospect.next_action}` : null,
   ].filter((part): part is string => Boolean(part?.trim()));
 
@@ -133,7 +133,7 @@ export const loadCallSource = async (callId: string, auth: AuthContext): Promise
   if (call.prospect_id) {
     const { data: prospectData, error: prospectError } = await supabase
       .from("prospects")
-      .select("notes, next_action, name, company")
+      .select("ai_summary, next_action, name, company")
       .eq("id", call.prospect_id)
       .maybeSingle();
 
