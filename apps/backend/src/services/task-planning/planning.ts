@@ -33,6 +33,16 @@ export const isIncomingClientResponse = (eventType: SalesActivityEventType): boo
 export const isOutboundMessage = (eventType: SalesActivityEventType): boolean =>
   eventType === "email.sent" || eventType === "sms.sent";
 
+const isDealReviewEvent = (eventType: SalesActivityEventType): boolean =>
+  eventType === "deal.created" ||
+  eventType === "deal.updated" ||
+  eventType === "deal.stage_changed" ||
+  eventType === "deal.amount_changed" ||
+  eventType === "deal.probability_changed" ||
+  eventType === "deal.close_date_changed" ||
+  eventType === "deal.owner_changed" ||
+  eventType === "deal.pipeline_changed";
+
 const getTaskContext = (prospect: TaskPlanProspectSnapshot): string | null => {
   const parts = [prospect.company, prospect.name].filter((value): value is string => Boolean(value?.trim()));
 
@@ -153,7 +163,7 @@ export const buildSalesTaskPlanForEvent = ({
     });
   }
 
-  if (event.eventType === "deal.updated" && getDealReviewNeeded(prospect, now)) {
+  if (isDealReviewEvent(event.eventType) && getDealReviewNeeded(prospect, now)) {
     const taskType: SalesTaskType = "deal_review";
     const estimatedDurationMinutes = getEstimatedSalesTaskDurationMinutes(taskType);
     const scheduledAt = normalizeWorkSlot(addMinutes(baseDate, 45), now, estimatedDurationMinutes).toISOString();

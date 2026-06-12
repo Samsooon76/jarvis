@@ -8,7 +8,18 @@ export const EVENT_TYPE_META = {
   "email.sent": { channel: "email", direction: "outbound" },
   "sms.received": { channel: "sms", direction: "inbound" },
   "sms.sent": { channel: "sms", direction: "outbound" },
+  "meeting.completed": { channel: "meeting", direction: "outbound" },
+  "note.created": { channel: "note", direction: "system" },
+  "deal.created": { channel: "deal", direction: "system" },
   "deal.updated": { channel: "deal", direction: "system" },
+  "deal.stage_changed": { channel: "deal", direction: "system" },
+  "deal.amount_changed": { channel: "deal", direction: "system" },
+  "deal.probability_changed": { channel: "deal", direction: "system" },
+  "deal.close_date_changed": { channel: "deal", direction: "system" },
+  "deal.owner_changed": { channel: "deal", direction: "system" },
+  "deal.pipeline_changed": { channel: "deal", direction: "system" },
+  "deal.won": { channel: "deal", direction: "system" },
+  "deal.lost": { channel: "deal", direction: "system" },
 } as const satisfies Record<SalesActivityEventType, EventTypeMeta>;
 
 const UUID_V4_LIKE_PATTERN =

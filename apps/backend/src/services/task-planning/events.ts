@@ -43,6 +43,15 @@ import {
 } from "./data-access.js";
 import { getTodaySalesTasks } from "./tasks.js";
 
+const isDealAmountEvent = (eventType: SalesActivityEvent["eventType"]): boolean =>
+  eventType === "deal.updated" || eventType === "deal.amount_changed";
+
+const isDealProbabilityEvent = (eventType: SalesActivityEvent["eventType"]): boolean =>
+  eventType === "deal.updated" || eventType === "deal.probability_changed" || eventType === "deal.won" || eventType === "deal.lost";
+
+const isDealStageEvent = (eventType: SalesActivityEvent["eventType"]): boolean =>
+  eventType === "deal.updated" || eventType === "deal.stage_changed" || eventType === "deal.won" || eventType === "deal.lost";
+
 const updateProspectFromEvent = async (
   event: SalesActivityEvent,
   prospect: ProspectRow | null,
@@ -54,14 +63,18 @@ const updateProspectFromEvent = async (
 
   const updates: Record<string, unknown> = {};
   const currentDealAmount = toNumber(prospect.deal_amount);
-  const nextDealAmount = event.eventType === "deal.updated" ? readFirstNumber(payload, ["dealAmount", "amount"]) : null;
+  const nextDealAmount = isDealAmountEvent(event.eventType) ? readFirstNumber(payload, ["dealAmount", "amount"]) : null;
   const nextCloseProbability =
-    event.eventType === "deal.updated" ? readFirstNumber(payload, ["closeProbability", "probability"]) : null;
-  const nextDealStage = event.eventType === "deal.updated" ? readFirstString(payload, ["dealStage", "stage"]) : null;
+    isDealProbabilityEvent(event.eventType) ? readFirstNumber(payload, ["closeProbability", "probability"]) : null;
+  const nextDealStage = isDealStageEvent(event.eventType) ? readFirstString(payload, ["dealStage", "stage"]) : null;
   const nextLastContactAt =
-    event.eventType === "deal.updated"
+    event.channel === "deal"
       ? prospect.last_contact_at
-      : event.eventType === "call.completed" || isIncomingClientResponse(event.eventType) || isOutboundMessage(event.eventType)
+      : event.eventType === "call.completed" ||
+          event.eventType === "meeting.completed" ||
+          event.eventType === "note.created" ||
+          isIncomingClientResponse(event.eventType) ||
+          isOutboundMessage(event.eventType)
         ? event.occurredAt
         : prospect.last_contact_at;
 

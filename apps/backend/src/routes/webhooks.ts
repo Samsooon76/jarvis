@@ -38,6 +38,17 @@ type HubSpotWebhookStatus = {
   queuedEventCount: number;
   queuedAnalysisCount: number;
   analysisQueueLagSeconds: number | null;
+  projectionLagSeconds: number | null;
+  lastNormalizedEvent: {
+    id: string;
+    eventType: string;
+    source: string;
+    occurredAt: string;
+    createdAt: string;
+  } | null;
+  failedProjectionCount: number;
+  deadLetterCount: number;
+  redisMode: "redis" | "memory";
   lastAnalysisRun: {
     id: string;
     hubspotDealId: string;
@@ -68,6 +79,14 @@ type HubSpotRealtimeAnalysisRunStatusRow = {
   started_at: string | null;
   finished_at: string | null;
   error_message: string | null;
+};
+
+type ActivityEventStatusRow = {
+  id: string;
+  event_type: string;
+  source: string;
+  occurred_at: string;
+  created_at: string;
 };
 
 const UUID_V4_LIKE_PATTERN =
@@ -131,8 +150,29 @@ const mapAnalysisRun = (
         startedAt: row.started_at,
         finishedAt: row.finished_at,
         errorMessage: row.error_message,
+    }
+    : null;
+
+const mapLastNormalizedEvent = (row: ActivityEventStatusRow | null): HubSpotWebhookStatus["lastNormalizedEvent"] =>
+  row
+    ? {
+        id: row.id,
+        eventType: row.event_type,
+        source: row.source,
+        occurredAt: row.occurred_at,
+        createdAt: row.created_at,
       }
     : null;
+
+const getLagSeconds = (value: string | null | undefined): number | null => {
+  if (!value) {
+    return null;
+  }
+
+  const timestamp = new Date(value).getTime();
+
+  return Number.isNaN(timestamp) ? null : Math.max(0, Math.round((Date.now() - timestamp) / 1000));
+};
 
 export const registerHubSpotWebhookRoutes = async (app: FastifyInstance): Promise<void> => {
   startHubSpotRealtimeWorker(processHubSpotRealtimeJob, app.log);
@@ -244,9 +284,11 @@ export const registerHubSpotWebhookRoutes = async (app: FastifyInstance): Promis
         lastEventResult,
         lastErrorResult,
         queuedEventsResult,
+        failedEventsResult,
         queuedAnalysisResult,
         nextAnalysisResult,
         lastAnalysisResult,
+        lastNormalizedEventResult,
       ] = await Promise.all([
         supabase
           .from("hubspot_webhook_events")
@@ -269,6 +311,11 @@ export const registerHubSpotWebhookRoutes = async (app: FastifyInstance): Promis
           .eq("org_id", orgId)
           .in("processing_status", ["queued", "processing"]),
         supabase
+          .from("hubspot_webhook_events")
+          .select("*", { count: "exact", head: true })
+          .eq("org_id", orgId)
+          .eq("processing_status", "failed"),
+        supabase
           .from("hubspot_realtime_analysis_runs")
           .select("*", { count: "exact", head: true })
           .eq("org_id", orgId)
@@ -288,15 +335,25 @@ export const registerHubSpotWebhookRoutes = async (app: FastifyInstance): Promis
           .order("created_at", { ascending: false })
           .limit(1)
           .maybeSingle(),
+        supabase
+          .from("activity_events")
+          .select("id, event_type, source, occurred_at, created_at")
+          .eq("org_id", orgId)
+          .in("source", ["hubspot_webhook", "hubspot_activity"])
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
       ]);
 
       const firstError =
         lastEventResult.error ??
         lastErrorResult.error ??
         queuedEventsResult.error ??
+        failedEventsResult.error ??
         queuedAnalysisResult.error ??
         nextAnalysisResult.error ??
-        lastAnalysisResult.error;
+        lastAnalysisResult.error ??
+        lastNormalizedEventResult.error;
 
       if (firstError) {
         throw new Error(firstError.message);
@@ -316,6 +373,14 @@ export const registerHubSpotWebhookRoutes = async (app: FastifyInstance): Promis
           queuedEventCount: queuedEventsResult.count ?? 0,
           queuedAnalysisCount: queuedAnalysisResult.count ?? 0,
           analysisQueueLagSeconds,
+          projectionLagSeconds: getLagSeconds(
+            (lastEventResult.data as HubSpotWebhookEventStatusRow | null)?.occurred_at ??
+              (lastEventResult.data as HubSpotWebhookEventStatusRow | null)?.created_at,
+          ),
+          lastNormalizedEvent: mapLastNormalizedEvent(lastNormalizedEventResult.data as ActivityEventStatusRow | null),
+          failedProjectionCount: failedEventsResult.count ?? 0,
+          deadLetterCount: failedEventsResult.count ?? 0,
+          redisMode: env.redisUrl ? "redis" : "memory",
           lastAnalysisRun: mapAnalysisRun(lastAnalysisResult.data as HubSpotRealtimeAnalysisRunStatusRow | null),
         },
       });

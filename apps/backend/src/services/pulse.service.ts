@@ -49,6 +49,7 @@ type PulsePreferencesRow = {
   notify_close_date: boolean;
   notify_owner: boolean;
   notify_pipeline: boolean;
+  notify_playbook: boolean;
 };
 
 type PulseRecipientRow = {
@@ -97,6 +98,7 @@ export const PULSE_EVENT_TYPES: readonly PulseEventType[] = [
   "close_date",
   "owner",
   "pipeline",
+  "playbook_suggestion",
 ];
 
 const PULSE_EVENT_TYPE_BY_PROPERTY: Record<string, PulseEventType> = {
@@ -117,6 +119,7 @@ const PULSE_EVENT_TITLES: Record<PulseEventType, string> = {
   close_date: "Date de closing modifiee",
   owner: "Changement d'owner",
   pipeline: "Changement de pipeline",
+  playbook_suggestion: "Suggestion playbook a valider",
 };
 
 const PULSE_EVENT_FIELD_LABELS: Record<PulseEventType, string> = {
@@ -127,6 +130,7 @@ const PULSE_EVENT_FIELD_LABELS: Record<PulseEventType, string> = {
   close_date: "date de closing",
   owner: "owner",
   pipeline: "pipeline",
+  playbook_suggestion: "playbook",
 };
 
 export const mapDealPropertyToPulseEventType = (propertyName: string | null): PulseEventType | null =>
@@ -382,7 +386,7 @@ const loadPulsePreferenceRows = async (orgId: string, userIds: string[]): Promis
   const { data, error } = await getSupabaseAdmin()
     .from("pulse_preferences")
     .select(
-      "user_id, pulse_enabled, notify_deal_created, notify_probability, notify_amount, notify_stage, notify_close_date, notify_owner, notify_pipeline",
+      "user_id, pulse_enabled, notify_deal_created, notify_probability, notify_amount, notify_stage, notify_close_date, notify_owner, notify_pipeline, notify_playbook",
     )
     .eq("org_id", orgId)
     .in("user_id", userIds);
@@ -404,7 +408,7 @@ const isEventTypeEnabled = (preferences: PulsePreferencesRow | undefined, eventT
     return false;
   }
 
-    switch (eventType) {
+  switch (eventType) {
     case "deal_created":
       return preferences.notify_deal_created;
     case "probability":
@@ -419,6 +423,8 @@ const isEventTypeEnabled = (preferences: PulsePreferencesRow | undefined, eventT
       return preferences.notify_owner;
     case "pipeline":
       return preferences.notify_pipeline;
+    case "playbook_suggestion":
+      return preferences.notify_playbook;
     default:
       return true;
   }
@@ -495,6 +501,66 @@ export const generatePulseNotificationsForNewDeal = async (input: PulseDealCreat
 
   if (error) {
     throw new Error(`Impossible de creer les notifications Jarvis Pulse: ${error.message}`);
+  }
+
+  await purgeOldPulseNotifications(input.orgId);
+
+  return rows.length;
+};
+
+export type PulsePlaybookSuggestionInput = {
+  orgId: string;
+  sourceEventId: string;
+  playbookId: string;
+  suggestionTitle: string;
+  rationale: string;
+  occurredAt: string | null;
+};
+
+export const generatePulseNotificationsForPlaybookSuggestion = async (
+  input: PulsePlaybookSuggestionInput,
+): Promise<number> => {
+  const recipients = await loadPulseRecipients(input.orgId);
+
+  if (recipients.length === 0) {
+    return 0;
+  }
+
+  const preferenceRows = await loadPulsePreferenceRows(
+    input.orgId,
+    recipients.map((recipient) => recipient.id),
+  );
+  const preferencesByUserId = new Map(preferenceRows.map((row) => [row.user_id, row]));
+  const eligibleRecipients = recipients.filter((recipient) =>
+    isEventTypeEnabled(preferencesByUserId.get(recipient.id), "playbook_suggestion"),
+  );
+
+  if (eligibleRecipients.length === 0) {
+    return 0;
+  }
+
+  const occurredAt = input.occurredAt ?? new Date().toISOString();
+  const message = `${input.suggestionTitle}: ${input.rationale}`;
+  const rows = eligibleRecipients.map((recipient) => ({
+    org_id: input.orgId,
+    user_id: recipient.id,
+    source_event_id: input.sourceEventId,
+    event_type: "playbook_suggestion" satisfies PulseEventType,
+    hubspot_deal_id: input.playbookId,
+    deal_name: "Playbook",
+    title: PULSE_EVENT_TITLES.playbook_suggestion,
+    message,
+    previous_value: null,
+    new_value: input.suggestionTitle,
+    occurred_at: occurredAt,
+  }));
+
+  const { error } = await getSupabaseAdmin()
+    .from("pulse_notifications")
+    .upsert(rows, { onConflict: "user_id,source_event_id", ignoreDuplicates: true });
+
+  if (error) {
+    throw new Error(`Impossible de creer les notifications playbook Jarvis Pulse: ${error.message}`);
   }
 
   await purgeOldPulseNotifications(input.orgId);
@@ -724,6 +790,7 @@ const DEFAULT_PULSE_PREFERENCES: PulsePreferences = {
     close_date: true,
     owner: true,
     pipeline: true,
+    playbook_suggestion: true,
   },
 };
 
@@ -739,6 +806,7 @@ const toPulsePreferences = (row: PulsePreferencesRow | null): PulsePreferences =
           close_date: row.notify_close_date,
           owner: row.notify_owner,
           pipeline: row.notify_pipeline,
+          playbook_suggestion: row.notify_playbook,
         },
       }
     : DEFAULT_PULSE_PREFERENCES;
@@ -767,6 +835,11 @@ export const parsePulsePreferencesInput = (value: unknown): PulsePreferences | n
 
   for (const eventType of PULSE_EVENT_TYPES) {
     const eventValue = eventRecord[eventType];
+
+    if (eventType === "playbook_suggestion" && eventValue === undefined) {
+      parsedEvents[eventType] = true;
+      continue;
+    }
 
     if (typeof eventValue !== "boolean") {
       return null;
@@ -805,6 +878,7 @@ export const updatePulsePreferences = async (
         notify_close_date: preferences.events.close_date,
         notify_owner: preferences.events.owner,
         notify_pipeline: preferences.events.pipeline,
+        notify_playbook: preferences.events.playbook_suggestion,
       },
       { onConflict: "org_id,user_id" },
     );

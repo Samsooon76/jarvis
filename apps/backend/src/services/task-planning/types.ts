@@ -5,11 +5,22 @@ export const SALES_ACTIVITY_EVENT_TYPES = [
   "email.sent",
   "sms.received",
   "sms.sent",
+  "meeting.completed",
+  "note.created",
+  "deal.created",
   "deal.updated",
+  "deal.stage_changed",
+  "deal.amount_changed",
+  "deal.probability_changed",
+  "deal.close_date_changed",
+  "deal.owner_changed",
+  "deal.pipeline_changed",
+  "deal.won",
+  "deal.lost",
 ] as const;
 
 export type SalesActivityEventType = (typeof SALES_ACTIVITY_EVENT_TYPES)[number];
-export type SalesActivityChannel = "call" | "email" | "sms" | "deal";
+export type SalesActivityChannel = "call" | "email" | "sms" | "meeting" | "note" | "deal";
 export type SalesActivityDirection = "inbound" | "outbound" | "system";
 export type SalesTaskType = "respond_to_client" | "follow_up" | "post_call_next_step" | "deal_review" | "crm_update";
 export type SalesTaskStatus = "pending" | "snoozed" | "skipped" | "done" | "canceled";

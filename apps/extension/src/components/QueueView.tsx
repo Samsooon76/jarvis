@@ -25,6 +25,11 @@ const CloseLostAnalysisView = lazy(async () => {
 
   return { default: module.CloseLostAnalysisView };
 });
+const CallsView = lazy(async () => {
+  const module = await import("./dashboard/calls/CallsView");
+
+  return { default: module.CallsView };
+});
 const DealAnalysisView = lazy(async () => {
   const module = await import("./dashboard/DealAnalysisView");
 
@@ -54,6 +59,11 @@ const LeadsView = lazy(async () => {
   const module = await import("./dashboard/LeadsView");
 
   return { default: module.LeadsView };
+});
+const PlaybookView = lazy(async () => {
+  const module = await import("./dashboard/playbook/PlaybookView");
+
+  return { default: module.PlaybookView };
 });
 const SettingsView = lazy(async () => {
   const module = await import("./dashboard/SettingsView");
@@ -112,6 +122,11 @@ const workspaceCopy = {
     title: "Close Lost Analysis",
     subtitle: "Comprendre pourquoi les deals sont perdus et prioriser les leviers d'amelioration.",
   },
+  calls: {
+    eyebrow: "Call intelligence",
+    title: "Appels",
+    subtitle: "Analyse des appels sales, signaux clients et prochaines actions.",
+  },
   dealAnalysis: {
     eyebrow: "Deal workspace",
     title: "Deal analysis",
@@ -146,6 +161,11 @@ const workspaceCopy = {
     eyebrow: "AE workspace",
     title: "Pipeline inbox",
     subtitle: "La queue priorisee pour savoir qui relancer, pourquoi, et avec quel angle.",
+  },
+  playbook: {
+    eyebrow: "Revenue workspace",
+    title: "Playbook",
+    subtitle: "Le referentiel des plays de vente de l'equipe: declencheurs, reponses recommandees et preuves.",
   },
   settings: {
     eyebrow: "Admin workspace",
@@ -271,6 +291,7 @@ export const QueueView = ({
 
   useEffect(() => {
     void import("./dashboard/close-lost/CloseLostAnalysisView");
+    void import("./dashboard/calls/CallsView");
     void import("./dashboard/forecast/ForecastView");
     void import("./dashboard/LeadsView");
     void import("./dashboard/DealAnalysisView");
@@ -279,6 +300,7 @@ export const QueueView = ({
     void import("./dashboard/WinAnalysisView");
     void import("./dashboard/tasks/TasksView");
     void import("./dashboard/StatsView");
+    void import("./dashboard/playbook/PlaybookView");
   }, []);
 
   const closeLostOwnerIds = useMemo(() => {
@@ -475,6 +497,14 @@ export const QueueView = ({
             />
           ) : null}
 
+          {dashboard.activeView === "calls" ? (
+            <CallsView
+              canViewTeamInsights={canViewTeamForecast}
+              orgId={orgId}
+              role={canViewTeamForecast ? "manager" : "sales"}
+            />
+          ) : null}
+
           {dashboard.activeView === "winAnalysis" ? (
             canViewTeamForecast ? (
               <WinAnalysisView orgId={orgId} />
@@ -519,6 +549,10 @@ export const QueueView = ({
               selectedOwnerId={selectedOwnerId}
               canViewTeamForecast={canViewTeamForecast}
             />
+          ) : null}
+
+          {dashboard.activeView === "playbook" ? (
+            <PlaybookView canEdit={canViewTeamForecast} orgId={orgId} />
           ) : null}
 
           {dashboard.activeView === "leads" ? (

@@ -11,6 +11,7 @@ import {
   parseDurationSeconds,
   readActivityMetadata,
 } from "./shared.js";
+import { acceptNormalizedActivityEvents } from "./normalized-events.js";
 import { scheduleDealReanalysis } from "./reanalysis.js";
 import type {
   HubSpotActivityUpsertRow,
@@ -269,6 +270,12 @@ export const hydrateActivity = async (
 
   await upsertHubSpotActivity(orgId, activity, impactedDealIds, event);
   await upsertCallFromActivity(orgId, activity, impactedDealIds);
+  await acceptNormalizedActivityEvents({
+    orgId,
+    activity,
+    impactedDealIds,
+    sourceEventId: event?.id ?? null,
+  });
   await Promise.all(
     impactedDealIds.map((hubspotDealId) =>
       scheduleDealReanalysis(orgId, hubspotDealId, event?.id ?? null, `Nouvelle interaction HubSpot ${activityType}`),

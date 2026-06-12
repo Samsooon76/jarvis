@@ -57,6 +57,7 @@ export type WorkspaceView =
   | "overview"
   | "leads"
   | "forecast"
+  | "calls"
   | "digest"
   | "coaching"
   | "stats"
@@ -64,7 +65,8 @@ export type WorkspaceView =
   | "settings"
   | "dealAnalysis"
   | "closeLostAnalysis"
-  | "winAnalysis";
+  | "winAnalysis"
+  | "playbook";
 
 export type AiSettings = {
   selectedProviderId: AiProviderId;

@@ -8,6 +8,7 @@ import {
 } from "../pulse.service.js";
 import { filterEligibleRealtimeDealIds, hydrateActivity } from "./activity-ingestion.js";
 import { applyDealPropertyChangeFromWebhook, runClosedDealAutomation } from "./deal-property-sync.js";
+import { acceptNormalizedDealWebhookEvent } from "./normalized-events.js";
 import { purgePrivacyDeletedContact } from "./privacy-purge.js";
 import { runHubSpotDealReanalysis, scheduleDealReanalysis } from "./reanalysis.js";
 import {
@@ -74,6 +75,12 @@ const processHubSpotWebhookEvent = async (eventId: string): Promise<void> => {
       legacyDealId;
 
     if (dealId && (event.subscription_type === "object.creation" || event.subscription_type === "deal.creation")) {
+      await acceptNormalizedDealWebhookEvent({
+        event,
+        hubspotDealId: dealId,
+        lifecycleStatus: null,
+      });
+
       try {
         await generatePulseNotificationsForNewDeal({
           orgId: event.org_id,
@@ -127,6 +134,12 @@ const processHubSpotWebhookEvent = async (eventId: string): Promise<void> => {
         event.property_value,
         event.occurred_at,
       );
+
+      await acceptNormalizedDealWebhookEvent({
+        event,
+        hubspotDealId: eligibleDealId,
+        lifecycleStatus: appliedChange.lifecycleStatus,
+      });
 
       if (isStageChange && appliedChange.lifecycleStatus) {
         await runClosedDealAutomation(event.org_id, eligibleDealId, appliedChange.lifecycleStatus, event.id);

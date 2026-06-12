@@ -4,6 +4,14 @@ export type ApiResponse<T> = {
   error?: string;
 };
 
+export type JsonPrimitive = string | number | boolean | null;
+
+export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
+
+export type JsonObject = {
+  [key: string]: JsonValue;
+};
+
 export type ProspectPriority = "urgent" | "important" | "routine";
 
 export type QueueProspect = {
@@ -31,6 +39,65 @@ export type QueueData = {
   prospects: QueueProspect[];
 };
 
+export type CallSentiment = "positive" | "neutral" | "negative";
+
+export type CallRiskLevel = "low" | "medium" | "high";
+
+export type CallAnalysisConfidence = "low" | "medium" | "high";
+
+export type CallAiActionItem = {
+  title: string;
+  owner: "sales" | "customer" | "manager" | "unknown";
+  dueInDays: number | null;
+  priority: "low" | "medium" | "high";
+};
+
+export type CallAiAnalysis = {
+  summary: string;
+  sentiment: CallSentiment;
+  objections: string[];
+  nextSteps: CallAiActionItem[];
+  risks: string[];
+  opportunities: string[];
+  coachingTips: string[];
+  customerSignals: string[];
+  closeProbabilityDelta: number;
+  riskLevel: CallRiskLevel;
+  confidence: CallAnalysisConfidence;
+};
+
+export type CallAnalysisListItem = {
+  callId: string;
+  orgId: string;
+  userId: string | null;
+  prospectId: string | null;
+  startedAt: string | null;
+  durationSeconds: number | null;
+  sourceKind: "transcript" | "notes" | "summary" | null;
+  analyzedAt: string | null;
+  provider: string | null;
+  model: string | null;
+  summary: string | null;
+  sentiment: CallSentiment | null;
+  riskLevel: CallRiskLevel | null;
+  confidence: CallAnalysisConfidence | null;
+};
+
+export type CallAnalysisDetail = CallAnalysisListItem & {
+  analysis: CallAiAnalysis | null;
+  cached: boolean;
+};
+
+export type CallInsightSummary = {
+  orgId: string;
+  generatedAt: string;
+  totalAnalyzed: number;
+  sentiment: Record<CallSentiment, number>;
+  riskLevel: Record<CallRiskLevel, number>;
+  topObjections: Array<{ label: string; count: number }>;
+  topCoachingTips: Array<{ label: string; count: number }>;
+};
+
 export type PulseEventType =
   | "deal_created"
   | "probability"
@@ -38,7 +105,8 @@ export type PulseEventType =
   | "stage"
   | "close_date"
   | "owner"
-  | "pipeline";
+  | "pipeline"
+  | "playbook_suggestion";
 
 export type PulseNotification = {
   id: string;
@@ -444,6 +512,184 @@ export type WinBenchmarkComparison = {
   reliable: boolean;
   gaps: WinBenchmarkGap[];
 };
+
+export type PlaybookPlayCategory =
+  | "qualification"
+  | "discovery"
+  | "demo"
+  | "objection_handling"
+  | "negotiation"
+  | "closing"
+  | "follow_up";
+
+export const PLAYBOOK_PLAY_CATEGORIES: PlaybookPlayCategory[] = [
+  "qualification",
+  "discovery",
+  "demo",
+  "objection_handling",
+  "negotiation",
+  "closing",
+  "follow_up",
+];
+
+export type PlaybookPlayStatus = "draft" | "active" | "archived";
+
+export type PlaybookPlaySource = "manual" | "ai_suggested";
+
+export type PlaybookEvidenceKind = "call" | "deal" | "analysis";
+
+export type PlaybookPlayEvidence = {
+  id: string;
+  kind: PlaybookEvidenceKind;
+  refId: string;
+  note: string | null;
+  createdAt: string;
+};
+
+export type PlaybookPlay = {
+  id: string;
+  playbookId: string;
+  category: PlaybookPlayCategory;
+  title: string;
+  // "Quand le prospect dit/fait X" — le declencheur du play.
+  triggerDescription: string;
+  recommendedResponse: string;
+  status: PlaybookPlayStatus;
+  source: PlaybookPlaySource;
+  position: number;
+  version: number;
+  evidence: PlaybookPlayEvidence[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PlaybookStatus = "active" | "archived";
+
+export type Playbook = {
+  id: string;
+  orgId: string;
+  name: string;
+  description: string | null;
+  status: PlaybookStatus;
+  createdBy: string | null;
+  playCount: number;
+  activePlayCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PlaybookDetail = Playbook & {
+  plays: PlaybookPlay[];
+};
+
+export type PlaybookPlayInput = {
+  category: PlaybookPlayCategory;
+  title: string;
+  triggerDescription: string;
+  recommendedResponse: string;
+  status?: PlaybookPlayStatus;
+  evidence?: Array<{ kind: PlaybookEvidenceKind; refId: string; note?: string | null }>;
+};
+
+export type PlaybookDistributionContext = {
+  orgId: string;
+  playbookId: string | null;
+  prospectId: string | null;
+  hubspotDealId: string | null;
+  dealStage: string | null;
+  dealName: string | null;
+  prospectName: string | null;
+  company: string | null;
+  matchedText: string;
+};
+
+export type DistributedPlaybookPlay = PlaybookPlay & {
+  relevanceScore: number;
+  matchReasons: string[];
+};
+
+export type PlaybookDistribution = {
+  generatedAt: string;
+  context: PlaybookDistributionContext;
+  plays: DistributedPlaybookPlay[];
+};
+
+export type PlaybookSuggestionKind = "new_play" | "update_play" | "retire_play";
+
+export type PlaybookSuggestionStatus = "pending" | "accepted" | "rejected";
+
+export type PlaybookSuggestion = {
+  id: string;
+  orgId: string;
+  playbookId: string;
+  kind: PlaybookSuggestionKind;
+  category: PlaybookPlayCategory;
+  title: string;
+  triggerDescription: string;
+  recommendedResponse: string;
+  payload: JsonObject;
+  rationale: string;
+  evidence: Array<{ title: string; sourceId: string; quote?: string | null }>;
+  status: PlaybookSuggestionStatus;
+  createdAt: string;
+  resolvedAt: string | null;
+  resolvedBy: string | null;
+};
+
+export type PlaybookSuggestionGenerationResult = {
+  generatedCount: number;
+  suggestions: PlaybookSuggestion[];
+};
+
+export type PlaybookDriftRunResult = {
+  playbookId: string;
+  scannedPlayCount: number;
+  evidenceCount: number;
+  candidateCount: number;
+  generatedCount: number;
+  skippedCooldownCount: number;
+  suggestions: PlaybookSuggestion[];
+};
+
+export type PlaybookAdherencePlayResult = {
+  playId: string;
+  title: string;
+  category: PlaybookPlayCategory;
+  triggerMatched: boolean;
+  responseMatched: boolean;
+  triggerKeywords: string[];
+  responseKeywords: string[];
+  evidenceSnippets: string[];
+  status: "matched" | "missing_opportunity" | "no_signal";
+};
+
+export type PlaybookAdherenceResult = {
+  id: string | null;
+  orgId: string;
+  playbookId: string;
+  callId: string;
+  score: number;
+  scannedPlayCount: number;
+  matchedPlayCount: number;
+  missingOpportunityCount: number;
+  matchedPlays: PlaybookAdherencePlayResult[];
+  missingOpportunities: PlaybookAdherencePlayResult[];
+  generatedAt: string;
+};
+
+export type PlaybookSuggestionList = {
+  suggestions: PlaybookSuggestion[];
+};
+
+export type PlaybookSuggestionResolution = {
+  suggestion: PlaybookSuggestion;
+};
+
+export type PlaybookSuggestionListResponse = ApiResponse<PlaybookSuggestionList>;
+
+export type PlaybookSuggestionResponse = ApiResponse<PlaybookSuggestion>;
+
+export type PlaybookSuggestionResolutionResponse = ApiResponse<PlaybookSuggestionResolution>;
 
 export type WinAnalysisOverview = {
   orgId: string;

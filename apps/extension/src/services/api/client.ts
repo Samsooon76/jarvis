@@ -186,6 +186,23 @@ export const postJson = async <T>(
   return parseApiResponse<T>(response);
 };
 
+export const patchJson = async <T>(
+  path: string,
+  body: unknown,
+  options: ApiRequestOptions = {},
+): Promise<T> => {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: "PATCH",
+    headers: buildApiHeaders({
+      "Content-Type": "application/json",
+    }),
+    body: JSON.stringify(body),
+    signal: options.signal,
+  });
+
+  return parseApiResponse<T>(response);
+};
+
 export const putJson = async <T>(
   path: string,
   body: unknown,

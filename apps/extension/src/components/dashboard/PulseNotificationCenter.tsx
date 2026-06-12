@@ -13,6 +13,7 @@ const eventTypeLabels: Record<PulseEventType, string> = {
   close_date: "Date de closing",
   owner: "Owner",
   pipeline: "Pipeline",
+  playbook_suggestion: "Playbook",
 };
 
 const pulseEventFilters = Object.entries(eventTypeLabels) as Array<[PulseEventType, string]>;

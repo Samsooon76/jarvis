@@ -1,0 +1,342 @@
+/* Vue Playbook: referentiel des plays de vente par categorie. */
+
+.playbook-view {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.playbook-error {
+  background: rgba(255, 91, 91, 0.12);
+  border: 1px solid rgba(255, 91, 91, 0.4);
+  border-radius: 8px;
+  color: #ff5b5b;
+  font-size: 13px;
+  margin: 0;
+  padding: 8px 12px;
+}
+
+.playbook-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 480px;
+}
+
+.playbook-empty p {
+  color: var(--text-muted, #8b93a7);
+  font-size: 13px;
+  margin: 0;
+}
+
+.playbook-create-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.playbook-create-row input {
+  flex: 1;
+}
+
+.playbook-header {
+  align-items: flex-start;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.playbook-header h3 {
+  margin: 0;
+}
+
+.playbook-header p {
+  color: var(--text-muted, #8b93a7);
+  font-size: 13px;
+  margin: 4px 0 0;
+}
+
+.playbook-header small {
+  color: var(--text-muted, #8b93a7);
+  font-size: 12px;
+}
+
+.playbook-header-actions {
+  align-items: center;
+  display: flex;
+  flex-shrink: 0;
+  gap: 12px;
+}
+
+.playbook-tabs {
+  border-bottom: 1px solid rgba(139, 147, 167, 0.25);
+  display: flex;
+  gap: 4px;
+}
+
+.playbook-tabs button {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted, #8b93a7);
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  font-size: 13px;
+  gap: 6px;
+  padding: 8px 10px;
+}
+
+.playbook-tabs button.active {
+  border-bottom-color: var(--accent, #26be67);
+  color: inherit;
+}
+
+.playbook-tabs span {
+  background: rgba(38, 190, 103, 0.16);
+  border-radius: 999px;
+  color: #26be67;
+  font-size: 11px;
+  padding: 1px 6px;
+}
+
+.playbook-toggle {
+  align-items: center;
+  color: var(--text-muted, #8b93a7);
+  display: flex;
+  font-size: 12px;
+  gap: 6px;
+}
+
+.playbook-category h4 {
+  border-bottom: 1px solid rgba(139, 147, 167, 0.25);
+  margin: 0 0 10px;
+  padding-bottom: 6px;
+}
+
+.playbook-play-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.playbook-play {
+  border: 1px solid rgba(139, 147, 167, 0.25);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+}
+
+.playbook-play-archived {
+  opacity: 0.55;
+}
+
+.playbook-play header {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.playbook-play-meta {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+}
+
+.playbook-badge {
+  background: rgba(139, 147, 167, 0.18);
+  border-radius: 999px;
+  color: var(--text-muted, #8b93a7);
+  font-size: 11px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+
+.playbook-badge-active {
+  background: rgba(38, 190, 103, 0.16);
+  color: #26be67;
+}
+
+.playbook-badge-draft {
+  background: rgba(255, 184, 79, 0.16);
+  color: #ffb84f;
+}
+
+.playbook-badge-ai {
+  background: rgba(108, 92, 231, 0.16);
+  color: #8f7ff7;
+}
+
+.playbook-play-trigger,
+.playbook-play-response,
+.playbook-play-evidence {
+  font-size: 13px;
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.playbook-play-trigger em {
+  color: var(--text-muted, #8b93a7);
+  font-style: normal;
+  font-weight: 600;
+}
+
+.playbook-play-evidence {
+  color: var(--text-muted, #8b93a7);
+  font-size: 12px;
+}
+
+.playbook-play-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.playbook-suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.playbook-suggestions-head {
+  align-items: flex-start;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.playbook-suggestions-head h4 {
+  margin: 0;
+}
+
+.playbook-suggestions-head p {
+  color: var(--text-muted, #8b93a7);
+  font-size: 13px;
+  margin: 4px 0 0;
+}
+
+.playbook-suggestion-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.playbook-suggestion-card {
+  border: 1px solid rgba(108, 92, 231, 0.35);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+}
+
+.playbook-suggestion-card header {
+  align-items: flex-start;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.playbook-suggestion-card header div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.playbook-suggestion-card small,
+.playbook-suggestion-rationale,
+.playbook-suggestion-evidence {
+  color: var(--text-muted, #8b93a7);
+  font-size: 12px;
+}
+
+.playbook-suggestion-rationale {
+  margin: 0;
+}
+
+.playbook-suggestion-evidence {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.playbook-suggestion-evidence ul {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.playbook-suggestion-evidence li {
+  border-left: 2px solid rgba(139, 147, 167, 0.25);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 8px;
+}
+
+.playbook-suggestion-evidence q {
+  color: inherit;
+  font-style: italic;
+}
+
+.playbook-form {
+  border: 1px dashed rgba(139, 147, 167, 0.4);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+}
+
+.playbook-form label {
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  font-weight: 600;
+  gap: 4px;
+}
+
+.playbook-form input,
+.playbook-form select,
+.playbook-form textarea {
+  font: inherit;
+  font-weight: 400;
+}
+
+.playbook-form-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.playbook-button-primary,
+.playbook-button-secondary {
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 6px 14px;
+}
+
+.playbook-button-primary {
+  background: var(--accent, #26be67);
+  border: 1px solid transparent;
+  color: #fff;
+}
+
+.playbook-button-secondary {
+  background: transparent;
+  border: 1px solid rgba(139, 147, 167, 0.4);
+  color: inherit;
+}
+
+.playbook-button-primary:disabled,
+.playbook-button-secondary:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}

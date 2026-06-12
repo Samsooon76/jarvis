@@ -31,6 +31,13 @@ export type {
   WinBenchmark,
   WinBenchmarkComparison,
   WinBenchmarkGap,
+  Playbook,
+  PlaybookDetail,
+  PlaybookPlay,
+  PlaybookPlayCategory,
+  PlaybookPlayInput,
+  PlaybookPlayStatus,
+  PlaybookStatus,
 } from "@jarvis/shared";
 
 export { registerCacheClearer, clearApiResponseCaches } from "./api/cache";
@@ -45,3 +52,5 @@ export * from "./api/closeLost";
 export * from "./api/stats";
 export * from "./api/manager";
 export * from "./api/pulse";
+export * from "./api/playbook";
+export * from "./api/calls";
