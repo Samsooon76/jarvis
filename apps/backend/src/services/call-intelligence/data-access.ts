@@ -10,6 +10,7 @@ type CallRow = {
   org_id: string;
   user_id: string | null;
   prospect_id: string | null;
+  external_call_id: string | null;
   direction: string;
   status: string | null;
   duration_seconds: number | null;
@@ -24,6 +25,15 @@ type ProspectNoteRow = {
   next_action: string | null;
   name: string;
   company: string;
+  deal_stage: string | null;
+};
+
+type HubSpotCallActivityRow = {
+  title: string | null;
+  body: string | null;
+  direction: string | null;
+  status: string | null;
+  disposition: string | null;
 };
 
 export type CallAnalysisListItem = {
@@ -75,18 +85,96 @@ const ensureOwnerScope = (auth: AuthContext, call: Pick<CallRow, "user_id">): vo
   }
 };
 
-const buildFallbackNotes = (call: CallRow, prospect: ProspectNoteRow | null): string | null => {
-  const parts = [
-    call.ai_summary ? `Resume IA existant: ${call.ai_summary}` : null,
-    prospect?.ai_summary ? `Resume prospect: ${prospect.ai_summary}` : null,
-    prospect?.next_action ? `Prochaine action: ${prospect.next_action}` : null,
-  ].filter((part): part is string => Boolean(part?.trim()));
+const formatCallDuration = (seconds: number | null): string | null => {
+  if (!seconds || seconds <= 0) {
+    return null;
+  }
 
-  return parts.length > 0 ? parts.join("\n") : null;
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+
+  return minutes > 0 ? `${minutes} min ${remainder} s` : `${remainder} s`;
 };
 
-const mapCallSource = (call: CallRow, prospect: ProspectNoteRow | null): CallSource => {
-  const fallbackNotes = buildFallbackNotes(call, prospect);
+const buildCallMetadataLine = (
+  call: CallRow,
+  prospect: ProspectNoteRow | null,
+  activity: HubSpotCallActivityRow | null,
+): string => {
+  const direction = call.direction === "inbound" ? "entrant" : "sortant";
+  const duration = formatCallDuration(call.duration_seconds);
+  const date = call.started_at
+    ? new Date(call.started_at).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })
+    : null;
+  const prospectLabel = prospect ? [prospect.name, prospect.company].filter(Boolean).join(" — ") : null;
+
+  return [
+    prospectLabel ? `Contexte: ${prospectLabel}` : null,
+    prospect?.deal_stage ? `Etape deal: ${prospect.deal_stage}` : null,
+    `Appel ${direction}`,
+    duration ? `duree ${duration}` : null,
+    date ? `le ${date}` : null,
+    call.status ? `statut ${call.status}` : null,
+    activity?.status?.trim() ? `statut HubSpot ${activity.status.trim()}` : null,
+  ]
+    .filter(Boolean)
+    .join(", ")
+    .concat(".");
+};
+
+const buildFallbackNotes = (
+  call: CallRow,
+  prospect: ProspectNoteRow | null,
+  activity: HubSpotCallActivityRow | null,
+): string => {
+  const parts = [
+    activity?.body?.trim() ? activity.body.trim() : null,
+    activity?.title?.trim() ? `Titre: ${activity.title.trim()}` : null,
+    activity?.disposition?.trim() ? `Disposition: ${activity.disposition.trim()}` : null,
+    call.ai_summary?.trim() ? `Resume IA: ${call.ai_summary.trim()}` : null,
+    prospect?.ai_summary?.trim() ? `Resume prospect: ${prospect.ai_summary.trim()}` : null,
+    prospect?.next_action?.trim() ? `Prochaine action: ${prospect.next_action.trim()}` : null,
+    buildCallMetadataLine(call, prospect, activity),
+  ].filter((part): part is string => Boolean(part?.trim()));
+
+  return parts.join("\n");
+};
+
+const loadHubSpotCallActivity = async (
+  orgId: string,
+  externalCallId: string | null,
+): Promise<HubSpotCallActivityRow | null> => {
+  if (!externalCallId?.startsWith("hubspot:")) {
+    return null;
+  }
+
+  const hubspotActivityId = externalCallId.slice("hubspot:".length);
+
+  if (!hubspotActivityId) {
+    return null;
+  }
+
+  const { data, error } = await getSupabaseAdmin()
+    .from("hubspot_activities")
+    .select("title, body, direction, status, disposition")
+    .eq("org_id", orgId)
+    .eq("activity_type", "call")
+    .eq("hubspot_activity_id", hubspotActivityId)
+    .maybeSingle();
+
+  if (error) {
+    return null;
+  }
+
+  return data as HubSpotCallActivityRow | null;
+};
+
+const mapCallSource = (
+  call: CallRow,
+  prospect: ProspectNoteRow | null,
+  activity: HubSpotCallActivityRow | null,
+): CallSource => {
+  const fallbackNotes = buildFallbackNotes(call, prospect, activity);
   const transcript = call.transcript?.trim() || null;
   const sourceText = transcript ?? fallbackNotes ?? call.ai_summary?.trim() ?? "";
   const sourceKind: CallSource["sourceKind"] = transcript ? "transcript" : fallbackNotes ? "notes" : "summary";
@@ -111,7 +199,9 @@ export const loadCallSource = async (callId: string, auth: AuthContext): Promise
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("calls")
-    .select("id, org_id, user_id, prospect_id, direction, status, duration_seconds, started_at, transcript, ai_summary, created_at")
+    .select(
+      "id, org_id, user_id, prospect_id, external_call_id, direction, status, duration_seconds, started_at, transcript, ai_summary, created_at",
+    )
     .eq("id", callId)
     .maybeSingle();
 
@@ -133,7 +223,7 @@ export const loadCallSource = async (callId: string, auth: AuthContext): Promise
   if (call.prospect_id) {
     const { data: prospectData, error: prospectError } = await supabase
       .from("prospects")
-      .select("ai_summary, next_action, name, company")
+      .select("ai_summary, next_action, name, company, deal_stage")
       .eq("id", call.prospect_id)
       .maybeSingle();
 
@@ -144,7 +234,8 @@ export const loadCallSource = async (callId: string, auth: AuthContext): Promise
     prospect = prospectData as ProspectNoteRow | null;
   }
 
-  const source = mapCallSource(call, prospect);
+  const activity = await loadHubSpotCallActivity(call.org_id, call.external_call_id);
+  const source = mapCallSource(call, prospect, activity);
 
   if (!source.sourceText.trim()) {
     throw new ValidationError("Aucun transcript, resume ou notes exploitables pour ce call.");

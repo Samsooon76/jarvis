@@ -218,6 +218,16 @@ const loadProspectForActivity = async (
   return data as ProspectLookupRow | null;
 };
 
+const buildCallSummaryFromActivity = (activity: HubSpotActivitySnapshot): string | null => {
+  const parts = [
+    activity.body?.trim() || null,
+    activity.title?.trim() || null,
+    readActivityMetadata(activity, "disposition"),
+  ].filter((part): part is string => Boolean(part?.trim()));
+
+  return parts.length > 0 ? parts.join("\n") : null;
+};
+
 const upsertCallFromActivity = async (
   orgId: string,
   activity: HubSpotActivitySnapshot,
@@ -241,7 +251,7 @@ const upsertCallFromActivity = async (
       started_at: activity.occurredAt,
       ended_at: null,
       transcript: null,
-      ai_summary: null,
+      ai_summary: buildCallSummaryFromActivity(activity),
     },
     {
       onConflict: "org_id,external_call_id",
