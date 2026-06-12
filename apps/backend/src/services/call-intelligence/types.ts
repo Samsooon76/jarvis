@@ -38,6 +38,8 @@ export type CallSource = {
   fallbackNotes: string | null;
   sourceText: string;
   sourceKind: "transcript" | "notes" | "summary";
+  // Ids des entrees calls fusionnees (l'appel lui-meme + ses doublons Onoff/Modjo).
+  memberCallIds: string[];
 };
 
 export type CallAnalysisRow = {

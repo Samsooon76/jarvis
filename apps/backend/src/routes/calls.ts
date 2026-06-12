@@ -29,7 +29,18 @@ type CallsQuery = {
   orgId?: string;
   userId?: string;
   limit?: string;
+  period?: string;
+  type?: string;
 };
+
+const VALID_PERIODS = new Set(["7d", "30d", "90d", "all"]);
+const VALID_DIRECTIONS = new Set(["inbound", "outbound", "all"]);
+
+const parsePeriod = (value: string | undefined): "7d" | "30d" | "90d" | "all" | undefined =>
+  value && VALID_PERIODS.has(value) ? (value as "7d" | "30d" | "90d" | "all") : undefined;
+
+const parseDirection = (value: string | undefined): "inbound" | "outbound" | "all" | undefined =>
+  value && VALID_DIRECTIONS.has(value) ? (value as "inbound" | "outbound" | "all") : undefined;
 
 type AnalyzeCallBody = {
   refresh?: boolean;
@@ -247,6 +258,8 @@ export const registerCallRoutes = async (app: FastifyInstance): Promise<void> =>
           orgId: request.query.orgId,
           userId: request.query.userId,
           limit: parseLimit(request.query.limit, 50, 200),
+          period: parsePeriod(request.query.period),
+          direction: parseDirection(request.query.type),
         });
 
         return reply.send({ success: true, data: calls });
@@ -261,12 +274,12 @@ export const registerCallRoutes = async (app: FastifyInstance): Promise<void> =>
     },
   );
 
-  app.get<{ Querystring: Pick<CallsQuery, "orgId">; Reply: ApiResponse<CallInsightSummary> }>(
+  app.get<{ Querystring: Pick<CallsQuery, "orgId" | "period">; Reply: ApiResponse<CallInsightSummary> }>(
     "/api/calls/insights",
     async (request, reply) => {
       try {
         const auth = requireAuth(request);
-        const insights = await getCallInsights(auth, request.query.orgId);
+        const insights = await getCallInsights(auth, request.query.orgId, parsePeriod(request.query.period));
 
         return reply.send({ success: true, data: insights });
       } catch (error) {

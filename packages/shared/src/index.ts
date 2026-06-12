@@ -66,13 +66,24 @@ export type CallAiAnalysis = {
   confidence: CallAnalysisConfidence;
 };
 
+export type CallDirection = "inbound" | "outbound";
+
+export type CallPeriod = "7d" | "30d" | "90d" | "all";
+
 export type CallAnalysisListItem = {
   callId: string;
   orgId: string;
   userId: string | null;
   prospectId: string | null;
+  contactName: string | null;
+  companyName: string | null;
+  ownerName: string | null;
+  direction: CallDirection;
+  status: string | null;
   startedAt: string | null;
   durationSeconds: number | null;
+  // Nombre d'entrees HubSpot fusionnees dans cette carte (Onoff + Modjo loggent le meme appel).
+  mergedCallCount: number;
   sourceKind: "transcript" | "notes" | "summary" | null;
   analyzedAt: string | null;
   provider: string | null;
@@ -85,12 +96,18 @@ export type CallAnalysisListItem = {
 
 export type CallAnalysisDetail = CallAnalysisListItem & {
   analysis: CallAiAnalysis | null;
+  // Contenu source complet (transcript ou notes HubSpot nettoyees du HTML).
+  sourceText: string | null;
   cached: boolean;
 };
 
 export type CallInsightSummary = {
   orgId: string;
   generatedAt: string;
+  // Volumes calcules sur la table calls (periode demandee), independants des analyses.
+  totalCalls: number;
+  connectedCalls: number;
+  averageDurationSeconds: number;
   totalAnalyzed: number;
   sentiment: Record<CallSentiment, number>;
   riskLevel: Record<CallRiskLevel, number>;

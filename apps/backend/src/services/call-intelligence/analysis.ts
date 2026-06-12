@@ -45,6 +45,43 @@ const NEXT_STEP_PATTERNS: Array<{ title: string; patterns: string[]; priority: C
   { title: "Relancer le prospect avec un angle valeur concret", patterns: ["relance", "rappeler", "plus tard"], priority: "medium" },
 ];
 
+// Lignes de plomberie Onoff/Modjo/HubSpot sans valeur conversationnelle:
+// elles polluent le resume et les signaux client si on les laisse passer.
+const BOILERPLATE_LINE_PATTERNS: RegExp[] = [
+  /^appel (sortant|entrant)/i,
+  /^destinataire de l'appel/i,
+  /^date\s*:/i,
+  /^dur[eé]e\s*:?/i,
+  /^duration\s*:/i,
+  /^titre\s*:/i,
+  /^disposition\s*:/i,
+  /^contexte\s*:/i,
+  /^etape deal\s*:/i,
+  /^resume ia\s*:/i,
+  /^resume prospect\s*:/i,
+  /^prochaine action\s*:/i,
+  /^notes\s*:/i,
+  /^\(ajoutez vos notes ici\)/i,
+  /^would like to go deeper/i,
+  /^this call on modjo/i,
+  /^tags on this call/i,
+  /^statut (hubspot )?/i,
+];
+
+export const isBoilerplateLine = (line: string): boolean => {
+  const cleaned = line.trim();
+
+  return cleaned.length === 0 || BOILERPLATE_LINE_PATTERNS.some((pattern) => pattern.test(cleaned));
+};
+
+// Ne garde que les lignes a valeur conversationnelle (resume Modjo, transcript, notes).
+export const extractConversationalText = (text: string): string =>
+  text
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter((line) => !isBoilerplateLine(line))
+    .join("\n");
+
 const compact = (value: string, maxLength: number): string => {
   const compacted = value.replace(/\s+/g, " ").trim();
 
@@ -69,8 +106,11 @@ export const buildCallInputHash = (source: CallSource): string =>
     .digest("hex");
 
 export const analyzeCallDeterministically = (source: CallSource): CallAiAnalysis => {
-  const text = source.sourceText;
-  const normalized = text
+  // Le resume et les signaux client se construisent sur le contenu conversationnel
+  // uniquement; le scoring de patterns garde le texte complet (plus de matiere).
+  const conversational = extractConversationalText(source.sourceText);
+  const text = conversational || source.sourceText;
+  const normalized = source.sourceText
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase();
@@ -101,7 +141,9 @@ export const analyzeCallDeterministically = (source: CallSource): CallAiAnalysis
   const riskLevel = negativeScore >= 3 || objections.length >= 3 ? "high" : negativeScore > positiveScore || objections.length >= 2 ? "medium" : "low";
 
   return {
-    summary: sentences[0] ?? "Call disponible mais contenu insuffisant pour produire un resume fiable.",
+    summary: conversational
+      ? sentences[0] ?? "Call disponible mais contenu insuffisant pour produire un resume fiable."
+      : "Pas de contenu conversationnel pour cet appel (log telephonique uniquement).",
     sentiment,
     objections,
     nextSteps,
@@ -123,9 +165,9 @@ export const analyzeCallDeterministically = (source: CallSource): CallAiAnalysis
       objections.length > 0
         ? ["Reformuler l'objection principale et obtenir un critere de decision mesurable."]
         : ["Ajouter dans le CRM une prochaine action datee et verifiable."],
-    customerSignals: sentences.slice(0, 4),
+    customerSignals: conversational ? sentences.slice(1, 5) : [],
     closeProbabilityDelta,
     riskLevel,
-    confidence: text.length >= 1200 ? "high" : text.length >= 350 ? "medium" : "low",
+    confidence: conversational.length >= 1200 ? "high" : conversational.length >= 350 ? "medium" : "low",
   };
 };

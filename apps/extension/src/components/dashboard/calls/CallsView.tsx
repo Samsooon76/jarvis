@@ -1,6 +1,7 @@
-import { RefreshCw, Sparkles } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { PhoneCall, RefreshCw, Sparkles } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
+  analyzeSingleCall,
   fetchCallDetail,
   fetchCallInsights,
   fetchCalls,
@@ -10,6 +11,7 @@ import {
   type CallInsights,
   type CallListItem,
   type CallPeriodFilter,
+  type CallSentiment,
   type CallTypeFilter,
 } from "../../../services/api";
 import "../../styles/calls.css";
@@ -68,66 +70,113 @@ const outcomeLabels: Record<CallListItem["outcome"], string> = {
   unknown: "Inconnu",
 };
 
+const sentimentLabels: Record<CallSentiment, string> = {
+  positive: "Positif",
+  neutral: "Neutre",
+  negative: "Negatif",
+  mixed: "Mitige",
+};
+
+const sourceKindLabels: Record<NonNullable<CallDetail["sourceKind"]>, string> = {
+  transcript: "Transcript",
+  notes: "Notes HubSpot",
+  summary: "Resume",
+};
+
 const getCallTitle = (call: CallListItem): string =>
-  call.dealName ?? call.companyName ?? call.contactName ?? `Appel ${call.id.slice(0, 8)}`;
+  call.companyName ?? call.contactName ?? call.dealName ?? `Appel ${call.id.slice(0, 8)}`;
 
-const getEmptyDetail = (call: CallListItem | null): string =>
-  call ? "Chargement du detail de l'appel..." : "Selectionnez un appel pour voir le resume, les signaux et les actions.";
-
-const InsightMetric = ({ label, value }: { label: string; value: string | number }) => (
-  <article className="calls-metric">
+const KpiCard = ({ label, value, caption }: { label: string; value: string | number; caption: string }) => (
+  <article className="calls-kpi-card">
+    <span className="calls-eyebrow">{label}</span>
     <strong>{value}</strong>
-    <span>{label}</span>
+    <small>{caption}</small>
   </article>
 );
 
-const CallsInsightsPanel = ({ insights }: { insights: CallInsights | null }) => (
-  <aside className="calls-insights-panel">
-    <div className="calls-panel-title">
-      <span>Insights agreges</span>
-      <small>{insights ? `Mis a jour ${formatDateTime(insights.generatedAt)}` : "En attente de donnees"}</small>
-    </div>
+const formatAverageDuration = (seconds: number): string => {
+  if (seconds <= 0) {
+    return "--";
+  }
 
-    <div className="calls-metric-grid">
-      <InsightMetric label="Appels" value={insights?.totalCalls ?? "--"} />
-      <InsightMetric label="Analyses" value={insights?.analyzedCalls ?? "--"} />
-      <InsightMetric label="Connectes" value={insights?.connectedCalls ?? "--"} />
-      <InsightMetric label="Sentiment +" value={insights ? `${insights.positiveSentimentRate}%` : "--"} />
-    </div>
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
 
-    <div className="calls-insight-section">
-      <strong>Objections frequentes</strong>
-      {(insights?.topObjections ?? []).length > 0 ? (
-        <ul>
-          {insights?.topObjections.map((item) => (
-            <li key={item.label}>
-              <span>{item.label}</span>
-              <small>{item.count}</small>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p>Aucune objection consolidee.</p>
-      )}
-    </div>
+  return minutes > 0 ? `${minutes}m ${String(remainder).padStart(2, "0")}s` : `${remainder}s`;
+};
 
-    <div className="calls-insight-section">
-      <strong>Themes de coaching</strong>
-      {(insights?.coachingThemes ?? []).length > 0 ? (
-        <ul>
-          {insights?.coachingThemes.map((item) => (
-            <li key={item.label}>
-              <span>{item.label}</span>
-              <small>{item.count}</small>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p>Aucun theme detecte.</p>
-      )}
+const CallsKpiRow = ({ insights }: { insights: CallInsights | null }) => {
+  const connectedRate =
+    insights && insights.totalCalls > 0 ? Math.round((insights.connectedCalls / insights.totalCalls) * 100) : null;
+  const analyzedRate =
+    insights && insights.totalCalls > 0 ? Math.round((insights.analyzedCalls / insights.totalCalls) * 100) : null;
+
+  return (
+    <div className="calls-kpi-row">
+      <KpiCard caption="sur la periode" label="Appels" value={insights?.totalCalls ?? "--"} />
+      <KpiCard
+        caption={connectedRate !== null ? `${connectedRate}% du total` : "appels >= 45 s"}
+        label="Connectes"
+        value={insights?.connectedCalls ?? "--"}
+      />
+      <KpiCard
+        caption="par appel connecte ou non"
+        label="Duree moyenne"
+        value={insights ? formatAverageDuration(insights.averageDurationSeconds) : "--"}
+      />
+      <KpiCard
+        caption={analyzedRate !== null ? `${analyzedRate}% du total` : "via Jarvis"}
+        label="Analyses"
+        value={insights?.analyzedCalls ?? "--"}
+      />
+      <KpiCard
+        caption="des appels analyses"
+        label="Sentiment +"
+        value={insights ? `${insights.positiveSentimentRate}%` : "--"}
+      />
     </div>
-  </aside>
+  );
+};
+
+const ThemeChips = ({
+  emptyLabel,
+  items,
+  label,
+}: {
+  emptyLabel: string;
+  items: Array<{ label: string; count: number }>;
+  label: string;
+}) => (
+  <div className="calls-theme-card">
+    <span className="calls-eyebrow">{label}</span>
+    {items.length > 0 ? (
+      <div className="calls-theme-chips">
+        {items.slice(0, 5).map((item) => (
+          <span className="calls-theme-chip" key={item.label} title={item.label}>
+            {item.label}
+            <small>{item.count}</small>
+          </span>
+        ))}
+      </div>
+    ) : (
+      <p>{emptyLabel}</p>
+    )}
+  </div>
 );
+
+const CallsThemesRow = ({ insights }: { insights: CallInsights | null }) => (
+  <div className="calls-themes-row">
+    <ThemeChips
+      emptyLabel="Aucune objection consolidee."
+      items={insights?.topObjections ?? []}
+      label="Objections frequentes"
+    />
+    <ThemeChips emptyLabel="Aucun theme detecte." items={insights?.coachingThemes ?? []} label="Themes de coaching" />
+  </div>
+);
+
+const SentimentPill = ({ sentiment }: { sentiment: CallSentiment | null }) =>
+  sentiment ? <span className={`calls-pill calls-pill-${sentiment}`}>{sentimentLabels[sentiment]}</span> : null;
 
 const CallsList = ({
   calls,
@@ -141,30 +190,42 @@ const CallsList = ({
   selectedCallId: string | null;
 }) => (
   <section className="calls-list-panel" aria-busy={isLoading}>
-    {isLoading && calls.length === 0 ? <p className="calls-empty">Chargement des appels...</p> : null}
-    {!isLoading && calls.length === 0 ? <p className="calls-empty">Aucun appel trouve sur cette periode.</p> : null}
+    {isLoading && calls.length === 0 ? <p className="ae-empty">Chargement des appels...</p> : null}
+    {!isLoading && calls.length === 0 ? <p className="ae-empty">Aucun appel trouve sur cette periode.</p> : null}
     {calls.map((call) => (
       <button
-        className={selectedCallId === call.id ? "calls-list-item active" : "calls-list-item"}
+        className={selectedCallId === call.id ? "calls-list-item selected" : "calls-list-item"}
         key={call.id}
         onClick={() => onSelectCall(call)}
         type="button"
       >
-        <span className="calls-list-main">
-          <strong>{getCallTitle(call)}</strong>
-          <small>{[call.contactName, call.ownerName].filter(Boolean).join(" - ") || "Contact non renseigne"}</small>
-        </span>
-        <span className="calls-list-meta">
-          <small>{formatDateTime(call.startedAt)}</small>
-          <small>{formatDuration(call.durationSeconds)}</small>
+        <span className="calls-list-head">
+          <span className="calls-list-main">
+            <strong>{getCallTitle(call)}</strong>
+            <small>{[call.contactName, call.ownerName].filter(Boolean).join(" · ") || "Contact non renseigne"}</small>
+          </span>
+          <span className="calls-list-meta">
+            <small>{formatDateTime(call.startedAt)}</small>
+            <small>{formatDuration(call.durationSeconds)}</small>
+          </span>
         </span>
         <span className="calls-tags">
-          <span>{call.direction === "outbound" ? "Sortant" : "Entrant"}</span>
-          <span>{outcomeLabels[call.outcome]}</span>
-          <span className={`calls-status calls-status-${call.analysisStatus}`}>{statusLabels[call.analysisStatus]}</span>
+          <span className="calls-tag">{call.direction === "outbound" ? "Sortant" : "Entrant"}</span>
+          <span className="calls-tag">{outcomeLabels[call.outcome]}</span>
+          <SentimentPill sentiment={call.analysisStatus === "analyzed" ? call.sentiment : null} />
+          {call.priority === "high" ? <span className="calls-pill calls-pill-risk">Risque eleve</span> : null}
+          <span className={`calls-tag calls-status-${call.analysisStatus}`}>{statusLabels[call.analysisStatus]}</span>
+          {call.mergedCallCount > 1 ? <span className="calls-tag calls-tag-merged">{call.mergedCallCount} logs fusionnes</span> : null}
         </span>
       </button>
     ))}
+  </section>
+);
+
+const DetailSection = ({ label, children }: { label: string; children: ReactNode }) => (
+  <section className="calls-detail-block">
+    <span className="calls-eyebrow">{label}</span>
+    {children}
   </section>
 );
 
@@ -172,70 +233,143 @@ const CallsDetailPanel = ({
   call,
   detail,
   isLoading,
+  isAnalyzingCall,
+  onAnalyzeCall,
   role,
 }: {
   call: CallListItem | null;
   detail: CallDetail | null;
   isLoading: boolean;
+  isAnalyzingCall: boolean;
+  onAnalyzeCall: () => void;
   role: CallActorRole;
 }) => {
-  const selectedDetail = detail ?? call;
+  if (!call) {
+    return (
+      <aside className="calls-detail-panel">
+        <div className="calls-detail-placeholder">
+          <PhoneCall aria-hidden="true" size={20} strokeWidth={1.6} />
+          <p>Selectionnez un appel pour voir le resume, les signaux et les actions.</p>
+        </div>
+      </aside>
+    );
+  }
+
+  const selected = detail ?? call;
+  const analysis = detail?.analysis ?? null;
+  const isAnalyzed = Boolean(analysis);
 
   return (
     <aside className="calls-detail-panel" aria-busy={isLoading}>
-      {!selectedDetail ? <p className="calls-empty">{getEmptyDetail(call)}</p> : null}
-      {selectedDetail ? (
-        <>
-          <div className="calls-panel-title">
-            <span>{getCallTitle(selectedDetail)}</span>
-            <small>{formatDateTime(selectedDetail.startedAt)}</small>
-          </div>
-          <div className="calls-detail-summary">
-            <span>{selectedDetail.companyName ?? "Compte non renseigne"}</span>
-            <span>{selectedDetail.ownerName ?? "Owner non renseigne"}</span>
-            <span>{formatDuration(selectedDetail.durationSeconds)}</span>
-          </div>
-          <section className="calls-detail-block">
-            <strong>Resume</strong>
-            <p>{detail?.analysis?.summary ?? selectedDetail.summary ?? getEmptyDetail(call)}</p>
-          </section>
-          <section className="calls-detail-block">
-            <strong>Next step</strong>
-            <p>{selectedDetail.nextStep ?? "Aucune prochaine action detectee."}</p>
-          </section>
-          <section className="calls-detail-block">
-            <strong>Signaux</strong>
-            <div className="calls-signal-columns">
-              <div>
-                <small>Risques</small>
-                {(selectedDetail.riskSignals.length > 0 ? selectedDetail.riskSignals : detail?.analysis?.risks ?? []).map((signal) => (
-                  <span key={signal}>{signal}</span>
-                ))}
-              </div>
-              <div>
-                <small>Positifs</small>
-                {selectedDetail.positiveSignals.map((signal) => (
-                  <span key={signal}>{signal}</span>
-                ))}
-              </div>
-            </div>
-          </section>
-          {role === "manager" ? (
-            <section className="calls-detail-block">
-              <strong>Coaching manager</strong>
-              {(detail?.analysis?.coachingNotes ?? []).length > 0 ? (
-                detail?.analysis?.coachingNotes.map((note) => <p key={note}>{note}</p>)
-              ) : (
-                <p>Aucun coaching consolide pour cet appel.</p>
-              )}
-            </section>
-          ) : (
-            <section className="calls-detail-block">
-              <strong>Action sales</strong>
-              <p>Reprendre le contexte, confirmer le next step et mettre a jour HubSpot apres l'appel.</p>
-            </section>
-          )}
-        </>
+      <header className="calls-detail-header">
+        <div className="calls-panel-title">
+          <span>{getCallTitle(selected)}</span>
+          <small>
+            {[
+              selected.contactName,
+              selected.ownerName,
+              formatDateTime(selected.startedAt),
+              formatDuration(selected.durationSeconds),
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          </small>
+        </div>
+        <button
+          className="calls-secondary-action"
+          disabled={isAnalyzingCall || isLoading}
+          onClick={onAnalyzeCall}
+          title={isAnalyzed ? "Relancer l'analyse de cet appel" : "Analyser cet appel"}
+          type="button"
+        >
+          {isAnalyzingCall ? <RefreshCw className="calls-spin" size={14} /> : <Sparkles size={14} />}
+          {isAnalyzed ? "Relancer" : "Analyser"}
+        </button>
+      </header>
+
+      <div className="calls-detail-chips">
+        <span className="calls-tag">{selected.direction === "outbound" ? "Sortant" : "Entrant"}</span>
+        <span className="calls-tag">{outcomeLabels[selected.outcome]}</span>
+        <SentimentPill sentiment={analysis ? selected.sentiment : null} />
+        {detail?.sourceKind ? <span className="calls-tag">Source: {sourceKindLabels[detail.sourceKind]}</span> : null}
+        {analysis?.generatedAt ? <span className="calls-tag">Analyse le {formatDateTime(analysis.generatedAt)}</span> : null}
+      </div>
+
+      {isLoading && !detail ? <p className="ae-empty compact">Chargement du detail de l'appel...</p> : null}
+
+      {!isLoading && !isAnalyzed ? (
+        <div className="calls-detail-callout">
+          <p>Cet appel n'a pas encore ete analyse.</p>
+          <small>Lancez l'analyse pour obtenir le resume, les objections et les prochaines actions.</small>
+        </div>
+      ) : null}
+
+      {analysis?.summary ? (
+        <DetailSection label="Resume">
+          <p>{analysis.summary}</p>
+        </DetailSection>
+      ) : null}
+
+      {analysis && analysis.objections.length > 0 ? (
+        <DetailSection label="Objections">
+          <ul className="calls-detail-list">
+            {analysis.objections.map((objection) => (
+              <li key={objection}>{objection}</li>
+            ))}
+          </ul>
+        </DetailSection>
+      ) : null}
+
+      {analysis && analysis.nextSteps.length > 0 ? (
+        <DetailSection label="Prochaines actions">
+          <ul className="calls-detail-list">
+            {analysis.nextSteps.map((step) => (
+              <li key={step}>{step}</li>
+            ))}
+          </ul>
+        </DetailSection>
+      ) : null}
+
+      {analysis && analysis.risks.length > 0 ? (
+        <DetailSection label="Risques">
+          <ul className="calls-detail-list calls-detail-list-risk">
+            {analysis.risks.map((signal) => (
+              <li key={signal}>{signal}</li>
+            ))}
+          </ul>
+        </DetailSection>
+      ) : null}
+
+      {analysis && analysis.customerNeeds.length > 0 ? (
+        <DetailSection label="Points cles du client">
+          <ul className="calls-detail-list">
+            {analysis.customerNeeds.map((signal) => (
+              <li key={signal}>{signal}</li>
+            ))}
+          </ul>
+        </DetailSection>
+      ) : null}
+
+      {analysis ? (
+        role === "manager" ? (
+          <DetailSection label="Coaching manager">
+            {analysis.coachingNotes.length > 0 ? (
+              analysis.coachingNotes.map((note) => <p key={note}>{note}</p>)
+            ) : (
+              <p>Aucun coaching consolide pour cet appel.</p>
+            )}
+          </DetailSection>
+        ) : (
+          <DetailSection label="Action sales">
+            <p>Reprendre le contexte, confirmer le next step et mettre a jour HubSpot apres l'appel.</p>
+          </DetailSection>
+        )
+      ) : null}
+
+      {detail?.transcript ? (
+        <DetailSection label="Contenu de l'appel">
+          <div className="calls-detail-content">{detail.transcript}</div>
+        </DetailSection>
       ) : null}
     </aside>
   );
@@ -251,11 +385,21 @@ export const CallsView = ({ canViewTeamInsights, orgId, role }: CallsViewProps) 
   const [isLoading, setIsLoading] = useState(false);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isAnalyzingCall, setIsAnalyzingCall] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const selectedCallId = selectedCall?.id ?? null;
-  const analyzedCount = useMemo(() => calls.filter((call) => call.analysisStatus === "analyzed").length, [calls]);
+
+  const refreshLists = async () => {
+    const [callsResult, insightsResult] = await Promise.all([
+      fetchCalls(orgId, period, type),
+      fetchCallInsights(orgId, period),
+    ]);
+
+    setCalls(callsResult.calls);
+    setInsights(insightsResult);
+  };
 
   useEffect(() => {
     const abortController = new AbortController();
@@ -332,10 +476,9 @@ export const CallsView = ({ canViewTeamInsights, orgId, role }: CallsViewProps) 
       setMessage(null);
       setError(null);
       const result = await runCallAnalysis(orgId, period);
-      setMessage(`${result.analyzedCount} appel(s) analyse(s), ${result.failedCount} echec(s).`);
-      const [callsResult, insightsResult] = await Promise.all([fetchCalls(orgId, period, type), fetchCallInsights(orgId, period)]);
-      setCalls(callsResult.calls);
-      setInsights(insightsResult);
+
+      setMessage(`${result.analyzedCount} appel(s) analyse(s), ${result.skippedCount} ignore(s), ${result.failedCount} echec(s).`);
+      await refreshLists();
     } catch (analysisError) {
       setError(analysisError instanceof Error ? analysisError.message : "Impossible de lancer l'analyse des appels.");
     } finally {
@@ -343,44 +486,80 @@ export const CallsView = ({ canViewTeamInsights, orgId, role }: CallsViewProps) 
     }
   };
 
+  const handleAnalyzeCall = async () => {
+    if (!selectedCallId) {
+      return;
+    }
+
+    try {
+      setIsAnalyzingCall(true);
+      setError(null);
+      const refreshed = await analyzeSingleCall(orgId, selectedCallId, Boolean(selectedDetail?.analysis));
+
+      setSelectedDetail(refreshed);
+      setCalls((current) =>
+        current.map((call) =>
+          call.id === refreshed.id
+            ? { ...call, analysisStatus: "analyzed", sentiment: refreshed.sentiment, summary: refreshed.summary, priority: refreshed.priority }
+            : call,
+        ),
+      );
+    } catch (analysisError) {
+      setError(analysisError instanceof Error ? analysisError.message : "Impossible d'analyser cet appel.");
+    } finally {
+      setIsAnalyzingCall(false);
+    }
+  };
+
   return (
     <section className="ae-view-panel calls-view" aria-label="Call intelligence">
       <div className="calls-toolbar">
         <div className="calls-filters" aria-label="Filtres appels">
-          {periodOptions.map((option) => (
-            <button
-              className={period === option.id ? "active" : ""}
-              key={option.id}
-              onClick={() => setPeriod(option.id)}
-              type="button"
-            >
-              {option.label}
-            </button>
-          ))}
-          {typeOptions.map((option) => (
-            <button className={type === option.id ? "active" : ""} key={option.id} onClick={() => setType(option.id)} type="button">
-              {option.label}
-            </button>
-          ))}
+          <div className="calls-filter-group" role="group" aria-label="Periode">
+            {periodOptions.map((option) => (
+              <button
+                className={period === option.id ? "active" : ""}
+                key={option.id}
+                onClick={() => setPeriod(option.id)}
+                type="button"
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+          <div className="calls-filter-group" role="group" aria-label="Direction">
+            {typeOptions.map((option) => (
+              <button className={type === option.id ? "active" : ""} key={option.id} onClick={() => setType(option.id)} type="button">
+                {option.label}
+              </button>
+            ))}
+          </div>
         </div>
-        <button className="calls-primary-action" disabled={isAnalyzing} onClick={() => void handleRunAnalysis()} type="button">
-          {isAnalyzing ? <RefreshCw size={16} /> : <Sparkles size={16} />}
-          {role === "manager" ? "Analyser equipe" : "Analyser mes appels"}
-        </button>
+        <div className="calls-toolbar-actions">
+          <span className="calls-tag">{canViewTeamInsights ? "Vue manager" : "Vue sales"}</span>
+          <button className="calls-primary-action" disabled={isAnalyzing} onClick={() => void handleRunAnalysis()} type="button">
+            {isAnalyzing ? <RefreshCw className="calls-spin" size={15} /> : <Sparkles size={15} />}
+            {isAnalyzing ? "Analyse en cours..." : role === "manager" ? "Analyser l'equipe" : "Analyser mes appels"}
+          </button>
+        </div>
       </div>
 
-      <div className="calls-status-row">
-        <span>{calls.length} appel(s)</span>
-        <span>{analyzedCount} analyse(s)</span>
-        {canViewTeamInsights ? <span>Vue manager active</span> : <span>Vue sales active</span>}
-      </div>
+      <CallsKpiRow insights={insights} />
+      <CallsThemesRow insights={insights} />
+
       {message ? <p className="calls-message">{message}</p> : null}
       {error ? <p className="calls-error">{error}</p> : null}
 
       <div className="calls-layout">
         <CallsList calls={calls} isLoading={isLoading} onSelectCall={setSelectedCall} selectedCallId={selectedCallId} />
-        <CallsDetailPanel call={selectedCall} detail={selectedDetail} isLoading={isDetailLoading} role={role} />
-        <CallsInsightsPanel insights={insights} />
+        <CallsDetailPanel
+          call={selectedCall}
+          detail={selectedDetail}
+          isAnalyzingCall={isAnalyzingCall}
+          isLoading={isDetailLoading}
+          onAnalyzeCall={() => void handleAnalyzeCall()}
+          role={role}
+        />
       </div>
     </section>
   );

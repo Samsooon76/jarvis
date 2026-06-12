@@ -6,6 +6,7 @@ import type {
   CallSentiment as BackendCallSentiment,
 } from "@jarvis/shared";
 import { apiPath, getJson, postJson, type ApiRequestOptions } from "./client";
+import { POLL_TIMEOUT_MS, pollDelayMs, wait } from "./cache";
 
 export type CallDirection = "inbound" | "outbound";
 export type CallAnalysisStatus = "analyzed" | "pending" | "failed" | "not_analyzed";
@@ -35,6 +36,7 @@ export type CallListItem = {
   priority: CallPriority | null;
   startedAt: string;
   durationSeconds: number | null;
+  mergedCallCount: number;
   summary: string | null;
   nextStep: string | null;
   riskSignals: string[];
@@ -44,6 +46,7 @@ export type CallListItem = {
 export type CallDetail = CallListItem & {
   recordingUrl: string | null;
   transcript: string | null;
+  sourceKind: "transcript" | "notes" | "summary" | null;
   analysis: {
     generatedAt: string | null;
     provider: string | null;
@@ -101,6 +104,35 @@ type BackfillJobResult = {
   } | null;
 };
 
+// Defense en profondeur: les analyses cachees avant le nettoyage backend peuvent
+// encore contenir du HTML HubSpot (<p>, <br>, entites). On nettoie a l'affichage.
+const stripHtml = (value: string): string =>
+  value
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(?:p|div|li|h[1-6])>/gi, "\n")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\s*\n\s*/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+const cleanText = (value: string | null): string | null => {
+  if (!value) {
+    return value;
+  }
+
+  return stripHtml(value) || null;
+};
+
+const cleanList = (values: string[] | undefined): string[] =>
+  (values ?? []).map((value) => stripHtml(value)).filter(Boolean);
+
 const toStartedAt = (value: string | null): string => value ?? new Date(0).toISOString();
 
 const toAnalysisStatus = (call: CallAnalysisListItem): CallAnalysisStatus =>
@@ -126,19 +158,20 @@ const mapCallListItem = (call: CallAnalysisListItem): CallListItem => ({
   hubspotCallId: null,
   hubspotDealId: null,
   prospectId: call.prospectId,
-  contactName: null,
-  companyName: null,
+  contactName: call.contactName,
+  companyName: call.companyName,
   dealName: null,
-  ownerName: null,
+  ownerName: call.ownerName,
   ownerHubSpotId: null,
-  direction: "outbound",
+  direction: call.direction,
   outcome: toOutcome(call),
   analysisStatus: toAnalysisStatus(call),
   sentiment: call.sentiment,
   priority: toPriority(call.riskLevel),
   startedAt: toStartedAt(call.startedAt),
   durationSeconds: call.durationSeconds,
-  summary: call.summary,
+  mergedCallCount: call.mergedCallCount,
+  summary: cleanText(call.summary),
   nextStep: null,
   riskSignals: call.riskLevel === "high" ? ["Risque eleve detecte"] : [],
   positiveSignals: call.sentiment === "positive" ? ["Sentiment positif"] : [],
@@ -150,22 +183,23 @@ const mapCallDetail = (detail: CallAnalysisDetail): CallDetail => {
 
   return {
     ...base,
-    nextStep,
-    riskSignals: detail.analysis?.risks ?? base.riskSignals,
-    positiveSignals: detail.analysis?.opportunities ?? base.positiveSignals,
+    nextStep: cleanText(nextStep),
+    riskSignals: cleanList(detail.analysis?.risks) ?? base.riskSignals,
+    positiveSignals: cleanList(detail.analysis?.opportunities) ?? base.positiveSignals,
     recordingUrl: null,
-    transcript: null,
+    transcript: cleanText(detail.sourceText),
+    sourceKind: detail.sourceKind,
     analysis: detail.analysis
       ? {
           generatedAt: detail.analyzedAt,
           provider: detail.provider,
           model: detail.model,
-          summary: detail.analysis.summary,
-          customerNeeds: detail.analysis.customerSignals,
-          objections: detail.analysis.objections,
-          risks: detail.analysis.risks,
-          nextSteps: detail.analysis.nextSteps.map((step) => step.title),
-          coachingNotes: detail.analysis.coachingTips,
+          summary: cleanText(detail.analysis.summary),
+          customerNeeds: cleanList(detail.analysis.customerSignals),
+          objections: cleanList(detail.analysis.objections),
+          risks: cleanList(detail.analysis.risks),
+          nextSteps: cleanList(detail.analysis.nextSteps.map((step) => step.title)),
+          coachingNotes: cleanList(detail.analysis.coachingTips),
         }
       : null,
   };
@@ -183,14 +217,14 @@ const mapInsights = (orgId: string, period: CallPeriodFilter, insights: CallInsi
     orgId,
     period,
     generatedAt: insights.generatedAt,
-    totalCalls: totalAnalyzed,
+    totalCalls: insights.totalCalls,
     analyzedCalls: totalAnalyzed,
-    connectedCalls: totalAnalyzed,
-    averageDurationSeconds: 0,
+    connectedCalls: insights.connectedCalls,
+    averageDurationSeconds: insights.averageDurationSeconds,
     positiveSentimentRate: sentimentTotal > 0 ? Math.round((positiveCount / sentimentTotal) * 100) : 0,
     riskCallCount: (insights.riskLevel as Record<CallRiskLevel, number>).high ?? 0,
-    topObjections: insights.topObjections,
-    coachingThemes: insights.topCoachingTips,
+    topObjections: insights.topObjections.map((item) => ({ ...item, label: stripHtml(item.label) })),
+    coachingThemes: insights.topCoachingTips.map((item) => ({ ...item, label: stripHtml(item.label) })),
     followUpGaps: [],
   };
 };
@@ -216,6 +250,13 @@ export const fetchCallDetail = (
 ): Promise<CallDetail> =>
   getJson<CallAnalysisDetail>(apiPath(`/api/calls/${encodeURIComponent(callId)}`, { orgId }), options).then(mapCallDetail);
 
+export const analyzeSingleCall = (
+  orgId: string,
+  callId: string,
+  refresh = false,
+): Promise<CallDetail> =>
+  postJson<CallAnalysisDetail>(`/api/calls/${encodeURIComponent(callId)}/analyze`, { orgId, refresh }).then(mapCallDetail);
+
 export const fetchCallInsights = (
   orgId: string,
   period: CallPeriodFilter,
@@ -225,12 +266,34 @@ export const fetchCallInsights = (
     mapInsights(orgId, period, insights),
   );
 
-export const runCallAnalysis = (orgId: string, period: CallPeriodFilter): Promise<AnalyzeCallsRunResult> =>
-  postJson<BackfillJobResult>("/api/calls/analyze/run", { orgId, period }).then((job) => ({
+// Lance le backfill puis poll le job jusqu'a sa fin: la route repond 202 avec un
+// job "queued", le resultat n'existe qu'une fois le job complete.
+export const runCallAnalysis = async (orgId: string, period: CallPeriodFilter): Promise<AnalyzeCallsRunResult> => {
+  const queued = await postJson<BackfillJobResult>("/api/calls/analyze/run", { orgId, period });
+  const startedAt = Date.now();
+  let job = queued;
+  let attempt = 0;
+
+  while (job.status === "queued" || job.status === "running") {
+    if (Date.now() - startedAt > POLL_TIMEOUT_MS) {
+      throw new Error("L'analyse des appels prend trop de temps. Reessayez plus tard.");
+    }
+
+    await wait(pollDelayMs(attempt));
+    attempt += 1;
+    job = await getJson<BackfillJobResult>(`/api/calls/backfill/jobs/${encodeURIComponent(queued.id)}`);
+  }
+
+  if (job.status === "failed") {
+    throw new Error("L'analyse des appels a echoue. Consultez les logs backend.");
+  }
+
+  return {
     orgId,
     requestedCount: job.result?.processed ?? 0,
     analyzedCount: job.result?.analyzed ?? 0,
     skippedCount: job.result?.skipped ?? 0,
     failedCount: job.result?.failed ?? 0,
     generatedAt: new Date().toISOString(),
-  }));
+  };
+};
