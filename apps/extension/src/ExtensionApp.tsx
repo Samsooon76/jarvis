@@ -1,7 +1,8 @@
 import { RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { QueueView } from "./components/QueueView";
-import { AuthLanding, OnboardingGate } from "./components/auth/AuthLanding";
+import { AuthPage, OnboardingGate } from "./components/auth/AuthLanding";
+import { LandingPage } from "./components/auth/LandingPage";
 import { FirstRunOnboarding } from "./components/dashboard/FirstRunOnboarding";
 import { LoadingState } from "./components/dashboard/LoadingState";
 import { LoadingScreenBrand } from "./components/loading/LoadingScreenBrand";
@@ -26,6 +27,7 @@ import {
 import { clearApiAuthToken, setApiAuthSession } from "./services/api/client";
 import { getSupabaseClient, isSupabaseAuthConfigured, type JarvisSession } from "./services/supabase";
 import { setSentryUser } from "./sentry";
+import { navigateToLanding, parsePublicRoute, type PublicRouteState } from "./utils/publicRoute";
 import {
   clearCachedAuthProfile,
   readCachedAuthProfile,
@@ -68,6 +70,7 @@ const areLastUpdatesEqual = (left: HubSpotLastUpdateItem[], right: HubSpotLastUp
 export const ExtensionApp = () => {
   const [authProfile, setAuthProfile] = useState<AppUserProfile | null>(() => readCachedAuthProfile());
   const [authLoading, setAuthLoading] = useState(() => readCachedAuthProfile() === null);
+  const [publicRoute, setPublicRoute] = useState<PublicRouteState>(() => parsePublicRoute());
   const [authError, setAuthError] = useState<string | null>(null);
   const [selectedOwnerId, setSelectedOwnerId] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -135,6 +138,26 @@ export const ExtensionApp = () => {
       setAuthLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    if (authProfile || authLoading) {
+      return;
+    }
+
+    const syncPublicRoute = () => {
+      setPublicRoute(parsePublicRoute());
+    };
+
+    if (!window.location.hash || window.location.hash === "#") {
+      navigateToLanding();
+    }
+
+    window.addEventListener("hashchange", syncPublicRoute);
+
+    return () => {
+      window.removeEventListener("hashchange", syncPublicRoute);
+    };
+  }, [authLoading, authProfile]);
 
   useEffect(() => {
     if (!isSupabaseAuthConfigured) {
@@ -485,10 +508,21 @@ export const ExtensionApp = () => {
     setAuthProfile(null);
     setSelectedOwnerId(null);
     setLiveLastUpdates([]);
+    navigateToLanding();
   };
 
   if (!authProfile && !authLoading) {
-    return <AuthLanding error={authError} onAuthenticated={setAuthProfile} />;
+    if (publicRoute.route === "auth") {
+      return (
+        <AuthPage
+          error={authError}
+          initialMode={publicRoute.authMode}
+          onAuthenticated={setAuthProfile}
+        />
+      );
+    }
+
+    return <LandingPage />;
   }
 
   if (authLoading) {

@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from "react";
-import { ArrowRight, Building2, LogIn, PlugZap, UserPlus, Users } from "lucide-react";
+import { useEffect, useState, type FormEvent } from "react";
+import { ArrowLeft, ArrowRight, LogIn, UserPlus } from "lucide-react";
 import {
   completeAdminOnboarding,
   completeMemberOnboarding,
@@ -8,11 +8,18 @@ import {
 } from "../../services/api";
 import { setApiAuthSession } from "../../services/api/client";
 import { getSupabaseClient, isSupabaseAuthConfigured } from "../../services/supabase";
-import heroImageUrl from "../../assets/landing-hero.png";
-import "./AuthLanding.css";
+import {
+  getAuthRedirectUrl,
+  navigateToAuth,
+  navigateToLanding,
+  type AuthMode,
+} from "../../utils/publicRoute";
+import { GoogleLogo } from "./GoogleLogo";
+import "../styles/auth-landing.css";
 
-type AuthLandingProps = {
+type AuthPageProps = {
   error?: string | null;
+  initialMode?: AuthMode;
   onAuthenticated: (profile: AppUserProfile) => void;
 };
 
@@ -25,21 +32,8 @@ type OnboardingGateProps = {
 
 const passwordMinLength = 8;
 
-const getOAuthRedirectUrl = (): string => {
-  const redirectUrl = new URL(window.location.href);
-
-  redirectUrl.hash = "";
-  redirectUrl.search = "";
-
-  if (redirectUrl.pathname.includes("*")) {
-    redirectUrl.pathname = "/";
-  }
-
-  return redirectUrl.toString();
-};
-
-export const AuthLanding = ({ error, onAuthenticated }: AuthLandingProps) => {
-  const [mode, setMode] = useState<"signup" | "login">("signup");
+export const AuthPage = ({ error, initialMode = "signup", onAuthenticated }: AuthPageProps) => {
+  const [mode, setMode] = useState<AuthMode>(initialMode);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
@@ -47,6 +41,15 @@ export const AuthLanding = ({ error, onAuthenticated }: AuthLandingProps) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    setMode(initialMode);
+  }, [initialMode]);
+
+  const handleModeChange = (nextMode: AuthMode) => {
+    setMode(nextMode);
+    navigateToAuth(nextMode);
+  };
 
   const handleGoogleSignIn = async () => {
     setLocalError(null);
@@ -62,7 +65,7 @@ export const AuthLanding = ({ error, onAuthenticated }: AuthLandingProps) => {
       const { error: googleError } = await getSupabaseClient().auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: getOAuthRedirectUrl(),
+          redirectTo: getAuthRedirectUrl(),
           queryParams: {
             prompt: "select_account",
           },
@@ -138,7 +141,7 @@ export const AuthLanding = ({ error, onAuthenticated }: AuthLandingProps) => {
 
       if (!data.session) {
         setNotice("Compte cree. Confirme ton email, puis connecte-toi pour finir l'onboarding.");
-        setMode("login");
+        handleModeChange("login");
         return;
       }
 
@@ -156,95 +159,112 @@ export const AuthLanding = ({ error, onAuthenticated }: AuthLandingProps) => {
   };
 
   return (
-    <main className="jarvis-auth-page">
-      <img className="jarvis-auth-hero-image" src={heroImageUrl} alt="" aria-hidden="true" />
-      <section className="jarvis-auth-copy" aria-labelledby="jarvis-auth-title">
-        <span className="jarvis-auth-eyebrow">Jarvis for revenue teams</span>
-        <h1 id="jarvis-auth-title">Le cockpit HubSpot pour chaque sales.</h1>
-        <p>
-          L'admin connecte le CRM, Jarvis rattache les owners, et chaque commercial retrouve sa queue priorisee
-          avec ses propres deals.
-        </p>
-        <div className="jarvis-auth-actions">
-          <button type="button" onClick={() => setMode("signup")} className={mode === "signup" ? "active" : ""}>
-            <UserPlus size={18} />
-            Sign up
-          </button>
-          <button type="button" onClick={() => setMode("login")} className={mode === "login" ? "active" : ""}>
-            <LogIn size={18} />
-            Connexion
-          </button>
-        </div>
-      </section>
-
-      <section className="jarvis-auth-panel" aria-label="Authentification Jarvis">
-        <div className="jarvis-auth-panel-head">
-          <div className="jarvis-auth-icon">
-            {mode === "signup" ? <Building2 size={20} /> : <Users size={20} />}
-          </div>
-          <div>
-            <span>{mode === "signup" ? "Admin HubSpot" : "Workspace equipe"}</span>
-            <h2>{mode === "signup" ? "Creer l'organisation" : "Se connecter"}</h2>
-          </div>
-        </div>
-
-        <button className="jarvis-google-button" type="button" onClick={handleGoogleSignIn} disabled={isSubmitting}>
-          <span aria-hidden="true">G</span>
-          Continuer avec Google
+    <main className="jv-auth-page" aria-label="Connexion Jarvis">
+      <div className="jv-auth-shell">
+        <button className="jv-auth-back" type="button" onClick={navigateToLanding} disabled={isSubmitting}>
+          <ArrowLeft aria-hidden="true" size={14} strokeWidth={1.5} />
+          Retour
         </button>
 
-        <div className="jarvis-auth-separator">
-          <span>ou</span>
-        </div>
+        <section className="jv-auth-panel" aria-label="Authentification Jarvis">
+          <header className="jv-auth-panel-head">
+            <span className="jv-auth-panel-kicker">
+              {mode === "signup" ? "Admin HubSpot" : "Workspace equipe"}
+            </span>
+            <h2>{mode === "signup" ? "Creer l'organisation" : "Se connecter"}</h2>
+          </header>
 
-        <form className="jarvis-auth-form" onSubmit={handleSubmit}>
-          {mode === "signup" ? (
-            <>
-              <label>
-                Nom complet
-                <input value={fullName} onChange={(event) => setFullName(event.target.value)} autoComplete="name" />
-              </label>
-              <label>
-                Organisation
-                <input
-                  value={organizationName}
-                  onChange={(event) => setOrganizationName(event.target.value)}
-                  autoComplete="organization"
-                  required
-                />
-              </label>
-            </>
-          ) : null}
-          <label>
-            Email professionnel
-            <input
-              type="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              autoComplete="email"
-              required
-            />
-          </label>
-          <label>
-            Mot de passe
-            <input
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              autoComplete={mode === "signup" ? "new-password" : "current-password"}
-              required
-            />
-          </label>
+          <div className="jv-filter-pills" role="group" aria-label="Mode d'authentification">
+            <button
+              type="button"
+              className={mode === "signup" ? "active" : ""}
+              onClick={() => handleModeChange("signup")}
+              disabled={isSubmitting}
+            >
+              <UserPlus aria-hidden="true" size={14} strokeWidth={1.5} />
+              Inscription
+            </button>
+            <button
+              type="button"
+              className={mode === "login" ? "active" : ""}
+              onClick={() => handleModeChange("login")}
+              disabled={isSubmitting}
+            >
+              <LogIn aria-hidden="true" size={14} strokeWidth={1.5} />
+              Connexion
+            </button>
+          </div>
 
-          {error || localError ? <p className="jarvis-auth-error">{localError ?? error}</p> : null}
-          {notice ? <p className="jarvis-auth-notice">{notice}</p> : null}
-
-          <button className="jarvis-auth-submit" type="submit" disabled={isSubmitting}>
-            {isSubmitting ? "Traitement..." : mode === "signup" ? "Demarrer avec HubSpot" : "Entrer dans Jarvis"}
-            <ArrowRight size={18} />
+          <button className="jv-btn-ghost" type="button" onClick={handleGoogleSignIn} disabled={isSubmitting}>
+            <GoogleLogo size={18} />
+            Continuer avec Google
           </button>
-        </form>
-      </section>
+
+          <div className="jv-auth-separator">
+            <span>ou</span>
+          </div>
+
+          <form className="jv-auth-form" onSubmit={handleSubmit}>
+            {mode === "signup" ? (
+              <>
+                <div className="jv-auth-field">
+                  <label htmlFor="jv-auth-full-name">Nom complet</label>
+                  <input
+                    id="jv-auth-full-name"
+                    value={fullName}
+                    onChange={(event) => setFullName(event.target.value)}
+                    autoComplete="name"
+                  />
+                </div>
+                <div className="jv-auth-field">
+                  <label htmlFor="jv-auth-organization">Organisation</label>
+                  <input
+                    id="jv-auth-organization"
+                    value={organizationName}
+                    onChange={(event) => setOrganizationName(event.target.value)}
+                    autoComplete="organization"
+                    required
+                  />
+                </div>
+              </>
+            ) : null}
+            <div className="jv-auth-field">
+              <label htmlFor="jv-auth-email">Email professionnel</label>
+              <input
+                id="jv-auth-email"
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                autoComplete="email"
+                required
+              />
+            </div>
+            <div className="jv-auth-field">
+              <label htmlFor="jv-auth-password">Mot de passe</label>
+              <input
+                id="jv-auth-password"
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                autoComplete={mode === "signup" ? "new-password" : "current-password"}
+                required
+              />
+            </div>
+
+            {error || localError ? (
+              <p className="jv-banner jv-banner-error" role="alert">
+                {localError ?? error}
+              </p>
+            ) : null}
+            {notice ? <p className="jv-banner jv-banner-success">{notice}</p> : null}
+
+            <button className="jv-btn-primary" type="submit" disabled={isSubmitting}>
+              {isSubmitting ? "Traitement..." : mode === "signup" ? "Demarrer avec HubSpot" : "Entrer dans Jarvis"}
+              <ArrowRight aria-hidden="true" size={15} strokeWidth={1.5} />
+            </button>
+          </form>
+        </section>
+      </div>
     </main>
   );
 };
@@ -287,52 +307,53 @@ export const OnboardingGate = ({ error, fullName, onCompleted, onSignOut }: Onbo
   };
 
   return (
-    <main className="jarvis-auth-page jarvis-auth-page-compact">
-      <img className="jarvis-auth-hero-image" src={heroImageUrl} alt="" aria-hidden="true" />
-      <section className="jarvis-auth-copy" aria-labelledby="jarvis-onboarding-title">
-        <span className="jarvis-auth-eyebrow">Onboarding Jarvis</span>
-        <h1 id="jarvis-onboarding-title">Rattache ton compte a une organisation.</h1>
-        <p>
-          Les sales rejoignent automatiquement leur workspace quand leur email correspond a un owner HubSpot
-          connecte. Un admin peut aussi creer une nouvelle organisation.
-        </p>
-        <button type="button" className="jarvis-auth-secondary" onClick={onSignOut}>
-          Changer de compte
-        </button>
-      </section>
-
-      <section className="jarvis-auth-panel" aria-label="Onboarding Jarvis">
-        <div className="jarvis-auth-panel-head">
-          <div className="jarvis-auth-icon">
-            <PlugZap size={20} />
-          </div>
-          <div>
-            <span>Compte connecte</span>
+    <main className="jv-auth-page" aria-label="Onboarding Jarvis">
+      <div className="jv-auth-shell">
+        <section className="jv-auth-panel" aria-label="Onboarding Jarvis">
+          <header className="jv-auth-panel-head">
+            <span className="jv-auth-panel-kicker">Compte connecte</span>
             <h2>{fullName}</h2>
-          </div>
-        </div>
+            <p className="jv-auth-onboarding-copy">
+              Rattache ton compte a une organisation HubSpot pour acceder a ta queue.
+            </p>
+          </header>
 
-        <button className="jarvis-auth-submit" type="button" onClick={handleMemberJoin} disabled={Boolean(isSubmitting)}>
-          {isSubmitting === "member" ? "Recherche HubSpot..." : "Rejoindre mon equipe HubSpot"}
-          <ArrowRight size={18} />
-        </button>
-
-        <form className="jarvis-auth-form jarvis-auth-divider" onSubmit={handleAdminCreate}>
-          <label>
-            Nouvelle organisation
-            <input
-              value={organizationName}
-              onChange={(event) => setOrganizationName(event.target.value)}
-              autoComplete="organization"
-              required
-            />
-          </label>
-          {localError ? <p className="jarvis-auth-error">{localError}</p> : null}
-          <button className="jarvis-auth-secondary" type="submit" disabled={Boolean(isSubmitting)}>
-            {isSubmitting === "admin" ? "Creation..." : "Creer comme admin"}
+          <button
+            className="jv-btn-primary"
+            type="button"
+            onClick={handleMemberJoin}
+            disabled={Boolean(isSubmitting)}
+          >
+            {isSubmitting === "member" ? "Recherche HubSpot..." : "Rejoindre mon equipe HubSpot"}
+            <ArrowRight aria-hidden="true" size={15} strokeWidth={1.5} />
           </button>
-        </form>
-      </section>
+
+          <form className="jv-auth-form jv-auth-divider" onSubmit={handleAdminCreate}>
+            <div className="jv-auth-field">
+              <label htmlFor="jv-onboarding-organization">Nouvelle organisation</label>
+              <input
+                id="jv-onboarding-organization"
+                value={organizationName}
+                onChange={(event) => setOrganizationName(event.target.value)}
+                autoComplete="organization"
+                required
+              />
+            </div>
+            {localError ? (
+              <p className="jv-banner jv-banner-error" role="alert">
+                {localError}
+              </p>
+            ) : null}
+            <button className="jv-btn-ghost" type="submit" disabled={Boolean(isSubmitting)}>
+              {isSubmitting === "admin" ? "Creation..." : "Creer comme admin"}
+            </button>
+          </form>
+
+          <button className="jv-btn-ghost" type="button" onClick={onSignOut} disabled={Boolean(isSubmitting)}>
+            Changer de compte
+          </button>
+        </section>
+      </div>
     </main>
   );
 };

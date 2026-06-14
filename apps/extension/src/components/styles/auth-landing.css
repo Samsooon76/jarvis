@@ -1,0 +1,649 @@
+/* Public pages — design spec §2, scoped under .jv-landing-page / .jv-auth-page */
+
+:is(.jv-landing-page, .jv-auth-page) {
+  --jv-bg: #f4f3f0;
+  --jv-surface: #ffffff;
+  --jv-surface-muted: #f8f7f4;
+  --jv-text: #1c1917;
+  --jv-text-soft: #44403c;
+  --jv-muted: #57534e;
+  --jv-faint: #a8a29e;
+  --jv-border: rgba(28, 25, 23, 0.08);
+  --jv-border-strong: rgba(28, 25, 23, 0.14);
+  --jv-terra: #d4714a;
+  --jv-terra-soft: rgba(212, 113, 74, 0.14);
+  --jv-success: #2d8a5e;
+  --jv-warning: #c47d1a;
+  --jv-danger: #c4453a;
+  --jv-cta: #1c1917;
+  --jv-cta-soft: rgb(150 184 105 / 0.69);
+  --jv-filter-active: #96b869;
+  --jv-font: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --jv-ease-spring: cubic-bezier(0.2, 1.18, 0.47, 1);
+
+  background: var(--jv-bg);
+  box-sizing: border-box;
+  color: var(--jv-text);
+  font-family: var(--jv-font);
+  margin: 0;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  width: 100%;
+}
+
+:is(.jv-landing-page, .jv-auth-page) *,
+:is(.jv-landing-page, .jv-auth-page) *::before,
+:is(.jv-landing-page, .jv-auth-page) *::after {
+  box-sizing: border-box;
+}
+
+:is(.jv-landing-page, .jv-auth-page) :is(h1, h2, h3, p) {
+  margin: 0;
+}
+
+:is(.jv-landing-page, .jv-auth-page) button,
+:is(.jv-landing-page, .jv-auth-page) input {
+  font: inherit;
+}
+
+/* ── Landing layout ── */
+
+.jv-landing-shell {
+  display: grid;
+  gap: 28px;
+  margin: 0 auto;
+  max-width: 960px;
+  min-height: 100vh;
+  padding: clamp(24px, 4vw, 48px) clamp(20px, 4vw, 40px);
+}
+
+.jv-landing-topbar {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.jv-landing-topbar-actions {
+  align-items: center;
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.jv-landing-content {
+  display: grid;
+  gap: 20px;
+}
+
+.jv-landing-cta {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+/* ── Auth layout ── */
+
+.jv-auth-shell {
+  align-content: center;
+  display: grid;
+  gap: 14px;
+  justify-items: center;
+  margin: 0 auto;
+  max-width: 440px;
+  min-height: 100vh;
+  padding: clamp(24px, 4vw, 48px) clamp(20px, 4vw, 32px);
+  width: 100%;
+}
+
+.jv-auth-back {
+  align-items: center;
+  align-self: start;
+  background: transparent;
+  border: 0;
+  color: var(--jv-muted);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 13px;
+  font-weight: 500;
+  gap: 6px;
+  justify-self: start;
+  padding: 0;
+  transition: color 0.2s ease;
+}
+
+.jv-auth-back:hover:not(:disabled) {
+  color: var(--jv-text);
+}
+
+.jv-auth-back:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.jv-auth-panel {
+  background: var(--jv-surface);
+  border: 1px solid var(--jv-border);
+  border-radius: 14px;
+  display: grid;
+  gap: 18px;
+  padding: 22px 24px;
+  width: 100%;
+}
+
+.jv-auth-onboarding-copy {
+  color: var(--jv-muted);
+  font-size: 14px;
+  line-height: 1.45;
+  margin-top: 8px;
+}
+
+/* ── Page header ── */
+
+:is(.jv-landing-page, .jv-auth-page) .jv-page-header {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  padding-bottom: 2px;
+}
+
+:is(.jv-landing-page, .jv-auth-page) .jv-page-icon {
+  color: var(--jv-terra);
+  flex-shrink: 0;
+  opacity: 0.9;
+}
+
+:is(.jv-landing-page, .jv-auth-page) .jv-page-header h1 {
+  align-items: baseline;
+  color: var(--jv-text);
+  display: flex;
+  font-size: 28px;
+  font-weight: 300;
+  gap: 10px;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+:is(.jv-landing-page, .jv-auth-page) .jv-page-kicker {
+  color: var(--jv-faint);
+  font-size: 15px;
+  font-weight: 400;
+}
+
+:is(.jv-landing-page, .jv-auth-page) .jv-page-kicker::before {
+  color: rgba(28, 25, 23, 0.14);
+  content: "·";
+  margin-right: 10px;
+}
+
+/* ── Hero copy ── */
+
+.jv-auth-hero h2 {
+  color: var(--jv-text);
+  font-size: clamp(24px, 3.2vw, 34px);
+  font-weight: 300;
+  letter-spacing: -0.03em;
+  line-height: 1.08;
+}
+
+.jv-auth-hero-copy {
+  color: var(--jv-text-soft);
+  font-size: 15px;
+  line-height: 1.55;
+  max-width: 58ch;
+}
+
+.jv-auth-hero {
+  display: grid;
+  gap: 12px;
+}
+
+/* ── Section label ── */
+
+:is(.jv-landing-page, .jv-auth-page) .jv-section-label {
+  align-items: center;
+  color: var(--jv-muted);
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 500;
+  gap: 7px;
+}
+
+:is(.jv-landing-page, .jv-auth-page) .jv-section-icon {
+  color: var(--jv-muted);
+  flex-shrink: 0;
+  opacity: 0.72;
+}
+
+/* ── Stat strip ── */
+
+:is(.jv-landing-page, .jv-auth-page) .jv-stat-strip {
+  border: 1px solid var(--jv-border);
+  border-radius: 14px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  overflow: hidden;
+}
+
+:is(.jv-landing-page, .jv-auth-page) .jv-stat-strip.cols-4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+:is(.jv-landing-page, .jv-auth-page) .jv-stat {
+  animation: jv-auth-stat-enter 0.5s var(--jv-ease-spring) both;
+  background: var(--jv-surface);
+  display: grid;
+  gap: 2px;
+  padding: 16px 18px;
+}
+
+:is(.jv-landing-page, .jv-auth-page) .jv-stat + .jv-stat {
+  border-left: 1px solid rgba(28, 25, 23, 0.06);
+}
+
+:is(.jv-landing-page, .jv-auth-page) .jv-stat-label {
+  color: var(--jv-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+:is(.jv-landing-page, .jv-auth-page) .jv-stat-value {
+  color: var(--jv-text);
+  font-size: clamp(20px, 2.4vw, 28px);
+  font-variant-numeric: tabular-nums;
+  font-weight: 300;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+}
+
+:is(.jv-landing-page, .jv-auth-page) .jv-stat-caption {
+  color: var(--jv-faint);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+@keyframes jv-auth-stat-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── Themes ── */
+
+:is(.jv-landing-page, .jv-auth-page) .jv-themes-row {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+:is(.jv-landing-page, .jv-auth-page) .jv-theme-block {
+  background: var(--jv-surface);
+  border: 1px solid var(--jv-border);
+  border-radius: 14px;
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+}
+
+:is(.jv-landing-page, .jv-auth-page) .jv-theme-list {
+  display: grid;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+:is(.jv-landing-page, .jv-auth-page) .jv-theme-list li {
+  align-items: center;
+  border-bottom: 1px solid rgba(28, 25, 23, 0.05);
+  display: grid;
+  font-size: 13px;
+  font-weight: 400;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 8px 0;
+}
+
+:is(.jv-landing-page, .jv-auth-page) .jv-theme-list li:last-child {
+  border-bottom: 0;
+}
+
+:is(.jv-landing-page, .jv-auth-page) .jv-theme-list span {
+  color: var(--jv-text-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:is(.jv-landing-page, .jv-auth-page) .jv-theme-list em {
+  color: var(--jv-muted);
+  font-size: 12px;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+/* ── Bullet list ── */
+
+:is(.jv-landing-page, .jv-auth-page) .jv-bullet-list {
+  display: grid;
+  font-size: 14px;
+  font-weight: 400;
+  gap: 6px;
+  line-height: 1.5;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+:is(.jv-landing-page, .jv-auth-page) .jv-bullet-list li {
+  color: var(--jv-text-soft);
+  padding-left: 12px;
+  position: relative;
+}
+
+:is(.jv-landing-page, .jv-auth-page) .jv-bullet-list li::before {
+  background: var(--jv-terra);
+  border-radius: 50%;
+  content: "";
+  height: 4px;
+  left: 0;
+  position: absolute;
+  top: 0.62em;
+  width: 4px;
+}
+
+/* ── Callout ── */
+
+:is(.jv-landing-page, .jv-auth-page) .jv-callout {
+  align-items: flex-start;
+  border: 1px dashed rgba(212, 113, 74, 0.28);
+  border-radius: 10px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: auto minmax(0, 1fr);
+  padding: 12px 14px;
+}
+
+:is(.jv-landing-page, .jv-auth-page) .jv-callout svg {
+  color: var(--jv-terra);
+  margin-top: 2px;
+}
+
+:is(.jv-landing-page, .jv-auth-page) .jv-callout p {
+  color: var(--jv-text);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+:is(.jv-landing-page, .jv-auth-page) .jv-callout small {
+  color: var(--jv-muted);
+  display: block;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+  margin-top: 3px;
+}
+
+/* ── Panel head ── */
+
+.jv-auth-panel-head {
+  display: grid;
+  gap: 4px;
+}
+
+.jv-auth-panel-kicker {
+  color: var(--jv-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.jv-auth-panel-head h2 {
+  color: var(--jv-text);
+  font-size: 22px;
+  font-weight: 300;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+/* ── Filter pills ── */
+
+:is(.jv-landing-page, .jv-auth-page) .jv-filter-pills {
+  display: inline-flex;
+  gap: 4px;
+  width: 100%;
+}
+
+:is(.jv-landing-page, .jv-auth-page) .jv-filter-pills button {
+  align-items: center;
+  background: var(--jv-surface-muted);
+  border: 1px solid var(--jv-border);
+  border-radius: 999px;
+  color: var(--jv-muted);
+  cursor: pointer;
+  display: inline-flex;
+  flex: 1;
+  font-size: 12px;
+  font-weight: 500;
+  gap: 6px;
+  justify-content: center;
+  min-height: 36px;
+  padding: 7px 13px;
+  transition: all 0.2s var(--jv-ease-spring);
+}
+
+:is(.jv-landing-page, .jv-auth-page) .jv-filter-pills button:hover {
+  color: var(--jv-text);
+}
+
+:is(.jv-landing-page, .jv-auth-page) .jv-filter-pills button.active {
+  background: var(--jv-filter-active);
+  border-color: var(--jv-filter-active);
+  color: #fff;
+}
+
+/* ── Buttons ── */
+
+:is(.jv-landing-page, .jv-auth-page) .jv-btn-primary,
+:is(.jv-landing-page, .jv-auth-page) .jv-btn-ghost {
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 13px;
+  font-weight: 500;
+  gap: 7px;
+  justify-content: center;
+  min-height: 40px;
+  padding: 0 16px;
+  transition: transform 0.2s var(--jv-ease-spring), opacity 0.2s ease;
+  width: 100%;
+}
+
+:is(.jv-landing-page, .jv-auth-page) .jv-btn-inline {
+  width: auto;
+}
+
+:is(.jv-landing-page, .jv-auth-page) .jv-btn-primary {
+  background: var(--jv-cta-soft);
+  color: #fff;
+}
+
+:is(.jv-landing-page, .jv-auth-page) .jv-btn-primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+:is(.jv-landing-page, .jv-auth-page) .jv-btn-ghost {
+  background: var(--jv-surface);
+  border-color: var(--jv-border-strong);
+  color: var(--jv-text);
+}
+
+:is(.jv-landing-page, .jv-auth-page) .jv-btn-primary:disabled,
+:is(.jv-landing-page, .jv-auth-page) .jv-btn-ghost:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.jv-auth-google-logo {
+  flex-shrink: 0;
+}
+
+/* ── Separator ── */
+
+.jv-auth-separator {
+  align-items: center;
+  color: var(--jv-faint);
+  display: grid;
+  font-size: 12px;
+  font-weight: 500;
+  gap: 12px;
+  grid-template-columns: 1fr auto 1fr;
+}
+
+.jv-auth-separator::before,
+.jv-auth-separator::after {
+  background: var(--jv-border);
+  content: "";
+  height: 1px;
+}
+
+/* ── Form ── */
+
+.jv-auth-form {
+  display: grid;
+  gap: 12px;
+}
+
+.jv-auth-field {
+  display: grid;
+  gap: 5px;
+}
+
+.jv-auth-field label {
+  color: var(--jv-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.jv-auth-field input {
+  background: var(--jv-surface);
+  border: 1px solid var(--jv-border);
+  border-radius: 999px;
+  color: var(--jv-text);
+  font-size: 13px;
+  font-weight: 500;
+  min-height: 40px;
+  outline: none;
+  padding: 0 14px;
+  width: 100%;
+}
+
+.jv-auth-field input:focus {
+  border-color: rgba(212, 113, 74, 0.45);
+  box-shadow: 0 0 0 3px var(--jv-terra-soft);
+}
+
+.jv-auth-divider {
+  border-top: 1px solid rgba(28, 25, 23, 0.06);
+  padding-top: 16px;
+}
+
+/* ── Banners ── */
+
+:is(.jv-landing-page, .jv-auth-page) .jv-banner {
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.45;
+  margin: 0;
+  padding: 10px 12px;
+}
+
+:is(.jv-landing-page, .jv-auth-page) .jv-banner-success {
+  background: rgba(45, 138, 94, 0.08);
+  border: 1px solid rgba(45, 138, 94, 0.14);
+  color: var(--jv-success);
+}
+
+:is(.jv-landing-page, .jv-auth-page) .jv-banner-error {
+  background: rgba(196, 69, 58, 0.08);
+  border: 1px solid rgba(196, 69, 58, 0.14);
+  color: var(--jv-danger);
+}
+
+/* ── Responsive ── */
+
+@media (max-width: 960px) {
+  :is(.jv-landing-page, .jv-auth-page) .jv-stat-strip,
+  :is(.jv-landing-page, .jv-auth-page) .jv-stat-strip.cols-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  :is(.jv-landing-page, .jv-auth-page) .jv-stat:nth-child(odd) {
+    border-left: 0;
+  }
+
+  :is(.jv-landing-page, .jv-auth-page) .jv-stat:nth-child(n + 3) {
+    border-top: 1px solid rgba(28, 25, 23, 0.06);
+  }
+
+  :is(.jv-landing-page, .jv-auth-page) .jv-stat:nth-child(even) {
+    border-left: 1px solid rgba(28, 25, 23, 0.06);
+  }
+}
+
+@media (max-width: 640px) {
+  .jv-landing-topbar {
+    align-items: start;
+    flex-direction: column;
+  }
+
+  .jv-landing-topbar-actions {
+    width: 100%;
+  }
+
+  .jv-landing-topbar-actions .jv-btn-inline {
+    flex: 1;
+  }
+
+  :is(.jv-landing-page, .jv-auth-page) .jv-themes-row {
+    grid-template-columns: 1fr;
+  }
+
+  :is(.jv-landing-page, .jv-auth-page) .jv-stat-strip,
+  :is(.jv-landing-page, .jv-auth-page) .jv-stat-strip.cols-4 {
+    grid-template-columns: 1fr;
+  }
+
+  :is(.jv-landing-page, .jv-auth-page) .jv-stat {
+    border-left: 0 !important;
+  }
+
+  :is(.jv-landing-page, .jv-auth-page) .jv-stat + .jv-stat {
+    border-left: 0;
+    border-top: 1px solid rgba(28, 25, 23, 0.06);
+  }
+
+  .jv-landing-cta .jv-btn-inline {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :is(.jv-landing-page, .jv-auth-page) .jv-stat {
+    animation: none !important;
+  }
+
+  :is(.jv-landing-page, .jv-auth-page) .jv-btn-primary:hover:not(:disabled) {
+    transform: none;
+  }
+}
