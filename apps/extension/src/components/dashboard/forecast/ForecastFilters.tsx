@@ -14,6 +14,12 @@ type ForecastFiltersProps = {
   periodMode: ForecastPeriodMode;
 };
 
+const periodOptions: Array<{ id: ForecastPeriodMode; label: string }> = [
+  { id: "currentMonth", label: "Ce mois" },
+  { id: "nextMonth", label: "Mois prochain" },
+  { id: "custom", label: "Personnalisé" },
+];
+
 export const ForecastFilters = ({
   canViewTeamForecast,
   dateFrom,
@@ -26,40 +32,51 @@ export const ForecastFilters = ({
   owners,
   periodMode,
 }: ForecastFiltersProps) => (
-  <div className="ae-forecast-filters">
-    <label>
-      Periode
-      <span className="ae-forecast-period-toggle">
-        <button className={periodMode === "currentMonth" ? "active" : ""} onClick={() => onPeriodChange("currentMonth")} type="button">
-          Ce mois
+  <div className="jv-toolbar-filters">
+    <div aria-label="Période forecast" className="jv-filter-pills" role="group">
+      {periodOptions.map((option) => (
+        <button
+          className={periodMode === option.id ? "active" : ""}
+          key={option.id}
+          onClick={() => onPeriodChange(option.id)}
+          type="button"
+        >
+          {option.label}
         </button>
-        <button className={periodMode === "nextMonth" ? "active" : ""} onClick={() => onPeriodChange("nextMonth")} type="button">
-          Mois prochain
-        </button>
-        <button className={periodMode === "custom" ? "active" : ""} onClick={() => onPeriodChange("custom")} type="button">
-          Personnalise
-        </button>
-      </span>
-    </label>
-    <label>
-      Dates
-      <span>
-        <input onChange={(event) => onDateFromChange(event.target.value)} type="date" value={dateFrom} />
-        <input onChange={(event) => onDateToChange(event.target.value)} type="date" value={dateTo} />
-      </span>
-    </label>
+      ))}
+    </div>
+    <div className="jv-date-range">
+      <input
+        aria-label="Date de début"
+        className="jv-date-input"
+        onChange={(event) => onDateFromChange(event.target.value)}
+        type="date"
+        value={dateFrom}
+      />
+      <span aria-hidden="true">→</span>
+      <input
+        aria-label="Date de fin"
+        className="jv-date-input"
+        onChange={(event) => onDateToChange(event.target.value)}
+        type="date"
+        value={dateTo}
+      />
+    </div>
     {canViewTeamForecast ? (
-      <label>
-        Forecast
-        <select disabled={owners.length === 0} onChange={(event) => onOwnerIdChange(event.target.value)} value={ownerId}>
-          <option value="">Equipe (tous les sales)</option>
-          {owners.map((owner) => (
-            <option key={owner.ownerId} value={owner.ownerId}>
-              {owner.name}
-            </option>
-          ))}
-        </select>
-      </label>
+      <select
+        aria-label="Périmètre forecast"
+        className="jv-select"
+        disabled={owners.length === 0}
+        onChange={(event) => onOwnerIdChange(event.target.value)}
+        value={ownerId}
+      >
+        <option value="">Équipe (tous les sales)</option>
+        {owners.map((owner) => (
+          <option key={owner.ownerId} value={owner.ownerId}>
+            {owner.name}
+          </option>
+        ))}
+      </select>
     ) : null}
   </div>
 );

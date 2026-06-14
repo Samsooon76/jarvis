@@ -1,0 +1,362 @@
+/* Sidebar shell — design.md §3.1 */
+
+.ae-inbox {
+  --ae-sidebar-width: 242px;
+  --ae-bg: #f4f3f0;
+
+  display: grid;
+  grid-template-columns: var(--ae-sidebar-width) minmax(0, 1fr);
+  gap: 0;
+  width: 100%;
+  min-height: 100vh;
+  padding: 0;
+  background: var(--ae-bg);
+  transition: none;
+}
+
+.ae-inbox:has(.ae-sidebar:hover),
+.ae-inbox:has(.ae-sidebar button:focus-visible) {
+  --ae-sidebar-width: 242px;
+}
+
+.ae-inbox .ae-sidebar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  min-height: 100vh;
+  text-align: left;
+  padding: 20px 16px;
+  border: 0;
+  border-right: 1px solid rgba(28, 25, 23, 0.1);
+  border-radius: 0;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.62), rgba(244, 243, 240, 0.2)),
+    #f7f4ef;
+  box-shadow: none;
+  overflow: visible;
+}
+
+.ae-inbox .ae-sidebar:hover,
+.ae-inbox .ae-sidebar:has(button:focus-visible) {
+  border-right-color: rgba(28, 25, 23, 0.1);
+  box-shadow: none;
+}
+
+.ae-inbox .ae-sidebar-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.ae-inbox .ae-sidebar-pulse {
+  flex: 0 0 auto;
+  margin-top: -2px;
+}
+
+.ae-inbox .ae-sidebar:has(.jv-pulse-root.is-open) {
+  z-index: 120;
+}
+
+.ae-inbox .ae-sidebar-brand,
+.ae-inbox .ae-sidebar:hover .ae-sidebar-brand,
+.ae-inbox .ae-sidebar:has(button:focus-visible) .ae-sidebar-brand {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.ae-inbox .ae-sidebar-brand .ae-sidebar-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(212, 113, 74, 0.18);
+  border-radius: 8px;
+  background: rgba(212, 113, 74, 0.14);
+  color: #d4714a;
+}
+
+.ae-inbox .ae-sidebar-brand div,
+.ae-inbox .ae-sidebar:hover .ae-sidebar-brand div,
+.ae-inbox .ae-sidebar:has(button:focus-visible) .ae-sidebar-brand div {
+  min-width: 0;
+  max-width: none;
+  opacity: 1;
+  overflow: hidden;
+}
+
+.ae-inbox .ae-sidebar-brand strong {
+  display: block;
+  color: #1c1917;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+}
+
+.ae-inbox .ae-sidebar-brand small {
+  display: block;
+  margin-top: 2px;
+  color: #78716c;
+  font-size: 10px;
+  font-weight: 450;
+}
+
+.ae-inbox .ae-sidebar-nav {
+  display: grid;
+  flex: 1;
+  gap: 3px;
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+}
+
+.ae-inbox .ae-sidebar-nav button,
+.ae-inbox .ae-sidebar-signout,
+.ae-inbox .ae-sidebar:hover .ae-sidebar-nav button,
+.ae-inbox .ae-sidebar:has(button:focus-visible) .ae-sidebar-nav button {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: #78716c;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* Legacy cible "button > span" (icon + label) — on re-scope explicitement */
+.ae-inbox .ae-sidebar-nav button > .ae-sidebar-icon,
+.ae-inbox .ae-sidebar-signout > .ae-sidebar-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  box-shadow: none;
+  transform: none;
+}
+
+.ae-inbox .ae-sidebar-nav button > .ae-sidebar-label,
+.ae-inbox .ae-sidebar-signout > .ae-sidebar-label {
+  display: inline;
+  width: auto;
+  height: auto;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: none;
+  opacity: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-align: left;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.ae-inbox .ae-sidebar-nav button:hover > .ae-sidebar-icon,
+.ae-inbox .ae-sidebar-nav button.active > .ae-sidebar-icon,
+.ae-inbox .ae-sidebar-signout:hover > .ae-sidebar-icon {
+  width: 18px;
+  height: 18px;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+}
+
+.ae-inbox .ae-sidebar-nav button:hover > .ae-sidebar-label,
+.ae-inbox .ae-sidebar-nav button.active > .ae-sidebar-label,
+.ae-inbox .ae-sidebar-signout:hover > .ae-sidebar-label {
+  width: auto;
+  height: auto;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  transform: none;
+}
+
+.ae-inbox .ae-sidebar-nav button:hover {
+  background: rgba(255, 255, 255, 0.68);
+  color: #1c1917;
+}
+
+.ae-inbox .ae-sidebar-nav button:hover > .ae-sidebar-icon {
+  background: transparent;
+  color: #d4714a;
+}
+
+.ae-inbox .ae-sidebar-nav button.active {
+  border-color: rgba(212, 113, 74, 0.14);
+  border-left-width: 3px;
+  border-left-color: #d4714a;
+  padding-left: 7px;
+  background: rgba(212, 113, 74, 0.1);
+  color: #1c1917;
+  font-weight: 600;
+}
+
+.ae-inbox .ae-sidebar-nav button.active > .ae-sidebar-icon {
+  background: transparent;
+  color: #d4714a;
+  box-shadow: none;
+}
+
+.ae-inbox .ae-sidebar-nav button:focus-visible,
+.ae-inbox .ae-sidebar-signout:focus-visible {
+  outline: 2px solid rgba(212, 113, 74, 0.28);
+  outline-offset: 2px;
+}
+
+.ae-inbox .ae-sidebar-section {
+  display: block;
+  margin: 16px 8px 5px;
+  color: #a8a29e;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.ae-inbox .ae-sidebar-section:first-child {
+  margin-top: 0;
+}
+
+.ae-inbox .ae-sidebar-signout {
+  flex: 0 0 auto;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(28, 25, 23, 0.08);
+}
+
+.ae-inbox .ae-sidebar-signout:hover {
+  background: rgba(220, 38, 38, 0.1);
+  color: #dc2626;
+}
+
+.ae-inbox .ae-sidebar-signout:hover > .ae-sidebar-icon {
+  background: transparent;
+  color: #dc2626;
+}
+
+.ae-inbox .ae-main-panel {
+  min-height: 100vh;
+  min-width: 0;
+  overflow-x: hidden;
+  padding: 30px clamp(22px, 3vw, 42px) 28px;
+  border: 0;
+  border-radius: 0;
+  background: var(--ae-bg);
+  box-shadow: none;
+}
+
+.ae-inbox .ae-main-panel .ae-header {
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.ae-inbox .ae-main-panel .ae-header > div:first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ae-inbox .ae-main-panel .ae-header h1 {
+  font-size: clamp(22px, 4vw, 32px);
+  white-space: normal;
+}
+
+.ae-inbox .ae-main-panel .ae-header-meta {
+  flex: 1 1 100%;
+  grid-template-columns: repeat(auto-fit, minmax(108px, 1fr));
+  min-width: 0;
+  width: 100%;
+}
+
+/* Neutralise l'ancien mode "icone centree + expand au hover" */
+.ae-inbox .ae-sidebar-nav button,
+.ae-inbox .ae-sidebar:hover .ae-sidebar-nav button,
+.ae-inbox .ae-sidebar:has(button:focus-visible) .ae-sidebar-nav button {
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+/* Extension side panel: icônes seules sous 760px */
+@media (max-width: 760px) {
+  .ae-inbox,
+  .ae-inbox:has(.ae-sidebar:hover),
+  .ae-inbox:has(.ae-sidebar button:focus-visible) {
+    --ae-sidebar-width: 68px;
+    grid-template-columns: var(--ae-sidebar-width) minmax(0, 1fr);
+  }
+
+  .ae-inbox .ae-sidebar {
+    padding: 12px 8px;
+  }
+
+  .ae-inbox .ae-sidebar-header {
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .ae-inbox .ae-sidebar-pulse {
+    margin-top: 0;
+  }
+
+  .ae-inbox .ae-sidebar-brand,
+  .ae-inbox .ae-sidebar:hover .ae-sidebar-brand,
+  .ae-inbox .ae-sidebar:has(button:focus-visible) .ae-sidebar-brand,
+  .ae-inbox .ae-sidebar-nav button,
+  .ae-inbox .ae-sidebar-signout,
+  .ae-inbox .ae-sidebar:hover .ae-sidebar-nav button,
+  .ae-inbox .ae-sidebar:has(button:focus-visible) .ae-sidebar-nav button {
+    justify-content: center;
+    gap: 0;
+    padding: 0 6px;
+  }
+
+  .ae-inbox .ae-sidebar-brand div,
+  .ae-inbox .ae-sidebar-nav button > .ae-sidebar-label,
+  .ae-inbox .ae-sidebar-signout > .ae-sidebar-label {
+    display: none;
+  }
+
+  .ae-inbox .ae-sidebar-section {
+    display: none;
+  }
+
+  .ae-inbox .ae-main-panel {
+    padding: 18px 14px;
+  }
+}

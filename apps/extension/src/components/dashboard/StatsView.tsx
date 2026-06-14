@@ -1,15 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import type { QueueProspect } from "@jarvis/shared";
+import { BarChart3, Layers, TrendingUp, type LucideIcon } from "lucide-react";
 import { dealStatusLabels, priorityLabels } from "./config";
 import { formatAmount, formatDate } from "../../utils/dashboard/formatters";
 import { getDealStatus } from "../../utils/dashboard/prospects";
 import { ForecastChart } from "./charts/ForecastChart";
 import { StageFunnelChart } from "./charts/StageFunnelChart";
-import { MetricIcon } from "./MetricIcon";
 import { ProbabilityTimelinePanel } from "./ProbabilityTimelinePanel";
 import { SalesActivityStatsPanel } from "./SalesActivityStatsPanel";
 import type { ForecastChartViewModel, MetricCard, StageChartViewModel } from "./types";
 import type { HubSpotOwnerOption } from "../../services/api";
+import "../styles/stats.css";
 
 type StatsViewProps = {
   forecastChart: ForecastChartViewModel;
@@ -23,6 +24,13 @@ type StatsViewProps = {
   selectedOwnerId?: string;
   canViewTeamForecast?: boolean;
 };
+
+const SectionLabel = ({ children, icon: Icon }: { children: string; icon: LucideIcon }) => (
+  <span className="jv-section-label">
+    <Icon aria-hidden="true" className="jv-section-icon" size={13} strokeWidth={1.5} />
+    {children}
+  </span>
+);
 
 export const StatsView = ({
   forecastChart,
@@ -49,111 +57,112 @@ export const StatsView = ({
   }, [selectedStageId, stageChart.points]);
 
   return (
-    <section className="ae-view-panel" aria-label="Statistiques">
-      <div className="ae-view-title">
-        <p className="ae-eyebrow">Statistiques</p>
-        <h2>Dashboards pipeline</h2>
-      </div>
-      <section className="ae-metrics stats-grid" aria-label="Pipeline statistics">
-        {metricCards.map((card) => (
-          <div className={`ae-metric-card ${card.tone}`} key={card.id}>
-            <MetricIcon name={card.icon} />
-            <span>{card.label}</span>
-            <strong>{card.value}</strong>
+    <div className="jv-stats-page" aria-label="Statistiques">
+      <header className="jv-page-header">
+        <BarChart3 aria-hidden="true" className="jv-page-icon" size={18} strokeWidth={1.5} />
+        <h1>
+          Statistiques
+          <span className="jv-page-kicker">pipeline</span>
+        </h1>
+      </header>
+
+      <section className="jv-stat-strip" aria-label="Indicateurs pipeline">
+        {metricCards.map((card, index) => (
+          <div className="jv-stat" key={card.id} style={{ animationDelay: `${index * 60}ms` }}>
+            <span className="jv-stat-label">{card.label}</span>
+            <span className={`jv-stat-value${card.tone === "red" ? " is-risk" : ""}`}>{card.value}</span>
           </div>
         ))}
       </section>
-      <section className="ae-dashboard-grid" aria-label="Dashboard details">
-        <article className="ae-dashboard-panel">
-          <div className="ae-panel-heading">
-            <span>Forecast fermeture</span>
-            <strong>{overdueCloseProspects.length} en retard</strong>
+
+      <section className="jv-theme-block" aria-label="Forecast fermeture">
+        <header className="jv-theme-block-head">
+          <SectionLabel icon={TrendingUp}>Forecast fermeture</SectionLabel>
+          <span className="jv-theme-block-meta">
+            {overdueCloseProspects.length} en retard
+          </span>
+        </header>
+        <ForecastChart chart={forecastChart} formatAmount={formatAmount} />
+      </section>
+
+      <section className="jv-theme-block" aria-label="Repartition par stage">
+        <header className="jv-theme-block-head">
+          <SectionLabel icon={Layers}>Repartition par stage</SectionLabel>
+          <div className="jv-theme-block-actions">
+            <label className="jv-toggle">
+              <input
+                checked={hideClosedLostStage}
+                onChange={(event) => onHideClosedLostStageChange(event.target.checked)}
+                type="checkbox"
+              />
+              <span aria-hidden="true" />
+              Masquer lost
+            </label>
+            <span className="jv-theme-block-meta">{stageChart.dealCount} deal(s)</span>
           </div>
-          <ForecastChart chart={forecastChart} formatAmount={formatAmount} />
-        </article>
-        <article className="ae-dashboard-panel ae-stage-panel">
-          <div className="ae-panel-heading">
-            <span>Repartition par stage</span>
-            <div className="ae-stage-panel-actions">
-              <label className="ae-mini-toggle">
-                <input
-                  checked={hideClosedLostStage}
-                  onChange={(event) => onHideClosedLostStageChange(event.target.checked)}
-                  type="checkbox"
-                />
-                <span aria-hidden="true" />
-                Masquer lost
-              </label>
-              <strong>{stageChart.dealCount} deal(s)</strong>
-            </div>
-          </div>
-          <StageFunnelChart chart={stageChart} onStageSelect={setSelectedStageId} selectedStageId={selectedStageId} />
-          {selectedStage ? (
-            <div className="ae-stage-deals" aria-live="polite">
-              <div className="ae-stage-deals-heading">
-                <span>
-                  Deals - {selectedStage.label}
-                </span>
-                <strong>
-                  {selectedStage.count} deal(s) · {formatAmount(selectedStage.amount)}
-                </strong>
-              </div>
-              {selectedStage.prospects.length > 0 ? (
-                <div className="ae-stage-deal-list">
-                  {selectedStage.prospects.map((prospect) => (
-                    <article className="ae-stage-deal-row" key={prospect.id}>
+        </header>
+        <StageFunnelChart chart={stageChart} onStageSelect={setSelectedStageId} selectedStageId={selectedStageId} />
+        {selectedStage ? (
+          <div className="jv-stats-stage-deals" aria-live="polite">
+            <header className="jv-stats-stage-deals-head">
+              <SectionLabel icon={Layers}>{`Deals — ${selectedStage.label}`}</SectionLabel>
+              <span className="jv-theme-block-meta">
+                {selectedStage.count} deal(s) · {formatAmount(selectedStage.amount)}
+              </span>
+            </header>
+            {selectedStage.prospects.length > 0 ? (
+              <div className="jv-list-body">
+                {selectedStage.prospects.map((prospect) => (
+                  <article className="jv-list-item" key={prospect.id}>
+                    <span className="jv-list-main">
+                      <strong>{prospect.company}</strong>
+                      <small>
+                        {prospect.name} · {prospect.nextAction}
+                      </small>
+                    </span>
+                    <dl className="jv-stats-deal-meta">
                       <div>
-                        <strong>{prospect.company}</strong>
-                        <span>
-                          {prospect.name} · {prospect.nextAction}
-                        </span>
+                        <dt>Montant</dt>
+                        <dd>{formatAmount(prospect.dealAmount)}</dd>
                       </div>
-                      <dl>
-                        <div>
-                          <dt>Montant</dt>
-                          <dd>{formatAmount(prospect.dealAmount)}</dd>
-                        </div>
-                        <div>
-                          <dt>Proba</dt>
-                          <dd>{prospect.closeProbability}%</dd>
-                        </div>
-                        <div>
-                          <dt>Close</dt>
-                          <dd>{prospect.closeDate ? formatDate(prospect.closeDate) : "Sans date"}</dd>
-                        </div>
-                        <div>
-                          <dt>Statut</dt>
-                          <dd>
-                            {dealStatusLabels[getDealStatus(prospect)]} · {priorityLabels[prospect.priority]}
-                          </dd>
-                        </div>
-                      </dl>
-                    </article>
-                  ))}
-                </div>
-              ) : (
-                <p className="ae-empty">Aucun deal dans ce stage.</p>
-              )}
-            </div>
-          ) : null}
-        </article>
+                      <div>
+                        <dt>Proba</dt>
+                        <dd>{prospect.closeProbability}%</dd>
+                      </div>
+                      <div>
+                        <dt>Close</dt>
+                        <dd>{prospect.closeDate ? formatDate(prospect.closeDate) : "Sans date"}</dd>
+                      </div>
+                      <div>
+                        <dt>Statut</dt>
+                        <dd>
+                          {dealStatusLabels[getDealStatus(prospect)]} · {priorityLabels[prospect.priority]}
+                        </dd>
+                      </div>
+                    </dl>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <p className="jv-theme-empty">Aucun deal dans ce stage.</p>
+            )}
+          </div>
+        ) : null}
       </section>
-      <section className="ae-dashboard-grid" aria-label="Probabilite de closing">
-        <ProbabilityTimelinePanel
-          orgId={orgId}
-          owners={owners}
-          selectedOwnerId={selectedOwnerId}
-          canViewTeamForecast={canViewTeamForecast}
-        />
-      </section>
-      <section className="ae-dashboard-grid" aria-label="Activites commerciales">
-        <SalesActivityStatsPanel
-          orgId={orgId}
-          owners={owners}
-          selectedOwnerId={selectedOwnerId}
-          canViewTeamForecast={canViewTeamForecast}
-        />
-      </section>
-    </section>
+
+      <ProbabilityTimelinePanel
+        canViewTeamForecast={canViewTeamForecast}
+        orgId={orgId}
+        owners={owners}
+        selectedOwnerId={selectedOwnerId}
+      />
+
+      <SalesActivityStatsPanel
+        canViewTeamForecast={canViewTeamForecast}
+        orgId={orgId}
+        owners={owners}
+        selectedOwnerId={selectedOwnerId}
+      />
+    </div>
   );
 };

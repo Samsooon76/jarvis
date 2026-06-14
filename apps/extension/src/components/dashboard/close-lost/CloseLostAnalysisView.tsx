@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { CircleX } from "lucide-react";
 import {
   analyzeCloseLostDeal,
   fetchCloseLostAnalysisRun,
@@ -10,28 +11,24 @@ import {
   type CloseLostOverviewResult,
   type CloseLostScope,
 } from "../../../services/api";
-import { formatDateTime } from "../../../utils/dashboard/formatters";
+import "../../styles/close-lost.css";
 import {
   CompactBreakdown,
   DealDeepDive,
-  DealTable,
+  DealList,
   FilterToolbar,
-  KeyInsight,
   LossTreemap,
-  MetricCard,
   Recommendations,
-  SegmentTable,
+  RunProgress,
   TopFactors,
   ValueTrendChart,
 } from "./components";
 import {
-  buildBreakdownRows,
   buildMonthlyTrend,
   CLOSE_LOST_POLL_TIMEOUT_MS,
-  getDateRangeLabel,
-  getDealOwnerDisplayName,
+  formatMetricValue,
   getDefaultDateRange,
-  getKeyInsight,
+  getMetricTone,
   getSalesAeOwners,
   type CloseLostAnalysisViewProps,
   wait,
@@ -59,7 +56,7 @@ export const CloseLostAnalysisView = ({
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [dealAnalyzeLoading, setDealAnalyzeLoading] = useState(false);
-  const [recommendationsPanel, setRecommendationsPanel] = useState<HTMLElement | null>(null);
+
 
   const salesAeOwnerIds = useMemo(() => salesAeOwners.map((owner) => owner.ownerId), [salesAeOwners]);
   const salesAeOwnerKey = salesAeOwnerIds.join(",");
@@ -68,16 +65,11 @@ export const CloseLostAnalysisView = ({
     [owners],
   );
   const resolvedOwnerId = scope === "owner" ? ownerId || selectedOwnerId || salesAeOwners[0]?.ownerId || null : null;
-  const keyInsight = useMemo(() => getKeyInsight(overview), [overview]);
-  const trendPoints = useMemo(() => buildMonthlyTrend(overview?.deals ?? []), [overview?.deals]);
-  const segmentRows = useMemo(
-    () => buildBreakdownRows(overview?.deals ?? [], (deal) => getDealOwnerDisplayName(deal, ownersById), "Owner non assigne"),
-    [overview?.deals, ownersById],
-  );
   const significantDeals = useMemo(
     () => [...(overview?.deals ?? [])].sort((left, right) => right.amount - left.amount),
     [overview?.deals],
   );
+  const trendPoints = useMemo(() => buildMonthlyTrend(overview?.deals ?? []), [overview?.deals]);
 
   const loadOverview = useCallback(async (options: { forceRefresh?: boolean; silent?: boolean } = {}) => {
     try {
@@ -104,7 +96,7 @@ export const CloseLostAnalysisView = ({
         void fetchCloseLostDealDetail(orgId, firstDealId, selectedAiProvider).catch(() => undefined);
       }
     } catch (error) {
-      setOverviewError(error instanceof Error ? error.message : "Close lost analysis indisponible.");
+      setOverviewError(error instanceof Error ? error.message : "Analyse close lost indisponible.");
     } finally {
       if (!options.silent) {
         setOverviewLoading(false);
@@ -141,7 +133,7 @@ export const CloseLostAnalysisView = ({
         }
       } catch (error) {
         if (!cancelled) {
-          setDetailError(error instanceof Error ? error.message : "Detail close lost indisponible.");
+          setDetailError(error instanceof Error ? error.message : "Détail close lost indisponible.");
         }
       } finally {
         if (!cancelled) {
@@ -181,7 +173,7 @@ export const CloseLostAnalysisView = ({
 
       while (currentRun.status !== "completed" && currentRun.status !== "failed") {
         if (Date.now() > deadline) {
-          throw new Error("Delai d'attente depasse pendant l'analyse close-lost. Veuillez reessayer.");
+          throw new Error("Délai d'attente dépassé pendant l'analyse close-lost. Veuillez réessayer.");
         }
         await wait(1200);
         currentRun = await fetchCloseLostAnalysisRun(startedRun.id);
@@ -227,14 +219,14 @@ export const CloseLostAnalysisView = ({
   };
 
   return (
-    <section className="ae-close-lost-page" aria-label="Close lost analysis">
-      <div className="ae-close-lost-titlebar">
-        <div>
-          <h2>Close lost analysis</h2>
-          <p>Comprenez pourquoi vous perdez des deals et identifiez les leviers d'amelioration.</p>
-        </div>
-        <span>Derniere mise a jour : {overview?.generatedAt ? formatDateTime(overview.generatedAt) : getDateRangeLabel(dateFrom, dateTo)}</span>
-      </div>
+    <div className="jv-close-lost-page" aria-label="Close Lost">
+      <header className="jv-page-header">
+        <CircleX aria-hidden="true" className="jv-page-icon" size={18} strokeWidth={1.5} />
+        <h1>
+          Close Lost
+          <span className="jv-page-kicker">analyse</span>
+        </h1>
+      </header>
 
       <FilterToolbar
         dateFrom={dateFrom}
@@ -250,53 +242,52 @@ export const CloseLostAnalysisView = ({
         scope={scope}
       />
 
-      {overviewError ? <p className="ae-detail-error">{overviewError}</p> : null}
+      {overviewError ? <p className="jv-banner jv-banner-error">{overviewError}</p> : null}
 
-      {activeRun ? (
-        <section className="ae-close-lost-run" aria-live="polite">
-          <div>
-            <span>{activeRun.currentStep}</span>
-            <strong>{activeRun.progress}%</strong>
-          </div>
-          <i>
-            <span style={{ width: `${activeRun.progress}%` }} />
-          </i>
-          <small>
-            {activeRun.analyzedCount} analyse(s), {activeRun.reusedCount} cache(s), {activeRun.failedCount} erreur(s)
-          </small>
-        </section>
+      {activeRun && (activeRun.status === "queued" || activeRun.status === "running") ? (
+        <RunProgress
+          analyzedCount={activeRun.analyzedCount}
+          currentStep={activeRun.currentStep}
+          failedCount={activeRun.failedCount}
+          progress={activeRun.progress}
+          reusedCount={activeRun.reusedCount}
+        />
       ) : null}
 
-      <KeyInsight
-        detail={keyInsight.detail}
-        onRecommendationsClick={() => recommendationsPanel?.scrollIntoView({ behavior: "smooth", block: "center" })}
-        title={keyInsight.title}
-      />
-
-      <section className="ae-close-lost-metrics">
-        {(overview?.metrics ?? []).map((metric) => (
-          <MetricCard key={metric.id} metric={metric} />
+      <section aria-label="Indicateurs close lost" className="jv-stat-strip">
+        {(overview?.metrics ?? []).map((metric, index) => (
+          <div className="jv-stat" key={metric.id} style={{ animationDelay: `${index * 60}ms` }}>
+            <span className="jv-stat-label">{metric.label}</span>
+            <span className="jv-stat-value">{formatMetricValue(metric)}</span>
+            {metric.caption ? (
+              <small className={`jv-stat-caption ${getMetricTone(metric)}`}>{metric.caption}</small>
+            ) : null}
+          </div>
         ))}
       </section>
 
-      <section className="ae-close-lost-top-grid">
+      <section aria-label="Patterns et recommandations" className="jv-themes-row">
+        <TopFactors overview={overview} />
+        <Recommendations overview={overview} />
+      </section>
+
+      <section aria-label="Visualisations" className="jv-themes-row">
         <LossTreemap rows={overview?.lossReasons ?? []} />
         <ValueTrendChart points={trendPoints} />
       </section>
 
-      <section className="ae-close-lost-middle-grid">
-        <SegmentTable rows={segmentRows} />
-        <TopFactors overview={overview} />
-        <Recommendations overview={overview} panelRef={setRecommendationsPanel} />
+      <section aria-label="Répartitions" className="jv-themes-row">
+        <CompactBreakdown rows={overview?.competitors ?? []} title="Patterns compétitifs" />
+        <CompactBreakdown rows={overview?.stageBreakdown ?? []} title="Pertes par étape" />
       </section>
 
-      <section className="ae-close-lost-bottom-grid">
-        <DealTable activeDealId={activeDealId} deals={significantDeals} onDealSelect={(hubspotDealId) => setActiveDealId(hubspotDealId)} />
-        <CompactBreakdown rows={overview?.competitors ?? []} title="Patterns competitifs recurrents" />
-        <CompactBreakdown rows={overview?.stageBreakdown ?? []} title="Repartition des pertes par etape" />
-      </section>
-
-      <section className="ae-close-lost-workspace">
+      <div className="jv-workspace">
+        <DealList
+          activeDealId={activeDealId}
+          deals={significantDeals}
+          isLoading={overviewLoading}
+          onDealSelect={(hubspotDealId) => setActiveDealId(hubspotDealId)}
+        />
         <DealDeepDive
           detail={detail}
           error={detailError}
@@ -305,7 +296,7 @@ export const CloseLostAnalysisView = ({
           onAnalyze={handleAnalyzeDeal}
           ownersById={ownersById}
         />
-      </section>
-    </section>
+      </div>
+    </div>
   );
 };

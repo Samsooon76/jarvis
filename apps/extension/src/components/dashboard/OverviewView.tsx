@@ -1,9 +1,10 @@
+import { useMemo } from "react";
 import type { QueueProspect } from "@jarvis/shared";
-import { buckets } from "./config";
+import { Flame, History, LayoutDashboard, RefreshCw, Sparkles, Target, type LucideIcon } from "lucide-react";
+import { buckets, dealStatusFilters } from "./config";
 import { QueueFilters } from "./queue/QueueFilters";
 import { ProspectDetail } from "./queue/ProspectDetail";
 import { ProspectTable } from "./queue/ProspectTable";
-import { MetricIcon } from "./MetricIcon";
 import type { HubSpotLastUpdateItem } from "../../services/api";
 import type {
   CloseDatePreset,
@@ -14,87 +15,88 @@ import type {
   StageFilter,
 } from "./types";
 import { formatAmount, formatDateTime } from "../../utils/dashboard/formatters";
+import { getBucket, getDaysSince, matchesCloseDateFilter } from "../../utils/dashboard/prospects";
+import "../styles/overview.css";
 
-const nextActionPriorityLabels: Record<NonNullable<HubSpotLastUpdateItem["nextAction"]>["priority"], string> = {
-  low: "Low",
-  medium: "Medium",
-  high: "High",
-};
-
-const formatDueInDays = (dueInDays: number): string => {
-  if (dueInDays <= 0) {
-    return "Aujourd'hui";
+const getQueueScoreLabel = (score: number): string => {
+  if (score >= 75) {
+    return "Tres bon";
   }
 
-  if (dueInDays === 1) {
-    return "Demain";
+  if (score >= 50) {
+    return "Correct";
   }
 
-  return `Dans ${dueInDays} j`;
+  return "A surveiller";
 };
 
-type LastUpdateTableProps = {
+const SectionLabel = ({ children, icon: Icon }: { children: string; icon: LucideIcon }) => (
+  <span className="jv-section-label">
+    <Icon aria-hidden="true" className="jv-section-icon" size={13} strokeWidth={1.5} />
+    {children}
+  </span>
+);
+
+const ThemeBlock = ({
+  empty,
+  icon,
+  items,
+  title,
+}: {
+  empty: string;
+  icon: LucideIcon;
+  items: Array<{ label: string; count: number }>;
+  title: string;
+}) => (
+  <div className="jv-theme-block">
+    <SectionLabel icon={icon}>{title}</SectionLabel>
+    {items.length > 0 ? (
+      <ul className="jv-theme-list">
+        {items.slice(0, 5).map((item) => (
+          <li key={item.label}>
+            <span>{item.label}</span>
+            <em>{item.count}</em>
+          </li>
+        ))}
+      </ul>
+    ) : (
+      <p className="jv-theme-empty">{empty}</p>
+    )}
+  </div>
+);
+
+type LastUpdateListProps = {
   updates: HubSpotLastUpdateItem[];
 };
 
-const LastUpdateTable = ({ updates }: LastUpdateTableProps) => (
-  <section className="ae-last-update-panel" aria-label="Last update">
-    <div className="ae-panel-heading">
-      <span>Last update</span>
-      <strong>{updates.length} deal(s)</strong>
-    </div>
-    <div className="ae-last-update-table" role="region" aria-label="Derniers deals mis a jour par webhook">
-      <table>
-        <thead>
-          <tr>
-            <th>Deal</th>
-            <th>Event</th>
-            <th>Next to do</th>
-            <th>Received</th>
-            <th>Value</th>
-          </tr>
-        </thead>
-        <tbody>
-          {updates.map((update) => (
-            <tr key={update.id}>
-              <td>
-                <strong>{update.dealName ?? `Deal ${update.hubspotDealId}`}</strong>
-                <small>{update.companyName ?? update.hubspotDealId}</small>
-              </td>
-              <td>
-                <strong>{update.reason ?? "Webhook HubSpot"}</strong>
-                <small>
-                  {update.eventCount} event{update.eventCount > 1 ? "s" : ""} · {update.dealStage ?? "Stage inconnu"}
-                </small>
-              </td>
-              <td>
-                {update.nextAction ? (
-                  <>
-                    <strong>{update.nextAction.title}</strong>
-                    <small>
-                      {formatDueInDays(update.nextAction.dueInDays)} ·{" "}
-                      {nextActionPriorityLabels[update.nextAction.priority]}
-                    </small>
-                  </>
-                ) : (
-                  <>
-                    <strong>Next action en cours</strong>
-                    <small>{update.errorMessage ?? "Analyse du dernier event HubSpot en attente"}</small>
-                  </>
-                )}
-              </td>
-              <td>
-                <strong>{formatDateTime(update.receivedAt)}</strong>
-                <small>{update.processedAt ? `Traite ${formatDateTime(update.processedAt)}` : "En attente"}</small>
-              </td>
-              <td>
-                <strong>{update.amount === null ? "-" : formatAmount(update.amount)}</strong>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {updates.length === 0 ? <p className="ae-empty">Aucun event webhook HubSpot recu pour l'instant.</p> : null}
+const LastUpdateList = ({ updates }: LastUpdateListProps) => (
+  <section className="jv-list-shell" aria-label="Derniers deals mis a jour">
+    <header className="jv-list-head">
+      <SectionLabel icon={History}>Last update</SectionLabel>
+      <span className="jv-list-count">
+        {updates.length} deal{updates.length > 1 ? "s" : ""}
+      </span>
+    </header>
+    <div className="jv-list-body">
+      {updates.map((update) => (
+        <div className="jv-list-item jv-update-item" key={update.id}>
+          <span className="jv-list-main">
+            <strong>{update.dealName ?? `Deal ${update.hubspotDealId}`}</strong>
+            <small>{update.companyName ?? update.hubspotDealId}</small>
+            <span className="jv-item-meta">
+              <span>{update.reason ?? "Webhook HubSpot"}</span>
+              <span>{update.dealStage ?? "Stage inconnu"}</span>
+            </span>
+          </span>
+          <span className="jv-list-side">
+            <time>{formatDateTime(update.receivedAt)}</time>
+            <em>{update.amount === null ? "—" : formatAmount(update.amount)}</em>
+          </span>
+        </div>
+      ))}
+      {updates.length === 0 ? (
+        <p className="jv-list-empty">Aucun event webhook HubSpot recu pour l'instant.</p>
+      ) : null}
     </div>
   </section>
 );
@@ -102,14 +104,14 @@ const LastUpdateTable = ({ updates }: LastUpdateTableProps) => (
 type OverviewViewProps = {
   activeBucket: QueueBucket;
   activeProspect: QueueProspect | null;
-  averageProbability: number;
+  baseFilteredProspects: QueueProspect[];
   bucketCounts: Record<QueueBucket, number>;
   filteredProspects: QueueProspect[];
   filters: DashboardFilters;
   hubspotDealCount?: number | null;
+  isConnected?: boolean;
   isLoadingLiveDeals: boolean;
   lastUpdates: HubSpotLastUpdateItem[];
-  orgId: string;
   onActiveBucketChange: (bucket: QueueBucket) => void;
   onActiveProspectChange: (prospectId: string) => void;
   onCloseDateFromChange: (closeDateFrom: string) => void;
@@ -119,22 +121,24 @@ type OverviewViewProps = {
   onSearchTermChange: (searchTerm: string) => void;
   onStageFilterChange: (stageFilter: StageFilter) => void;
   onStatusFilterChange: (statusFilter: DealStatusFilter) => void;
+  onSyncHubSpot?: () => void;
+  orgId: string;
   plannedTasksByProspectId: Map<string, PlannedProspectTask>;
   prospects: QueueProspect[];
-  totalPipeline: number;
+  syncLoading?: boolean;
 };
 
 export const OverviewView = ({
   activeBucket,
   activeProspect,
-  averageProbability,
+  baseFilteredProspects,
   bucketCounts,
   filteredProspects,
   filters,
   hubspotDealCount,
+  isConnected = false,
   isLoadingLiveDeals,
   lastUpdates,
-  orgId,
   onActiveBucketChange,
   onActiveProspectChange,
   onCloseDateFromChange,
@@ -144,86 +148,210 @@ export const OverviewView = ({
   onSearchTermChange,
   onStageFilterChange,
   onStatusFilterChange,
+  onSyncHubSpot,
+  orgId,
   plannedTasksByProspectId,
   prospects,
-  totalPipeline,
-}: OverviewViewProps) => (
-  <>
-    <section className="ae-metrics" aria-label="Pipeline summary">
-      <div className="ae-metric-card">
-        <MetricIcon name="clock" />
-        <span>Act now</span>
-        <strong>{bucketCounts.actNow}</strong>
-        <small>Actions prioritaires</small>
-      </div>
-      <div className="ae-metric-card">
-        <MetricIcon name="trend" />
-        <span>Pipeline</span>
-        <strong>{formatAmount(totalPipeline)}</strong>
-        <small>Total du pipe</small>
-      </div>
-      <div className="ae-metric-card">
-        <MetricIcon name="money" />
-        <span>Deals</span>
-        <strong>{isLoadingLiveDeals ? "..." : (hubspotDealCount ?? prospects.length)}</strong>
-        <small>Synchronises</small>
-      </div>
-      <div className="ae-metric-card">
-        <MetricIcon name="check" />
-        <span>Avg close</span>
-        <strong>{averageProbability}%</strong>
-        <small>Taux de reussite</small>
-      </div>
-    </section>
+  syncLoading = false,
+}: OverviewViewProps) => {
+  const pipelineSummary = useMemo(() => {
+    const pipelineTotal = baseFilteredProspects.reduce((sum, prospect) => sum + prospect.dealAmount, 0);
+    const avgClose =
+      baseFilteredProspects.length > 0
+        ? Math.round(
+            baseFilteredProspects.reduce((sum, prospect) => sum + prospect.closeProbability, 0) /
+              baseFilteredProspects.length,
+          )
+        : 0;
 
-    <nav className="ae-tabs" aria-label="Queue buckets">
-      {buckets.map((bucket) => (
-        <button
-          aria-pressed={activeBucket === bucket.id}
-          className={`ae-bucket-tab ${bucket.id}${activeBucket === bucket.id ? " active" : ""}`}
-          key={bucket.id}
-          onClick={() => onActiveBucketChange(bucket.id)}
-          title={bucket.description}
-          type="button"
-        >
-          <span>{bucket.label}</span>
-          <strong>{bucket.id === "lastUpdate" ? lastUpdates.length : bucketCounts[bucket.id]}</strong>
-        </button>
-      ))}
-    </nav>
+    return {
+      avgClose,
+      pipelineTotal,
+    };
+  }, [baseFilteredProspects]);
 
-    <section className={activeBucket === "lastUpdate" ? "ae-content last-update-active" : "ae-content"}>
-      <div className="ae-queue-panel">
-        {activeBucket === "lastUpdate" ? (
-          <LastUpdateTable updates={lastUpdates} />
-        ) : (
+  const queueInsights = useMemo(() => {
+    const overdueCount = baseFilteredProspects.filter((prospect) =>
+      matchesCloseDateFilter(prospect, "overdue", "", ""),
+    ).length;
+    const staleContactCount = baseFilteredProspects.filter((prospect) => getDaysSince(prospect.lastContactAt) >= 14).length;
+    const actNowCount = baseFilteredProspects.filter((prospect) => getBucket(prospect) === "actNow").length;
+
+    const signals = [
+      { label: "Close date depassee", count: overdueCount },
+      { label: "Aucun contact 14j+", count: staleContactCount },
+      { label: "Action immediate", count: actNowCount },
+    ].filter((signal) => signal.count > 0);
+
+    const suggested = baseFilteredProspects
+      .filter((prospect) => getBucket(prospect) === "actNow")
+      .slice(0, 5)
+      .map((prospect) => ({
+        label: `${prospect.nextAction} · ${prospect.company}`,
+        count: 1,
+      }));
+
+    const queueScore =
+      baseFilteredProspects.length > 0
+        ? Math.round(
+            baseFilteredProspects.reduce((sum, prospect) => sum + prospect.closeProbability, 0) /
+              baseFilteredProspects.length,
+          )
+        : 0;
+
+    return {
+      queueScore,
+      scoreLabel: getQueueScoreLabel(queueScore),
+      signals,
+      suggested,
+    };
+  }, [baseFilteredProspects]);
+
+  const stats = [
+    {
+      caption: "Actions prioritaires",
+      label: "Act now",
+      value: String(bucketCounts.actNow),
+    },
+    {
+      caption: "Total du pipe",
+      label: "Pipeline",
+      value: formatAmount(pipelineSummary.pipelineTotal),
+    },
+    {
+      caption: "Synchronises",
+      label: "Deals",
+      value: isLoadingLiveDeals ? "..." : String(hubspotDealCount ?? prospects.length),
+    },
+    {
+      caption: "Taux de reussite",
+      label: "Avg close",
+      value: `${pipelineSummary.avgClose}%`,
+    },
+  ] as const;
+
+  const activePlannedTask = activeProspect ? (plannedTasksByProspectId.get(activeProspect.id) ?? null) : null;
+  const showQueueWorkspace = activeBucket !== "lastUpdate";
+
+  return (
+    <div className="jv-overview-page" aria-label="Vue d'ensemble pipeline">
+      <header className="jv-page-header">
+        <LayoutDashboard aria-hidden="true" className="jv-page-icon" size={18} strokeWidth={1.5} />
+        <h1>
+          Vue d'ensemble
+          <span className="jv-page-kicker">pipeline</span>
+        </h1>
+      </header>
+
+      <div className="jv-toolbar">
+        <div className="jv-toolbar-filters">
+          <div className="jv-filter-pills jv-bucket-pills" role="group" aria-label="Buckets queue">
+            {buckets.map((bucket) => (
+              <button
+                className={activeBucket === bucket.id ? "active" : ""}
+                key={bucket.id}
+                onClick={() => onActiveBucketChange(bucket.id)}
+                title={bucket.description}
+                type="button"
+              >
+                {bucket.label}
+                <em>{bucket.id === "lastUpdate" ? lastUpdates.length : bucketCounts[bucket.id]}</em>
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="jv-toolbar-actions">
+          <select
+            aria-label="Filtrer par statut deal"
+            className="jv-select"
+            onChange={(event) => onStatusFilterChange(event.target.value as DealStatusFilter)}
+            value={filters.statusFilter}
+          >
+            {dealStatusFilters.map((filter) => (
+              <option key={filter.id} value={filter.id}>
+                {filter.label}
+              </option>
+            ))}
+          </select>
+          {onSyncHubSpot ? (
+            <button className="jv-btn-primary" disabled={!isConnected || syncLoading} onClick={onSyncHubSpot} type="button">
+              <RefreshCw aria-hidden="true" className={syncLoading ? "jv-spin" : undefined} size={15} strokeWidth={1.5} />
+              Sync HubSpot
+            </button>
+          ) : null}
+        </div>
+      </div>
+
+      <section className="jv-stat-strip cols-4" aria-label="Resume pipeline">
+        {stats.map((stat, index) => (
+          <div className="jv-stat" key={stat.label} style={{ animationDelay: `${index * 60}ms` }}>
+            <span className="jv-stat-label">{stat.label}</span>
+            <span className="jv-stat-value">{stat.value}</span>
+            {stat.caption ? <small className="jv-stat-caption">{stat.caption}</small> : null}
+          </div>
+        ))}
+      </section>
+
+      {showQueueWorkspace ? (
+        <>
+          <section className="jv-score-banner" aria-label="Score priorite pipeline">
+            <div
+              className="jv-score-ring"
+              style={{ background: `conic-gradient(#d4714a ${queueInsights.queueScore * 3.6}deg, #ece9e3 0)` }}
+            >
+              <span>{queueInsights.queueScore}</span>
+            </div>
+            <div className="jv-score-copy">
+              <strong>{queueInsights.scoreLabel}</strong>
+              <p>
+                {bucketCounts.actNow > 0
+                  ? `Queue bien priorisee — ${bucketCounts.actNow} prospect${bucketCounts.actNow > 1 ? "s" : ""} demandent une action aujourd'hui.`
+                  : "Aucune action urgente detectee sur la queue filtree."}
+              </p>
+            </div>
+            <span className="jv-score-badge">
+              <Sparkles size={11} strokeWidth={1.5} />
+              IA
+            </span>
+          </section>
+
+          <section className="jv-themes-row" aria-label="Signaux et actions">
+            <ThemeBlock empty="Aucun signal." icon={Flame} items={queueInsights.signals} title="Signaux du jour" />
+            <ThemeBlock empty="Aucune action." icon={Target} items={queueInsights.suggested} title="Actions suggerees" />
+          </section>
+
+          <QueueFilters
+            filters={filters}
+            onCloseDateFromChange={onCloseDateFromChange}
+            onCloseDatePresetChange={onCloseDatePresetChange}
+            onCloseDateToChange={onCloseDateToChange}
+            onSearchTermChange={onSearchTermChange}
+            onStageFilterChange={onStageFilterChange}
+            onStatusFilterChange={onStatusFilterChange}
+          />
+        </>
+      ) : null}
+
+      <div className={showQueueWorkspace ? "jv-workspace" : "jv-workspace jv-workspace-single"}>
+        {showQueueWorkspace ? (
           <>
-            <QueueFilters
-              filteredCount={filteredProspects.length}
-              filters={filters}
-              onCloseDateFromChange={onCloseDateFromChange}
-              onCloseDatePresetChange={onCloseDatePresetChange}
-              onCloseDateToChange={onCloseDateToChange}
-              onSearchTermChange={onSearchTermChange}
-              onStageFilterChange={onStageFilterChange}
-              onStatusFilterChange={onStatusFilterChange}
-            />
-
             <ProspectTable
               activeProspectId={activeProspect?.id ?? null}
               filteredProspects={filteredProspects}
               isLoadingLiveDeals={isLoadingLiveDeals}
               onActiveProspectChange={onActiveProspectChange}
-              onOpenDealAnalysis={onOpenDealAnalysis}
-              plannedTasksByProspectId={plannedTasksByProspectId}
+            />
+            <ProspectDetail
+              activeProspect={activeProspect}
+              onOpenDealAnalysis={() => onOpenDealAnalysis()}
+              orgId={orgId}
+              plannedTask={activePlannedTask}
             />
           </>
+        ) : (
+          <LastUpdateList updates={lastUpdates} />
         )}
       </div>
-
-      {activeBucket === "lastUpdate" ? null : (
-        <ProspectDetail activeProspect={activeProspect} orgId={orgId} onOpenDealAnalysis={() => onOpenDealAnalysis()} />
-      )}
-    </section>
-  </>
-);
+    </div>
+  );
+};

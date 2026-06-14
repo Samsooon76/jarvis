@@ -64,6 +64,33 @@ describe("call dedupe", () => {
     assert.equal(canMergeCalls(morning, afternoon), false);
   });
 
+  it("fusionne Onoff au debut et Modjo a la fin quand l'ecart entre logs ~= duree de l'appel", () => {
+    // Cas reel: Onoff 15:52 (691 s), Modjo 16:03 (691 s) pour le meme appel.
+    const onoff = makeCall({
+      id: "onoff",
+      startedAt: "2026-05-21T15:52:16.000Z",
+      durationSeconds: 691,
+      prospectId: null,
+      richness: 120,
+    });
+    const modjo = makeCall({
+      id: "modjo",
+      startedAt: "2026-05-21T16:03:47.000Z",
+      durationSeconds: 691,
+      prospectId: null,
+      richness: 40,
+    });
+
+    assert.equal(canMergeCalls(onoff, modjo), true);
+
+    const groups = groupDuplicateCalls([onoff, modjo]);
+
+    assert.equal(groups.length, 1);
+    assert.equal(groups[0]?.canonicalId, "onoff");
+    assert.equal(groups[0]?.durationSeconds, 691);
+    assert.equal(groups[0]?.startedAt, "2026-05-21T15:52:16.000Z");
+  });
+
   it("ne fusionne jamais sans horodatage", () => {
     const dated = makeCall({ id: "dated" });
     const undated = makeCall({ id: "undated", startedAt: null });

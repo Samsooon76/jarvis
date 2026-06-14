@@ -1,146 +1,101 @@
 import type { QueueProspect } from "@jarvis/shared";
-import { BarChart3 } from "lucide-react";
-import { buckets, dealStatusLabels, priorityLabels } from "../config";
+import { ChevronRight, Users, type LucideIcon } from "lucide-react";
+import { priorityLabels } from "../config";
 import type { PlannedProspectTask } from "../types";
 import { LoadingState } from "../LoadingState";
-import { formatAmount, formatDate } from "../../../utils/dashboard/formatters";
-import { getBucket, getDaysSince, getDealStatus, getInitials } from "../../../utils/dashboard/prospects";
+import { formatAmount } from "../../../utils/dashboard/formatters";
+import { getDaysSince } from "../../../utils/dashboard/prospects";
 
 type ProspectTableProps = {
   activeProspectId: string | null;
   filteredProspects: QueueProspect[];
   isLoadingLiveDeals: boolean;
   onActiveProspectChange: (prospectId: string) => void;
-  onOpenDealAnalysis: (prospectId: string) => void;
   plannedTasksByProspectId: Map<string, PlannedProspectTask>;
 };
 
-const getTaskDueLabel = (dueAt: string | null): string => {
-  if (!dueAt) {
-    return "Planifiee sans date";
-  }
+const SectionLabel = ({ children, icon: Icon }: { children: string; icon: LucideIcon }) => (
+  <span className="jv-section-label">
+    <Icon aria-hidden="true" className="jv-section-icon" size={13} strokeWidth={1.5} />
+    {children}
+  </span>
+);
 
-  const dueDate = new Date(dueAt);
+const priorityClass: Record<QueueProspect["priority"], string> = {
+  urgent: "jv-meta-risk",
+  important: "jv-meta-pending",
+  routine: "jv-meta-ok",
+};
 
-  if (Number.isNaN(dueDate.getTime())) {
-    return "Planifiee";
-  }
+const formatRelativeTouch = (value: string): string => {
+  const days = getDaysSince(value);
 
-  const today = new Date();
-  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const dueStart = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate());
-  const dayDelta = Math.round((dueStart.getTime() - todayStart.getTime()) / 86_400_000);
-
-  if (dayDelta < 0) {
-    return `En retard · ${formatDate(dueAt)}`;
-  }
-
-  if (dayDelta === 0) {
+  if (days === 0) {
     return "Aujourd'hui";
   }
 
-  if (dayDelta === 1) {
-    return "Demain";
+  if (days === 1) {
+    return "Hier";
   }
 
-  return formatDate(dueAt);
+  return `Il y a ${days}j`;
 };
+
+const ProspectMeta = ({ prospect }: { prospect: QueueProspect }) => (
+  <span className="jv-item-meta">
+    <span className={priorityClass[prospect.priority]}>{priorityLabels[prospect.priority]}</span>
+    <span>{prospect.dealStage}</span>
+    <span>{prospect.closeProbability}%</span>
+    <span className="jv-meta-score">Score {prospect.closeProbability}</span>
+  </span>
+);
 
 export const ProspectTable = ({
   activeProspectId,
   filteredProspects,
   isLoadingLiveDeals,
   onActiveProspectChange,
-  onOpenDealAnalysis,
-  plannedTasksByProspectId,
 }: ProspectTableProps) => (
-  <div className="ae-table" role="region" aria-label="AE inbox items">
-    <table>
-      <thead>
-        <tr>
-          <th>Account</th>
-          <th>Status</th>
-          <th>When</th>
-          <th>Next move</th>
-          <th>Value</th>
-          <th aria-label="Deal analysis" />
-        </tr>
-      </thead>
-      <tbody>
-        {filteredProspects.map((prospect) => {
-          const bucket = getBucket(prospect);
-          const isActive = activeProspectId === prospect.id;
-          const daysSinceContact = getDaysSince(prospect.lastContactAt);
-          const dealStatus = getDealStatus(prospect);
-          const plannedTask = plannedTasksByProspectId.get(prospect.id) ?? null;
+  <section className="jv-list-shell" aria-busy={isLoadingLiveDeals} aria-label="Queue prospects">
+    <header className="jv-list-head">
+      <SectionLabel icon={Users}>Queue prospects</SectionLabel>
+      <span className="jv-list-count">
+        {filteredProspects.length} résultat{filteredProspects.length > 1 ? "s" : ""}
+      </span>
+    </header>
+    <div className="jv-list-body">
+      {filteredProspects.map((prospect) => {
+        const isActive = activeProspectId === prospect.id;
+        const dealLabel = prospect.dealName ?? prospect.dealStage;
 
-          return (
-            <tr className={isActive ? "selected" : ""} key={prospect.id} onClick={() => onActiveProspectChange(prospect.id)}>
-              <td>
-                <div className="ae-account">
-                  <span aria-hidden="true">{getInitials(prospect.company)}</span>
-                  <div>
-                    <strong>{prospect.company}</strong>
-                    <small>
-                      {prospect.name} · {prospect.dealStage}
-                    </small>
-                  </div>
-                </div>
-              </td>
-              <td>
-                <span className={`ae-status-pill ${dealStatus}`}>{dealStatusLabels[dealStatus]}</span>
-                <small>{prospect.closeDate ? formatDate(prospect.closeDate) : "Sans date"}</small>
-              </td>
-              <td>
-                <span className={`ae-pill ${bucket}`}>{buckets.find((item) => item.id === bucket)?.label}</span>
-              </td>
-              <td>
-                {plannedTask ? (
-                  <>
-                    <strong className="ae-next ae-planned-task-title">{plannedTask.title}</strong>
-                    <small className="ae-planned-task-meta">
-                      Tache HubSpot · {getTaskDueLabel(plannedTask.dueAt)}
-                      {plannedTask.extraCount > 0 ? ` · +${plannedTask.extraCount}` : ""}
-                    </small>
-                  </>
-                ) : (
-                  <>
-                    <strong className="ae-next">{prospect.nextAction}</strong>
-                    <small>{daysSinceContact === 0 ? "Contact today" : `No touch ${daysSinceContact}d`}</small>
-                  </>
-                )}
-              </td>
-              <td>
-                <strong>{formatAmount(prospect.dealAmount)}</strong>
-                <small>
-                  {priorityLabels[prospect.priority]} · {prospect.closeProbability}%
-                </small>
-              </td>
-              <td className="ae-table-action-cell">
-                <button
-                  aria-label={`Ouvrir l'analyse du deal ${prospect.company}`}
-                  className="ae-table-analysis-button"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onOpenDealAnalysis(prospect.id);
-                  }}
-                  title="Ouvrir l'analyse du deal"
-                  type="button"
-                >
-                  <BarChart3 aria-hidden="true" size={15} />
-                  <span>Analyse</span>
-                </button>
-              </td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
-    {filteredProspects.length === 0 && isLoadingLiveDeals ? (
-      <LoadingState detail="On synchronise la liste avec les donnees live HubSpot." label="Chargement des deals HubSpot" />
-    ) : null}
-    {filteredProspects.length === 0 && !isLoadingLiveDeals ? (
-      <p className="ae-empty">Aucun deal ne correspond a ce filtre.</p>
-    ) : null}
-  </div>
+        return (
+          <button
+            className={isActive ? "jv-list-item selected" : "jv-list-item"}
+            key={prospect.id}
+            onClick={() => onActiveProspectChange(prospect.id)}
+            type="button"
+          >
+            <span className="jv-list-main">
+              <strong>{prospect.company}</strong>
+              <small>
+                {prospect.name} · {dealLabel}
+              </small>
+              <ProspectMeta prospect={prospect} />
+            </span>
+            <span className="jv-list-side">
+              <time>{formatRelativeTouch(prospect.lastContactAt)}</time>
+              <em>{formatAmount(prospect.dealAmount)}</em>
+              <ChevronRight size={14} strokeWidth={1.5} />
+            </span>
+          </button>
+        );
+      })}
+      {filteredProspects.length === 0 && isLoadingLiveDeals ? (
+        <LoadingState detail="On synchronise la liste avec les donnees live HubSpot." label="Chargement des deals HubSpot" />
+      ) : null}
+      {filteredProspects.length === 0 && !isLoadingLiveDeals ? (
+        <p className="jv-list-empty">Aucun deal ne correspond a ce filtre.</p>
+      ) : null}
+    </div>
+  </section>
 );

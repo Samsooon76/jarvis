@@ -3,6 +3,7 @@ import { formatAmount } from "../../../utils/dashboard/formatters";
 import { formatPeriod } from "../../../utils/dashboard/forecast";
 
 type ForecastKpiCardsProps = {
+  analyzedRatio: number;
   dateFrom: string;
   dateTo: string;
   forecastShare: number;
@@ -13,7 +14,14 @@ type ForecastKpiCardsProps = {
   trendClassName: string;
 };
 
+const getScenarioAmount = (overview: ForecastOverviewResult | null, id: "commit" | "likely" | "upside"): number | null => {
+  const scenario = overview?.scenarios.find((item) => item.id === id);
+
+  return scenario?.amount ?? null;
+};
+
 export const ForecastKpiCards = ({
+  analyzedRatio,
   dateFrom,
   dateTo,
   forecastShare,
@@ -22,39 +30,85 @@ export const ForecastKpiCards = ({
   objectiveAmount,
   overview,
   trendClassName,
-}: ForecastKpiCardsProps) => (
-  <section className="ae-forecast-kpis">
-    <article>
-      <span>Deja signe</span>
-      <strong>{overview ? formatAmount(overview.signedAmount) : "--"}</strong>
-      <small>{overview ? `${overview.signedDealCount} deal(s) a 100%` : "HubSpot"}</small>
-    </article>
-    <article>
-      <span>Paiement pending</span>
-      <strong>{overview ? formatAmount(overview.signedPaymentPendingAmount) : "--"}</strong>
-      <small>{overview ? `${overview.signedPaymentPendingDealCount} deal(s) signe(s)` : "HubSpot"}</small>
-    </article>
-    <article>
-      <span>Paiement recu</span>
-      <strong>{overview ? formatAmount(overview.paymentReceivedAmount) : "--"}</strong>
-      <small>{overview ? `${overview.paymentReceivedDealCount} deal(s) paye(s)` : "HubSpot"}</small>
-    </article>
-    <article>
-      <span>Atterrissage</span>
-      <strong>{overview ? formatAmount(landingAmount) : "--"}</strong>
-      <small className={trendClassName}>{overview ? `${forecastShare}% du pipeline ouvert pondere` : "Supabase"}</small>
-    </article>
-    <article>
-      <span>Objectif</span>
-      <strong>{!overview ? "--" : objectiveAmount === null ? "Non defini" : formatAmount(objectiveAmount)}</strong>
-      <small>{formatPeriod(dateFrom, dateTo)}</small>
-    </article>
-    <article>
-      <span>Gap objectif</span>
-      <strong>{!overview || objectiveAmount === null ? "--" : formatAmount(gapToFill ?? 0)}</strong>
-      <small className={gapToFill && gapToFill > 0 ? "negative" : "positive"}>
-        {objectiveAmount === null ? "Objectif non defini" : gapToFill && gapToFill > 0 ? "A combler" : "Objectif couvert"}
-      </small>
-    </article>
-  </section>
-);
+}: ForecastKpiCardsProps) => {
+  const trendCaptionClass =
+    trendClassName === "positive" ? "up" : trendClassName === "negative" ? "down" : "flat";
+
+  return (
+  <>
+    <section aria-label="Indicateurs forecast" className="jv-stat-strip cols-4">
+      <div className="jv-stat" style={{ animationDelay: "0ms" }}>
+        <span className="jv-stat-label">Commit</span>
+        <span className="jv-stat-value">{overview ? formatAmount(getScenarioAmount(overview, "commit") ?? 0) : "—"}</span>
+        <small className="jv-stat-caption">
+          {overview ? `${overview.signedDealCount} deal(s) signé(s)` : "Chargement…"}
+        </small>
+      </div>
+      <div className="jv-stat" style={{ animationDelay: "60ms" }}>
+        <span className="jv-stat-label">Best case</span>
+        <span className="jv-stat-value">{overview ? formatAmount(getScenarioAmount(overview, "upside") ?? 0) : "—"}</span>
+        <small className="jv-stat-caption">
+          {overview
+            ? `Probabilité ${overview.scenarios.find((item) => item.id === "upside")?.probability ?? 0}%`
+            : "Chargement…"}
+        </small>
+      </div>
+      <div className="jv-stat" style={{ animationDelay: "120ms" }}>
+        <span className="jv-stat-label">Pipeline</span>
+        <span className="jv-stat-value">{overview ? formatAmount(overview.pipelineAmount) : "—"}</span>
+        <small className="jv-stat-caption">
+          {overview ? `${overview.openDealCount} deal(s) ouvert(s)` : "Chargement…"}
+        </small>
+      </div>
+      <div className="jv-stat" style={{ animationDelay: "180ms" }}>
+        <span className="jv-stat-label">Couverture</span>
+        <span className="jv-stat-value">{overview ? `${analyzedRatio}%` : "—"}</span>
+        <small className="jv-stat-caption">
+          {overview ? `${overview.analyzedDealCount}/${overview.openDealCount} analysés par l'IA` : "Chargement…"}
+        </small>
+      </div>
+    </section>
+
+    <section aria-label="Indicateurs atterrissage" className="jv-stat-strip cols-6">
+      <div className="jv-stat" style={{ animationDelay: "0ms" }}>
+        <span className="jv-stat-label">Déjà signé</span>
+        <span className="jv-stat-value">{overview ? formatAmount(overview.signedAmount) : "—"}</span>
+        <small className="jv-stat-caption">{overview ? `${overview.signedDealCount} deal(s) à 100%` : "HubSpot"}</small>
+      </div>
+      <div className="jv-stat" style={{ animationDelay: "60ms" }}>
+        <span className="jv-stat-label">Paiement pending</span>
+        <span className="jv-stat-value">{overview ? formatAmount(overview.signedPaymentPendingAmount) : "—"}</span>
+        <small className="jv-stat-caption">{overview ? `${overview.signedPaymentPendingDealCount} deal(s)` : "HubSpot"}</small>
+      </div>
+      <div className="jv-stat" style={{ animationDelay: "120ms" }}>
+        <span className="jv-stat-label">Paiement reçu</span>
+        <span className="jv-stat-value">{overview ? formatAmount(overview.paymentReceivedAmount) : "—"}</span>
+        <small className="jv-stat-caption">{overview ? `${overview.paymentReceivedDealCount} deal(s) payé(s)` : "HubSpot"}</small>
+      </div>
+      <div className="jv-stat" style={{ animationDelay: "180ms" }}>
+        <span className="jv-stat-label">Atterrissage</span>
+        <span className="jv-stat-value">{overview ? formatAmount(landingAmount) : "—"}</span>
+        <small className={`jv-stat-caption ${trendCaptionClass}`}>
+          {overview ? `${forecastShare}% du pipeline ouvert pondéré` : "Supabase"}
+        </small>
+      </div>
+      <div className="jv-stat" style={{ animationDelay: "240ms" }}>
+        <span className="jv-stat-label">Objectif</span>
+        <span className="jv-stat-value">
+          {!overview ? "—" : objectiveAmount === null ? "Non défini" : formatAmount(objectiveAmount)}
+        </span>
+        <small className="jv-stat-caption">{formatPeriod(dateFrom, dateTo)}</small>
+      </div>
+      <div className="jv-stat" style={{ animationDelay: "300ms" }}>
+        <span className="jv-stat-label">Gap objectif</span>
+        <span className="jv-stat-value">
+          {!overview || objectiveAmount === null ? "—" : formatAmount(gapToFill ?? 0)}
+        </span>
+        <small className={`jv-stat-caption ${gapToFill && gapToFill > 0 ? "down" : "up"}`}>
+          {objectiveAmount === null ? "Objectif non défini" : gapToFill && gapToFill > 0 ? "À combler" : "Objectif couvert"}
+        </small>
+      </div>
+    </section>
+  </>
+  );
+};

@@ -88,9 +88,9 @@ export const buildProjection = (overview: ForecastOverviewResult | null): Foreca
 };
 
 export const getScenarioClassName = (scenarioId: string): string =>
-  scenarioId === "likely" ? "ae-forecast-scenario active" : "ae-forecast-scenario";
+  scenarioId === "likely" ? "jv-scenario active" : "jv-scenario";
 
-export const getRiskClassName = (severity: string): string => `ae-forecast-risk-pill ${severity}`;
+export const getRiskClassName = (severity: string): string => `jv-risk-pill ${severity}`;
 
 export const sortDealsByImpact = (deals: ForecastDeal[]): ForecastDeal[] =>
   [...deals].sort((left, right) => right.impactAmount - left.impactAmount);

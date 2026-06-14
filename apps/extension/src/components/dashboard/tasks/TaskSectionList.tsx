@@ -1,4 +1,14 @@
-import { ArrowUp, Brain, CheckCircle2, ChevronDown, CircleDot, Clock, SkipForward } from "lucide-react";
+import {
+  ArrowUp,
+  CheckCircle2,
+  ChevronDown,
+  CircleDot,
+  Clock,
+  ListTodo,
+  RefreshCw,
+  SkipForward,
+  Sparkles,
+} from "lucide-react";
 import type { HubSpotTaskListItem, HubSpotTaskPriority, TaskAnalysis } from "../../../services/api";
 import {
   formatTaskText,
@@ -14,6 +24,22 @@ import {
   type TaskSection,
   type TaskSectionId,
 } from "../../../utils/dashboard/tasks";
+
+const getUrgencyMetaClass = (bucket: ReturnType<typeof getTaskDateBucket>): string => {
+  if (bucket === "overdue") {
+    return "jv-meta-risk";
+  }
+
+  if (bucket === "today") {
+    return "jv-meta-pending";
+  }
+
+  if (bucket === "upcoming") {
+    return "jv-meta-ok";
+  }
+
+  return "";
+};
 
 type TaskSectionListProps = {
   analysisApplyingId: string | null;
@@ -34,6 +60,7 @@ type TaskSectionListProps = {
   priorityUpdatingId: string | null;
   processingTaskIds: Record<string, boolean>;
   selectedOwnerId?: string | null;
+  selectedTaskId?: string | null;
   taskActionUpdatingId: string | null;
   taskSections: TaskSection[];
   usingSalesOperatingQueue: boolean;
@@ -58,188 +85,249 @@ export const TaskSectionList = ({
   priorityUpdatingId,
   processingTaskIds,
   selectedOwnerId,
+  selectedTaskId,
   taskActionUpdatingId,
   taskSections,
   usingSalesOperatingQueue,
-}: TaskSectionListProps) => (
-  <div className="ae-task-list">
-    {taskSections.map((section) => {
-      const isCollapsed = Boolean(collapsedSections[section.id]);
+}: TaskSectionListProps) => {
+  const visibleSections = taskSections.filter((section) => section.tasks.length > 0);
 
-      return section.tasks.length > 0 ? (
-        <section
-          className={`ae-task-section ${section.id}${isCollapsed ? " collapsed" : ""}`}
-          key={section.id}
-          aria-label={section.label}
-        >
-          <button
-            aria-expanded={!isCollapsed}
-            className="ae-task-section-heading"
-            onClick={() => onToggleSection(section.id)}
-            type="button"
-          >
-            <div>
-              <h3>{section.label}</h3>
-              <span>{section.caption}</span>
-            </div>
-            <strong>{section.tasks.length}</strong>
-            <ChevronDown size={16} />
-          </button>
-          {!isCollapsed ? (
-            <div className="ae-task-section-list">
-            {section.tasks.map((task) => (
-              <article className="ae-task-item ae-hubspot-task-item" key={task.id}>
-                <div className={`ae-task-avatar priority-${task.priority ?? "none"}`} aria-hidden="true">
-                  <CircleDot size={14} />
+  return (
+    <section className="jv-list-shell" aria-busy={isLoading} aria-label="Liste des tâches">
+      <header className="jv-list-head">
+        <span className="jv-section-label">
+          <ListTodo aria-hidden="true" className="jv-section-icon" size={13} strokeWidth={1.5} />
+          Tâches groupées
+        </span>
+        <span className="jv-list-count">
+          {filteredTaskCount} résultat{filteredTaskCount > 1 ? "s" : ""}
+        </span>
+      </header>
+
+      <div className="jv-list-body">
+        {isLoading && enrichedTasksCount === 0 ? (
+          <p className="jv-list-empty">Chargement des tâches…</p>
+        ) : null}
+
+        {!selectedOwnerId ? (
+          <p className="jv-list-empty">Sélectionnez un owner HubSpot pour charger ses tâches.</p>
+        ) : null}
+
+        {selectedOwnerId && enrichedTasksCount === 0 && !isLoading ? (
+          <p className="jv-list-empty">
+            {usingSalesOperatingQueue ? "Aucune tâche Jarvis ouverte." : "Aucune tâche HubSpot ouverte."}
+          </p>
+        ) : null}
+
+        {selectedOwnerId && enrichedTasksCount > 0 && filteredTaskCount === 0 ? (
+          <p className="jv-list-empty">Aucune tâche ne correspond aux filtres.</p>
+        ) : null}
+
+        {visibleSections.map((section) => {
+          const isCollapsed = Boolean(collapsedSections[section.id]);
+
+          return (
+            <div
+              className={`jv-task-group jv-task-group-${section.id}${isCollapsed ? " collapsed" : ""}`}
+              key={section.id}
+            >
+              <button
+                aria-expanded={!isCollapsed}
+                className="jv-task-group-head"
+                onClick={() => onToggleSection(section.id)}
+                type="button"
+              >
+                <div>
+                  <h3>{section.label}</h3>
+                  <span>{section.caption}</span>
                 </div>
-                <div className="ae-task-main">
-                  <strong>
-                    {!task.jarvisTask && getHubSpotRecordUrl(hubspotPortalId, "0-27", task.id) ? (
-                      <a
-                        href={getHubSpotRecordUrl(hubspotPortalId, "0-27", task.id) ?? undefined}
-                        rel="noreferrer"
-                        target="_blank"
+                <strong>{section.tasks.length}</strong>
+                <ChevronDown aria-hidden="true" size={16} strokeWidth={1.5} />
+              </button>
+
+              {!isCollapsed ? (
+                <div>
+                  {section.tasks.map((task) => {
+                    const urgencyBucket = getTaskDateBucket(task.dueAt);
+                    const urgencyClass = getUrgencyMetaClass(urgencyBucket);
+                    const isSelected = selectedTaskId === task.id;
+
+                    return (
+                      <article
+                        className={isSelected ? "jv-task-item selected" : "jv-task-item"}
+                        key={task.id}
                       >
-                        {task.title}
-                      </a>
-                    ) : (
-                      task.title
-                    )}
-                  </strong>
-                  <div className="ae-task-subline">
-                    {getTaskAccountLabel(task) ? (
-                      <em className="ae-task-account">
-                        {task.associatedCompanyIds[0] && task.companyName ? (
-                          <a
-                            href={getHubSpotRecordUrl(hubspotPortalId, "0-2", task.associatedCompanyIds[0]) ?? undefined}
-                            rel="noreferrer"
-                            target="_blank"
+                        <div className="jv-task-item-main">
+                          <div
+                            aria-hidden="true"
+                            className={`jv-task-priority-dot priority-${task.priority ?? "none"}`}
                           >
-                            {task.companyName}
-                          </a>
-                        ) : (
-                          task.companyName
-                        )}
-                        {task.companyName && task.contactName ? " · " : ""}
-                        {task.associatedContactIds[0] && task.contactName ? (
-                          <a
-                            href={getHubSpotRecordUrl(hubspotPortalId, "0-1", task.associatedContactIds[0]) ?? undefined}
-                            rel="noreferrer"
-                            target="_blank"
-                          >
-                            {task.contactName}
-                          </a>
-                        ) : (
-                          task.contactName
-                        )}
-                      </em>
-                    ) : (
-                      <span className="ae-task-context" title={task.dealName ?? task.body ?? undefined}>
-                        {task.dealName ?? formatTaskText(task.body)}
-                      </span>
-                    )}
-                    <div className="ae-task-tags" aria-label="Priorite et urgence">
-                      {task.priority ? (
-                        <span className={`ae-task-tag priority-${task.priority}`}>
-                          {priorityLabels[task.priority]}
-                        </span>
-                      ) : null}
-                      <span className={`ae-task-tag urgency-${getTaskDateBucket(task.dueAt)}`}>
-                        {taskUrgencyLabels[getTaskDateBucket(task.dueAt)]}
-                      </span>
-                      {getTaskDurationLabel(task) ? (
-                        <span className="ae-task-tag">{getTaskDurationLabel(task)}</span>
-                      ) : null}
-                    </div>
-                  </div>
+                            <CircleDot size={14} strokeWidth={1.5} />
+                          </div>
+
+                          <div className="jv-task-item-content">
+                            <strong>
+                              {!task.jarvisTask && getHubSpotRecordUrl(hubspotPortalId, "0-27", task.id) ? (
+                                <a
+                                  href={getHubSpotRecordUrl(hubspotPortalId, "0-27", task.id) ?? undefined}
+                                  rel="noreferrer"
+                                  target="_blank"
+                                >
+                                  {task.title}
+                                </a>
+                              ) : (
+                                task.title
+                              )}
+                            </strong>
+                            <small>
+                              {getTaskAccountLabel(task) ? (
+                                <>
+                                  {task.associatedCompanyIds[0] && task.companyName ? (
+                                    <a
+                                      href={
+                                        getHubSpotRecordUrl(hubspotPortalId, "0-2", task.associatedCompanyIds[0]) ??
+                                        undefined
+                                      }
+                                      rel="noreferrer"
+                                      target="_blank"
+                                    >
+                                      {task.companyName}
+                                    </a>
+                                  ) : (
+                                    task.companyName
+                                  )}
+                                  {task.companyName && task.contactName ? " · " : ""}
+                                  {task.associatedContactIds[0] && task.contactName ? (
+                                    <a
+                                      href={
+                                        getHubSpotRecordUrl(hubspotPortalId, "0-1", task.associatedContactIds[0]) ??
+                                        undefined
+                                      }
+                                      rel="noreferrer"
+                                      target="_blank"
+                                    >
+                                      {task.contactName}
+                                    </a>
+                                  ) : (
+                                    task.contactName
+                                  )}
+                                </>
+                              ) : (
+                                task.dealName ?? formatTaskText(task.body)
+                              )}
+                            </small>
+                            <span className="jv-item-meta">
+                              {task.priority ? (
+                                <span className={task.priority === "high" ? "jv-meta-risk" : "jv-meta-pending"}>
+                                  {priorityLabels[task.priority]}
+                                </span>
+                              ) : null}
+                              <span className={urgencyClass || undefined}>
+                                {taskUrgencyLabels[urgencyBucket]}
+                              </span>
+                              {getTaskDurationLabel(task) ? <span>{getTaskDurationLabel(task)}</span> : null}
+                            </span>
+                          </div>
+
+                          <div className="jv-task-item-side">
+                            <time className={urgencyClass || undefined}>{getTaskDueShortLabel(task.dueAt)}</time>
+                            {task.jarvisTask ? <small>{task.jarvisTask.reason}</small> : null}
+                            {!task.jarvisTask && task.lastUpdate ? (
+                              <small>{task.lastUpdate.reason ?? "Webhook HubSpot"}</small>
+                            ) : null}
+                            <span className="jv-task-owner" title={statusLabels[task.status]}>
+                              {getTaskOwnerInitials(task)}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="jv-task-actions" aria-label="Actions de la tâche">
+                          {!task.jarvisTask ? (
+                            <button
+                              className="jv-btn-ghost"
+                              disabled={
+                                analysisLoadingId === task.id ||
+                                analysisApplyingId === task.id ||
+                                processingTaskIds[task.id]
+                              }
+                              onClick={() => onAnalyzeTask(task.id, Boolean(analysisByTaskId[task.id]))}
+                              type="button"
+                            >
+                              {analysisLoadingId === task.id || processingTaskIds[task.id] ? (
+                                <RefreshCw className="jv-spin" size={13} strokeWidth={1.5} />
+                              ) : (
+                                <Sparkles size={13} strokeWidth={1.5} />
+                              )}
+                              <span>
+                                {analysisApplyingId === task.id
+                                  ? "Action…"
+                                  : analysisLoadingId === task.id || processingTaskIds[task.id]
+                                    ? "Analyse…"
+                                    : "Analyser"}
+                              </span>
+                            </button>
+                          ) : null}
+
+                          {task.jarvisTask ? (
+                            <>
+                              <button
+                                disabled={taskActionUpdatingId === task.id || task.jarvisTask.status === "done"}
+                                onClick={() => void onCompleteSalesTask(task.id)}
+                                type="button"
+                              >
+                                <CheckCircle2 size={14} strokeWidth={1.5} />
+                                <span>Done</span>
+                              </button>
+                              <button
+                                disabled={
+                                  taskActionUpdatingId === task.id ||
+                                  task.jarvisTask.status === "done" ||
+                                  task.jarvisTask.status === "skipped"
+                                }
+                                onClick={() => void onSnoozeSalesTask(task.id)}
+                                type="button"
+                              >
+                                <Clock size={14} strokeWidth={1.5} />
+                                <span>Snooze</span>
+                              </button>
+                              <button
+                                disabled={
+                                  taskActionUpdatingId === task.id ||
+                                  task.jarvisTask.status === "done" ||
+                                  task.jarvisTask.status === "skipped"
+                                }
+                                onClick={() => void onSkipSalesTask(task.id)}
+                                type="button"
+                              >
+                                <SkipForward size={14} strokeWidth={1.5} />
+                                <span>Skip</span>
+                              </button>
+                            </>
+                          ) : (
+                            taskPriorityOptions.map((priority) => (
+                              <button
+                                aria-pressed={task.priority === priority}
+                                className={task.priority === priority ? "active" : ""}
+                                disabled={priorityUpdatingId === task.id}
+                                key={priority ?? "none"}
+                                onClick={() => onPriorityChange(task.id, priority)}
+                                type="button"
+                              >
+                                {priority === "high" ? <ArrowUp size={14} strokeWidth={1.5} /> : null}
+                                <span>{priority ? priorityLabels[priority] : "Aucune"}</span>
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      </article>
+                    );
+                  })}
                 </div>
-                <div className="ae-task-meta">
-                  <small className={`ae-task-due ${getTaskDateBucket(task.dueAt)}`}>
-                    <i aria-hidden="true" />
-                    {getTaskDueShortLabel(task.dueAt)}
-                  </small>
-                  {task.jarvisTask ? <small>{task.jarvisTask.reason}</small> : null}
-                  {!task.jarvisTask && task.lastUpdate ? <small>{task.lastUpdate.reason ?? "Webhook HubSpot"}</small> : null}
-                  <span className="ae-task-owner" title={statusLabels[task.status]}>
-                    {getTaskOwnerInitials(task)}
-                  </span>
-                </div>
-                {!task.jarvisTask ? (
-                  <button
-                    className="ae-task-inline-analyze"
-                    disabled={analysisLoadingId === task.id || analysisApplyingId === task.id || processingTaskIds[task.id]}
-                    onClick={() => onAnalyzeTask(task.id, Boolean(analysisByTaskId[task.id]))}
-                    type="button"
-                  >
-                    <Brain size={13} />
-                    <span>
-                      {analysisApplyingId === task.id
-                        ? "Action..."
-                        : analysisLoadingId === task.id || processingTaskIds[task.id]
-                          ? "Analyse..."
-                          : "Analyser"}
-                    </span>
-                  </button>
-                ) : null}
-                <div className="ae-task-priority-controls" aria-label="Priorite de la tache">
-                  {task.jarvisTask ? (
-                    <>
-                      <button
-                        disabled={taskActionUpdatingId === task.id || task.jarvisTask.status === "done"}
-                        onClick={() => void onCompleteSalesTask(task.id)}
-                        type="button"
-                      >
-                        <CheckCircle2 size={14} />
-                        <span>Done</span>
-                      </button>
-                      <button
-                        disabled={taskActionUpdatingId === task.id || task.jarvisTask.status === "done" || task.jarvisTask.status === "skipped"}
-                        onClick={() => void onSnoozeSalesTask(task.id)}
-                        type="button"
-                      >
-                        <Clock size={14} />
-                        <span>Snooze</span>
-                      </button>
-                      <button
-                        disabled={taskActionUpdatingId === task.id || task.jarvisTask.status === "done" || task.jarvisTask.status === "skipped"}
-                        onClick={() => void onSkipSalesTask(task.id)}
-                        type="button"
-                      >
-                        <SkipForward size={14} />
-                        <span>Skip</span>
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      {taskPriorityOptions.map((priority) => (
-                    <button
-                      aria-pressed={task.priority === priority}
-                      className={task.priority === priority ? "active" : ""}
-                      disabled={priorityUpdatingId === task.id}
-                      key={priority ?? "none"}
-                      onClick={() => onPriorityChange(task.id, priority)}
-                      type="button"
-                    >
-                      {priority === "high" ? <ArrowUp size={14} /> : null}
-                      <span>{priority ? priorityLabels[priority] : "Aucune"}</span>
-                    </button>
-                      ))}
-                    </>
-                  )}
-                </div>
-              </article>
-            ))}
+              ) : null}
             </div>
-          ) : null}
-        </section>
-      ) : null;
-    })}
-    {!selectedOwnerId ? <p className="ae-empty">Selectionne un owner HubSpot pour charger ses taches.</p> : null}
-    {selectedOwnerId && enrichedTasksCount === 0 && !isLoading ? (
-      <p className="ae-empty">{usingSalesOperatingQueue ? "Aucune tache Jarvis ouverte." : "Aucune tache HubSpot ouverte."}</p>
-    ) : null}
-    {selectedOwnerId && enrichedTasksCount > 0 && filteredTaskCount === 0 ? (
-      <p className="ae-empty">Aucune tache ne correspond aux filtres.</p>
-    ) : null}
-  </div>
-);
+          );
+        })}
+      </div>
+    </section>
+  );
+};

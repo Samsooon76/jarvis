@@ -1,0 +1,29 @@
+{
+  "mode": "edit",
+  "componentId": "416982336513662976",
+  "projectId": "416978051478487040",
+  "selectedRevisionId": "416982336513662977",
+  "jobId": "286519393716948992-external-agent-416982497402966016",
+  "generatedName": "bold-tide-7186",
+  "name": "Jarvis Overview Page",
+  "dimensions": {
+    "width": 1280,
+    "height": 1100
+  },
+  "selectedImages": [],
+  "editableFiles": [
+    {
+      "path": "src/App.tsx",
+      "sha256": "8acead6f19d00dc7075f49d8f36128b2c9fb9127537b70d3eca095cc1f110c4f"
+    },
+    {
+      "path": "src/components/generated/JarvisOverviewPage.tsx",
+      "sha256": "aec2824a39fa1ab63f0e1a9d4d6985e6322ae180e80e0d99abd0852bec6ab38e"
+    },
+    {
+      "path": "src/index.css",
+      "sha256": "78cf981b173433e418fe800f5a53ccb5b451a31cd13321ada535feb20f394243"
+    }
+  ],
+  "baseRevisionId": "416982336513662977"
+}

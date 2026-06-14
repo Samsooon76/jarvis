@@ -47,8 +47,35 @@ const durationsCompatible = (left: number | null, right: number | null): boolean
   return Math.abs(left - right) <= DURATION_TOLERANCE_SECONDS;
 };
 
+const durationsNearlyEqual = (left: number | null, right: number | null): boolean => {
+  if (left === null || right === null || left <= 0 || right <= 0) {
+    return false;
+  }
+
+  return Math.abs(left - right) <= DURATION_TOLERANCE_SECONDS;
+};
+
 const bothDurationsKnown = (left: number | null, right: number | null): boolean =>
   left !== null && left > 0 && right !== null && right > 0;
+
+// Onoff logge au debut de l'appel, Modjo a la fin: l'ecart entre les deux logs
+// HubSpot est proche de la duree de l'appel (pas de la fenetre courte habituelle).
+const isStartEndLogPair = (
+  leftTime: number,
+  rightTime: number,
+  leftDuration: number | null,
+  rightDuration: number | null,
+): boolean => {
+  if (!durationsNearlyEqual(leftDuration, rightDuration)) {
+    return false;
+  }
+
+  const durationSeconds = Math.max(leftDuration ?? 0, rightDuration ?? 0);
+  const durationMs = durationSeconds * 1000;
+  const timeDiffMs = Math.abs(leftTime - rightTime);
+
+  return Math.abs(timeDiffMs - durationMs) <= START_WINDOW_BASE_MS;
+};
 
 // Deux entrees decrivent-elles le meme appel reel ?
 export const canMergeCalls = (left: DedupeCall, right: DedupeCall): boolean => {
@@ -79,7 +106,11 @@ export const canMergeCalls = (left: DedupeCall, right: DedupeCall): boolean => {
     ? START_WINDOW_MATCHING_DURATION_MS
     : START_WINDOW_BASE_MS;
 
-  return Math.abs(leftTime - rightTime) <= window;
+  if (Math.abs(leftTime - rightTime) <= window) {
+    return true;
+  }
+
+  return isStartEndLogPair(leftTime, rightTime, left.durationSeconds, right.durationSeconds);
 };
 
 const pickCanonical = (members: DedupeCall[]): DedupeCall =>

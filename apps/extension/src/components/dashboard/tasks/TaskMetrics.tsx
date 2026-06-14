@@ -1,53 +1,48 @@
-import { taskFilterTabs, type TaskDateFilter } from "../../../utils/dashboard/tasks";
-
 type TaskMetricsProps = {
-  laterTaskCount: number;
+  completedTaskCount: number;
   overdueTaskCount: number;
   todayTaskCount: number;
-  upcomingTaskCount: number;
+  totalTaskCount: number;
 };
 
-export const TaskMetrics = ({ laterTaskCount, overdueTaskCount, todayTaskCount, upcomingTaskCount }: TaskMetricsProps) => (
-  <div className="ae-task-metrics" aria-label="Resume des taches">
-    <article className="overdue">
-      <span>En retard</span>
-      <strong>{overdueTaskCount}</strong>
-      <small>A traiter en priorite</small>
-    </article>
-    <article className="today">
-      <span>Aujourd'hui</span>
-      <strong>{todayTaskCount}</strong>
-      <small>Taches du jour restantes</small>
-    </article>
-    <article>
-      <span>Cette semaine</span>
-      <strong>{upcomingTaskCount}</strong>
-      <small>Taches planifiees</small>
-    </article>
-    <article>
-      <span>Plus tard</span>
-      <strong>{laterTaskCount}</strong>
-      <small>Apres cette semaine</small>
-    </article>
-  </div>
-);
+export const TaskMetrics = ({
+  completedTaskCount,
+  overdueTaskCount,
+  todayTaskCount,
+  totalTaskCount,
+}: TaskMetricsProps) => {
+  const stats = [
+    {
+      caption: "tâches ouvertes",
+      label: "Total",
+      value: totalTaskCount,
+    },
+    {
+      caption: "du jour restantes",
+      label: "Aujourd'hui",
+      value: todayTaskCount,
+    },
+    {
+      caption: "à traiter en priorité",
+      label: "En retard",
+      value: overdueTaskCount,
+    },
+    {
+      caption: "sur la période",
+      label: "Terminées",
+      value: completedTaskCount,
+    },
+  ] as const;
 
-type TaskFilterTabsProps = {
-  dateFilter: TaskDateFilter;
-  onDateFilterChange: (filter: TaskDateFilter) => void;
+  return (
+    <section className="jv-stat-strip cols-4" aria-label="Indicateurs tâches">
+      {stats.map((stat, index) => (
+        <div className="jv-stat" key={stat.label} style={{ animationDelay: `${index * 60}ms` }}>
+          <span className="jv-stat-label">{stat.label}</span>
+          <span className="jv-stat-value">{stat.value}</span>
+          <small className="jv-stat-caption">{stat.caption}</small>
+        </div>
+      ))}
+    </section>
+  );
 };
-
-export const TaskFilterTabs = ({ dateFilter, onDateFilterChange }: TaskFilterTabsProps) => (
-  <div className="ae-task-tabs" aria-label="Filtrer par periode">
-    {taskFilterTabs.map((tab) => (
-      <button
-        className={dateFilter === tab.id ? "active" : ""}
-        key={tab.id}
-        onClick={() => onDateFilterChange(tab.id)}
-        type="button"
-      >
-        {tab.label}
-      </button>
-    ))}
-  </div>
-);

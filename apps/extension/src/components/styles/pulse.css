@@ -1,261 +1,378 @@
-/* --- Jarvis Pulse ---------------------------------------------------------- */
+/* Jarvis Pulse — design.md §2 tokens, §5 filter-pills, §5.11 list-item */
 
-.pulse-center {
+.jv-pulse-root {
+  --jv-bg: #f4f3f0;
+  --jv-surface: #ffffff;
+  --jv-surface-muted: #f8f7f4;
+  --jv-text: #1c1917;
+  --jv-text-soft: #44403c;
+  --jv-muted: #57534e;
+  --jv-faint: #a8a29e;
+  --jv-border: rgba(28, 25, 23, 0.08);
+  --jv-border-strong: rgba(28, 25, 23, 0.14);
+  --jv-terra: #d4714a;
+  --jv-terra-soft: rgba(212, 113, 74, 0.14);
+  --jv-success: #2d8a5e;
+  --jv-warning: #c47d1a;
+  --jv-danger: #c4453a;
+  --jv-filter-active: #96b869;
+  --jv-font: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --jv-ease-spring: cubic-bezier(0.2, 1.18, 0.47, 1);
+
   position: relative;
-  align-self: flex-start;
   flex: 0 0 auto;
+  font-family: var(--jv-font);
+  -webkit-font-smoothing: antialiased;
 }
 
-.pulse-bell {
+.jv-pulse-root *,
+.jv-pulse-root *::before,
+.jv-pulse-root *::after {
+  box-sizing: border-box;
+}
+
+.ae-inbox .jv-pulse-root :is(p, span, small, em, label, li, time, button, strong) {
+  letter-spacing: normal;
+}
+
+/* ── Bell trigger (sidebar) ── */
+
+.jv-pulse-bell {
   position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 38px;
-  height: 38px;
-  border: 1px solid rgba(17, 25, 31, 0.12);
-  border-radius: 12px;
-  background: #ffffff;
-  color: #11191f;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--jv-border);
+  border-radius: 10px;
+  background: var(--jv-surface);
+  color: var(--jv-text);
   cursor: pointer;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    border-color 0.2s ease,
+    color 0.2s ease,
+    transform 0.2s var(--jv-ease-spring);
 }
 
-.pulse-bell:hover {
-  border-color: rgba(15, 111, 92, 0.45);
-  box-shadow: 0 6px 18px rgba(17, 25, 31, 0.08);
+.jv-pulse-bell:hover {
+  border-color: rgba(212, 113, 74, 0.35);
+  color: var(--jv-terra);
+  transform: translateY(-1px);
 }
 
-.pulse-bell-badge {
+.jv-pulse-bell:focus-visible {
+  outline: 2px solid rgba(212, 113, 74, 0.28);
+  outline-offset: 2px;
+}
+
+.jv-pulse-root.is-open .jv-pulse-bell {
+  border-color: rgba(212, 113, 74, 0.35);
+  background: var(--jv-terra-soft);
+  color: var(--jv-terra);
+}
+
+.jv-pulse-badge {
   position: absolute;
-  top: -6px;
-  right: -6px;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  border-radius: 9px;
-  background: #c2402a;
+  top: -5px;
+  right: -5px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--jv-danger);
   color: #ffffff;
   font-size: 10px;
-  font-weight: 700;
-  line-height: 18px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 17px;
   text-align: center;
 }
 
-.pulse-panel {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  z-index: 60;
-  width: min(380px, 86vw);
-  max-height: 480px;
+/* ── Floating panel ── */
+
+.jv-pulse-panel {
   display: flex;
   flex-direction: column;
-  border: 1px solid rgba(17, 25, 31, 0.1);
+  width: min(420px, 92vw);
+  max-height: 520px;
+  border: 1px solid var(--jv-border);
   border-radius: 14px;
-  background: #ffffff;
-  box-shadow: 0 24px 56px rgba(17, 25, 31, 0.16);
+  background: var(--jv-surface);
+  box-shadow: 0 12px 32px rgba(28, 25, 23, 0.1);
+  color: var(--jv-text);
   overflow: hidden;
 }
 
-.pulse-panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 14px 16px;
-  border-bottom: 1px solid rgba(17, 25, 31, 0.08);
+.jv-pulse-panel--floating {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 10000;
 }
 
-.pulse-panel-header strong {
-  display: block;
-  font-size: 14px;
+/* ── Header ── */
+
+.jv-pulse-panel :is(p, span, small, em, label, li, time, button, strong, h2) {
+  font-family: var(--jv-font);
+  letter-spacing: normal;
 }
 
-.pulse-panel-subtitle {
-  display: block;
-  font-size: 11px;
-  color: #647068;
+.jv-pulse-header {
+  align-items: flex-start;
+  border-bottom: 1px solid rgba(28, 25, 23, 0.06);
+  display: grid;
+  gap: 8px 12px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  padding: 16px 18px;
 }
 
-.pulse-mark-all {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 6px 10px;
-  border: 1px solid rgba(15, 111, 92, 0.3);
-  border-radius: 9px;
-  background: rgba(15, 111, 92, 0.06);
-  color: #0f6f5c;
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-  white-space: nowrap;
+.jv-pulse-header .jv-page-icon {
+  color: var(--jv-terra);
+  flex-shrink: 0;
+  margin-top: 1px;
+  opacity: 0.9;
 }
 
-.pulse-mark-all:disabled {
-  opacity: 0.45;
-  cursor: default;
+.jv-pulse-headcopy {
+  min-width: 0;
 }
 
-.pulse-filter-bar {
-  display: flex;
-  gap: 6px;
-  padding: 10px 16px;
-  border-bottom: 1px solid rgba(17, 25, 31, 0.08);
-  overflow-x: auto;
-}
-
-.pulse-filter-chip {
-  flex: 0 0 auto;
-  padding: 5px 9px;
-  border: 1px solid rgba(17, 25, 31, 0.1);
-  border-radius: 999px;
-  background: #ffffff;
-  color: #4a554e;
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.pulse-filter-chip.is-active {
-  border-color: rgba(15, 111, 92, 0.35);
-  background: rgba(15, 111, 92, 0.08);
-  color: #0f6f5c;
-}
-
-.pulse-filter-chip:hover {
-  background: rgba(17, 25, 31, 0.04);
-}
-
-.pulse-panel-empty,
-.pulse-panel-error {
+.jv-pulse-panel .jv-pulse-headcopy h2 {
+  color: var(--jv-text);
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
   margin: 0;
-  padding: 18px 16px;
-  font-size: 12px;
-  color: #647068;
 }
 
-.pulse-panel-error {
-  color: #c2402a;
+.jv-pulse-mark-all {
+  align-items: center;
+  background: transparent;
+  border: 1px solid var(--jv-border-strong);
+  border-radius: 999px;
+  color: var(--jv-text);
+  cursor: pointer;
+  display: inline-flex;
+  flex-shrink: 0;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  gap: 5px;
+  height: 30px;
+  padding: 0 11px;
+  transition: background 0.15s ease, color 0.15s ease;
+  white-space: nowrap;
 }
 
-.pulse-panel .ae-loading-state {
+.jv-pulse-mark-all:hover:not(:disabled) {
+  background: rgba(28, 25, 23, 0.03);
+}
+
+.jv-pulse-mark-all:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.jv-pulse-mark-all:focus-visible {
+  outline: 2px solid rgba(212, 113, 74, 0.28);
+  outline-offset: 2px;
+}
+
+/* ── Filter pills ── */
+
+.jv-pulse-toolbar {
+  border-bottom: 1px solid rgba(28, 25, 23, 0.06);
+  overflow-x: auto;
+  padding: 10px 18px;
+}
+
+.jv-pulse-toolbar .jv-filter-pills {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  min-width: min-content;
+}
+
+.jv-pulse-toolbar .jv-filter-pills button {
+  background: var(--jv-surface-muted);
+  border: 1px solid var(--jv-border);
+  border-radius: 999px;
+  color: var(--jv-muted);
+  cursor: pointer;
+  flex: 0 0 auto;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 6px 12px;
+  transition: all 0.2s var(--jv-ease-spring);
+  white-space: nowrap;
+}
+
+.jv-pulse-toolbar .jv-filter-pills button:hover {
+  color: var(--jv-text);
+}
+
+.jv-pulse-toolbar .jv-filter-pills button.active {
+  background: var(--jv-filter-active);
+  border-color: var(--jv-filter-active);
+  color: #fff;
+}
+
+.jv-pulse-toolbar .jv-filter-pills button:focus-visible {
+  outline: 2px solid rgba(212, 113, 74, 0.28);
+  outline-offset: 2px;
+}
+
+/* ── Feedback ── */
+
+.jv-pulse-panel .jv-banner {
+  border-radius: 10px;
+  font-size: 13px;
+  margin: 12px 16px 0;
+  padding: 10px 12px;
+}
+
+.jv-pulse-panel .jv-banner-error {
+  background: rgba(196, 69, 58, 0.08);
+  border: 1px solid rgba(196, 69, 58, 0.14);
+  color: var(--jv-danger);
+}
+
+.jv-pulse-panel .jv-loading-state {
   min-height: 168px;
 }
 
-.pulse-notification-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
+/* ── Notification list ── */
+
+.jv-pulse-list-shell {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.jv-pulse-list-body {
+  display: flex;
+  flex-direction: column;
+  max-height: 360px;
   overflow-y: auto;
 }
 
-.pulse-notification + .pulse-notification {
-  border-top: 1px solid rgba(17, 25, 31, 0.06);
+.jv-pulse-list-empty {
+  color: var(--jv-muted);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.45;
+  margin: 0;
+  padding: 28px 18px;
+  text-align: center;
 }
 
-.pulse-notification-body {
-  display: block;
-  width: 100%;
-  padding: 12px 16px;
+.jv-pulse-item {
+  align-items: start;
+  background: var(--jv-surface);
   border: 0;
-  background: transparent;
-  text-align: left;
+  border-bottom: 1px solid rgba(28, 25, 23, 0.05);
+  color: inherit;
   cursor: pointer;
-  font: inherit;
+  display: grid;
+  font-family: inherit;
+  font-size: inherit;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 12px 18px;
+  text-align: left;
+  transition: background 0.15s ease, transform 0.2s var(--jv-ease-spring);
+  width: 100%;
 }
 
-.pulse-notification.is-unread .pulse-notification-body {
-  background: rgba(15, 111, 92, 0.05);
+.jv-pulse-item:last-child {
+  border-bottom: 0;
 }
 
-.pulse-notification-body:hover {
-  background: rgba(17, 25, 31, 0.04);
+.jv-pulse-item:hover {
+  background: rgba(28, 25, 23, 0.02);
+  transform: translateX(2px);
 }
 
-.pulse-notification-top {
-  display: flex;
+.jv-pulse-item.is-unread {
+  background: rgba(212, 113, 74, 0.06);
+}
+
+.jv-pulse-item.is-unread:hover {
+  background: rgba(212, 113, 74, 0.09);
+}
+
+.jv-pulse-item .jv-list-main {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.jv-pulse-panel .jv-pulse-item .jv-item-meta {
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 3px;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 10px;
+  font-weight: 500;
+  gap: 6px;
+  margin-bottom: 1px;
 }
 
-.pulse-notification-type {
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
+.jv-pulse-panel .jv-pulse-item .jv-meta-score {
+  color: var(--jv-terra);
+  font-weight: 500;
   letter-spacing: 0.04em;
-  color: #0f6f5c;
+  text-transform: uppercase;
 }
 
-.pulse-notification-date {
-  font-size: 10px;
-  color: #647068;
+.jv-pulse-panel .jv-pulse-item .jv-list-main strong {
+  color: var(--jv-text);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.jv-pulse-panel .jv-pulse-item .jv-list-main small {
+  color: var(--jv-text-soft);
+  display: -webkit-box;
+  font-size: 12px;
+  font-weight: 400;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-height: 1.45;
+  overflow: hidden;
+}
+
+.jv-pulse-item .jv-list-side {
+  align-items: start;
+  color: var(--jv-muted);
+  display: grid;
+  gap: 2px;
+  justify-items: end;
+  padding-top: 14px;
+}
+
+.jv-pulse-panel .jv-pulse-item .jv-list-side time {
+  color: var(--jv-faint);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 400;
+  line-height: 1.3;
   white-space: nowrap;
 }
 
-.pulse-notification-title {
-  display: block;
-  font-size: 12px;
-  color: #11191f;
+@media (prefers-reduced-motion: reduce) {
+  .jv-pulse-bell,
+  .jv-pulse-item,
+  .jv-pulse-toolbar .jv-filter-pills button {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .jv-pulse-item:hover {
+    transform: none;
+  }
 }
-
-.pulse-notification-message {
-  display: block;
-  margin-top: 2px;
-  font-size: 12px;
-  color: #4a554e;
-  line-height: 1.4;
-}
-
-/* Preferences Pulse (parametres) */
-
-.pulse-settings {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.pulse-settings-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 10px;
-}
-
-.pulse-settings-toggle {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 12px 14px;
-  border: 1px solid rgba(17, 25, 31, 0.1);
-  border-radius: 12px;
-  background: #ffffff;
-  cursor: pointer;
-}
-
-.pulse-settings-toggle input {
-  margin-top: 2px;
-  accent-color: #0f6f5c;
-}
-
-.pulse-settings-toggle strong {
-  display: block;
-  font-size: 13px;
-  color: #11191f;
-}
-
-.pulse-settings-toggle small {
-  display: block;
-  margin-top: 2px;
-  font-size: 11px;
-  color: #647068;
-}
-
-.pulse-settings-master {
-  background: rgba(15, 111, 92, 0.05);
-  border-color: rgba(15, 111, 92, 0.25);
-}
-

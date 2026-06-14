@@ -1,0 +1,29 @@
+{
+  "mode": "edit",
+  "componentId": "416978069346213888",
+  "projectId": "416978051478487040",
+  "selectedRevisionId": "416980253043478528",
+  "jobId": "286519393716948992-external-agent-416980253043478529",
+  "generatedName": "boldly-autumn-7630",
+  "name": "Jarvis Call Intelligence Page",
+  "dimensions": {
+    "width": 1280,
+    "height": 900
+  },
+  "selectedImages": [],
+  "editableFiles": [
+    {
+      "path": "src/App.tsx",
+      "sha256": "3ed0d4efc28095514d1361fddfd4fcd7a2b18805c3ec7d86f12af457ec3c3ba3"
+    },
+    {
+      "path": "src/components/generated/JarvisCallIntelligencePage.tsx",
+      "sha256": "aef026954dc01632450937a4384c453a88e5cd145d35d373127e31c37d656e44"
+    },
+    {
+      "path": "src/index.css",
+      "sha256": "3e8628ffc73deeb65e7dfc273dd05395f49ad46f16c8ffb81e8d03e373cba04b"
+    }
+  ],
+  "baseRevisionId": "416980253043478528"
+}

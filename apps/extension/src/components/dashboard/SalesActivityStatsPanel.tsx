@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Activity, type LucideIcon } from "lucide-react";
 import {
   backfillSalesActivities,
   fetchSalesActivityStats,
@@ -98,6 +99,13 @@ const resolvePeriodBounds = (mode: ActivityPeriodMode, monthValue: string, yearV
 };
 
 const formatAvg = (value: number): string => value.toLocaleString("fr-FR", { maximumFractionDigits: 1 });
+
+const SectionLabel = ({ children, icon: Icon }: { children: string; icon: LucideIcon }) => (
+  <span className="jv-section-label">
+    <Icon aria-hidden="true" className="jv-section-icon" size={13} strokeWidth={1.5} />
+    {children}
+  </span>
+);
 
 const ActivityBars = ({ stats }: { stats: SalesActivityStats }) => {
   const maxValue = useMemo(
@@ -222,13 +230,13 @@ export const SalesActivityStatsPanel = ({
       {
         id: "won" as const,
         label: "Deals gagnes",
-        color: "#1f9d57",
+        color: "var(--jv-success)",
         outcome: stats?.won ?? null,
       },
       {
         id: "lost" as const,
         label: "Deals perdus",
-        color: "#ef5b5b",
+        color: "var(--jv-danger)",
         outcome: stats?.lost ?? null,
       },
     ],
@@ -242,13 +250,16 @@ export const SalesActivityStatsPanel = ({
   const totalActivities = (stats?.won.total ?? 0) + (stats?.lost.total ?? 0);
 
   return (
-    <article className="ae-dashboard-panel ae-activity-panel">
-      <div className="ae-panel-heading">
-        <span>Activites commerciales sur deals clotures</span>
-        <strong>{stats ? `${totalActivities} activite(s)` : "--"}</strong>
-      </div>
+    <section className="jv-theme-block" aria-label="Activites commerciales">
+      <header className="jv-theme-block-head">
+        <SectionLabel icon={Activity}>Activites commerciales sur deals clotures</SectionLabel>
+        <span className="jv-theme-block-meta">{stats ? `${totalActivities} activite(s)` : "--"}</span>
+      </header>
 
-      <div className="ae-probability-summary-grid" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}>
+      <div
+        className="jv-stats-summary-grid"
+        style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}
+      >
         {summaryCards.map((card) => (
           <article className={card.id === "won" ? "active" : ""} key={card.id}>
             <span>
@@ -264,10 +275,10 @@ export const SalesActivityStatsPanel = ({
         ))}
       </div>
 
-      <div className="ae-forecast-filters">
-        <label>
-          Clotures sur
-          <select onChange={(event) => setPeriodMode(event.target.value as ActivityPeriodMode)} value={periodMode}>
+      <div className="jv-stats-subtoolbar">
+        <label className="jv-stats-field">
+          <span>Clotures sur</span>
+          <select className="jv-select" onChange={(event) => setPeriodMode(event.target.value as ActivityPeriodMode)} value={periodMode}>
             <option value="year">Annee precise</option>
             <option value="all">Tout l'historique</option>
             <option value="last3">3 derniers mois</option>
@@ -277,9 +288,9 @@ export const SalesActivityStatsPanel = ({
           </select>
         </label>
         {periodMode === "year" ? (
-          <label>
-            Annee
-            <select onChange={(event) => setYearValue(event.target.value)} value={yearValue}>
+          <label className="jv-stats-field">
+            <span>Annee</span>
+            <select className="jv-select" onChange={(event) => setYearValue(event.target.value)} value={yearValue}>
               {ACTIVITY_YEARS.map((year) => (
                 <option key={year} value={year}>
                   {year}
@@ -289,15 +300,15 @@ export const SalesActivityStatsPanel = ({
           </label>
         ) : null}
         {periodMode === "month" ? (
-          <label>
-            Mois
+          <label className="jv-stats-field">
+            <span>Mois</span>
             <input onChange={(event) => setMonthValue(event.target.value)} type="month" value={monthValue} />
           </label>
         ) : null}
         {canViewTeamForecast ? (
-          <label>
-            Perimetre
-            <select disabled={owners.length === 0} onChange={(event) => setOwnerId(event.target.value)} value={ownerId}>
+          <label className="jv-stats-field">
+            <span>Perimetre</span>
+            <select className="jv-select" disabled={owners.length === 0} onChange={(event) => setOwnerId(event.target.value)} value={ownerId}>
               <option value="">Equipe (tous les sales)</option>
               {owners.map((owner) => (
                 <option key={owner.ownerId} value={owner.ownerId}>
@@ -307,31 +318,31 @@ export const SalesActivityStatsPanel = ({
             </select>
           </label>
         ) : null}
-        <button disabled={isBackfilling} onClick={() => void handleBackfill()} type="button">
+        <button className="jv-btn-primary" disabled={isBackfilling} onClick={() => void handleBackfill()} type="button">
           {isBackfilling ? "Import HubSpot..." : "Importer les activites HubSpot"}
         </button>
       </div>
 
-      {error ? <p className="ae-admin-feedback error">{error}</p> : null}
-      {message ? <p className="ae-admin-feedback">{message}</p> : null}
+      {error ? <p className="jv-banner jv-banner-error">{error}</p> : null}
+      {message ? <p className="jv-banner jv-banner-success">{message}</p> : null}
 
       {hasData && stats ? (
         <>
-          <div className="ae-activity-legend">
+          <div className="jv-stats-legend">
             <span>
-              <i aria-hidden="true" style={{ background: "#1f9d57" }} /> Gagnes
+              <i aria-hidden="true" className="is-won" /> Gagnes
             </span>
             <span>
-              <i aria-hidden="true" style={{ background: "#ef5b5b" }} /> Perdus
+              <i aria-hidden="true" className="is-lost" /> Perdus
             </span>
           </div>
           <ActivityBars stats={stats} />
         </>
       ) : (
-        <p className="ae-empty">
+        <p className="jv-theme-empty">
           {isLoading ? "Chargement des activites..." : "Aucune activite commerciale sur les deals clotures de ce perimetre."}
         </p>
       )}
-    </article>
+    </section>
   );
 };

@@ -1,5 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import { LoadingScreenBrand } from "./loading/LoadingScreenBrand";
 import { captureAppError } from "../sentry";
+import "./styles/loading.css";
 
 type ErrorBoundaryProps = {
   children: ReactNode;
@@ -31,9 +33,11 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   render(): ReactNode {
     if (this.state.error) {
       return (
-        <main className="ae-loading-screen">
-          <h1>Jarvis</h1>
-          <p>Une erreur d'affichage est survenue. Recharge Jarvis pour reprendre la session.</p>
+        <main className="jv-loading-screen" aria-live="polite">
+          <LoadingScreenBrand />
+          <p className="jv-loading-error">
+            Une erreur d'affichage est survenue. Recharge Jarvis pour reprendre la session.
+          </p>
         </main>
       );
     }

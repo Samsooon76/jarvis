@@ -8,19 +8,19 @@ type ForecastJobProgressProps = {
 };
 
 export const ForecastJobProgress = ({ forecastJob, logsOpen, onToggleLogs }: ForecastJobProgressProps) => (
-  <div className="ae-sync-progress" aria-live="polite">
-    <div className="ae-sync-progress-head">
+  <section aria-live="polite" className="jv-run-progress">
+    <div className="jv-run-progress-head">
       <span>{forecastJob.currentStep}</span>
       <strong>{forecastJob.progress}%</strong>
     </div>
-    <div className="ae-sync-progress-track">
-      <div style={{ width: `${forecastJob.progress}%` }} />
-    </div>
-    <button className="ae-forecast-link" onClick={onToggleLogs} type="button">
+    <span className="jv-run-progress-bar">
+      <span style={{ width: `${forecastJob.progress}%` }} />
+    </span>
+    <button className="jv-btn-link" onClick={onToggleLogs} type="button">
       {logsOpen ? "Masquer les logs" : "Voir les logs"}
     </button>
     {logsOpen ? (
-      <ol className="ae-sync-logs">
+      <ol className="jv-run-logs">
         {forecastJob.logs.slice(-8).map((log) => (
           <li className={log.level} key={`${log.at}:${log.message}`}>
             <time>{formatDateTime(log.at)}</time>
@@ -29,5 +29,5 @@ export const ForecastJobProgress = ({ forecastJob, logsOpen, onToggleLogs }: For
         ))}
       </ol>
     ) : null}
-  </div>
+  </section>
 );

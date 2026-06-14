@@ -1,3 +1,4 @@
+import { Bell } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
   fetchPulsePreferences,
@@ -44,6 +45,13 @@ const pulseEventOptions: Array<{ id: PulseEventType; label: string; description:
     description: "Un deal est deplace vers un autre pipeline.",
   },
 ];
+
+const SectionLabel = ({ children }: { children: string }) => (
+  <span className="jv-section-label">
+    <Bell aria-hidden="true" className="jv-section-icon" size={13} strokeWidth={1.5} />
+    {children}
+  </span>
+);
 
 export const PulseSettingsView = () => {
   const [preferences, setPreferences] = useState<PulsePreferences | null>(null);
@@ -98,57 +106,61 @@ export const PulseSettingsView = () => {
   }
 
   if (!preferences) {
-    return <p className="ae-admin-feedback error">{error ?? "Preferences Jarvis Pulse indisponibles."}</p>;
+    return <p className="jv-banner jv-banner-error">{error ?? "Preferences Jarvis Pulse indisponibles."}</p>;
   }
 
   return (
-    <section className="pulse-settings" aria-label="Preferences Jarvis Pulse">
-      <div className="ae-settings-section-heading">
-        <div>
-          <h3>Jarvis Pulse</h3>
-          <p>
-            Notifications quasi temps reel quand un deal HubSpot change. Choisissez les types de changements que vous
-            voulez recevoir (dashboard + notification Chrome).
-          </p>
+    <section className="jv-theme-block" aria-label="Preferences Jarvis Pulse">
+      <div className="jv-settings-heading">
+        <h2>Jarvis Pulse</h2>
+        <p>
+          Notifications quasi temps reel quand un deal HubSpot change. Choisissez les types de changements que vous
+          voulez recevoir (dashboard + notification Chrome).
+        </p>
+      </div>
+
+      {error ? <p className="jv-banner jv-banner-error">{error}</p> : null}
+
+      <section className="jv-detail-section">
+        <SectionLabel>Interrupteur global</SectionLabel>
+        <label className="jv-pulse-settings-toggle is-master">
+          <input
+            checked={preferences.pulseEnabled}
+            disabled={isSaving}
+            onChange={(event) => void persist({ ...preferences, pulseEnabled: event.target.checked })}
+            type="checkbox"
+          />
+          <span>
+            <strong>Activer Jarvis Pulse</strong>
+            <small>Desactive toutes les notifications d'un coup.</small>
+          </span>
+        </label>
+      </section>
+
+      <section className="jv-detail-section">
+        <SectionLabel>Types de changements</SectionLabel>
+        <div className="jv-pulse-settings-grid">
+          {pulseEventOptions.map((option) => (
+            <label className="jv-pulse-settings-toggle" key={option.id}>
+              <input
+                checked={preferences.events[option.id]}
+                disabled={isSaving || !preferences.pulseEnabled}
+                onChange={(event) =>
+                  void persist({
+                    ...preferences,
+                    events: { ...preferences.events, [option.id]: event.target.checked },
+                  })
+                }
+                type="checkbox"
+              />
+              <span>
+                <strong>{option.label}</strong>
+                <small>{option.description}</small>
+              </span>
+            </label>
+          ))}
         </div>
-      </div>
-
-      {error ? <p className="ae-admin-feedback error">{error}</p> : null}
-
-      <label className="pulse-settings-toggle pulse-settings-master">
-        <input
-          checked={preferences.pulseEnabled}
-          disabled={isSaving}
-          onChange={(event) => void persist({ ...preferences, pulseEnabled: event.target.checked })}
-          type="checkbox"
-        />
-        <span>
-          <strong>Activer Jarvis Pulse</strong>
-          <small>Interrupteur global: desactive toutes les notifications d'un coup.</small>
-        </span>
-      </label>
-
-      <div className="pulse-settings-grid">
-        {pulseEventOptions.map((option) => (
-          <label className="pulse-settings-toggle" key={option.id}>
-            <input
-              checked={preferences.events[option.id]}
-              disabled={isSaving || !preferences.pulseEnabled}
-              onChange={(event) =>
-                void persist({
-                  ...preferences,
-                  events: { ...preferences.events, [option.id]: event.target.checked },
-                })
-              }
-              type="checkbox"
-            />
-            <span>
-              <strong>{option.label}</strong>
-              <small>{option.description}</small>
-            </span>
-          </label>
-        ))}
-      </div>
+      </section>
     </section>
   );
 };

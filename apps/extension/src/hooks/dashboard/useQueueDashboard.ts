@@ -71,6 +71,7 @@ export const useQueueDashboard = ({
   prospects,
 }: Pick<QueueViewProps, "isConnected" | "isRefreshing" | "onDisconnectHubSpot" | "onSyncHubSpot" | "orgId" | "prospects">) => {
   const [activeView, setActiveViewState] = useState<WorkspaceView>(getViewFromHash);
+  const [visitedViews, setVisitedViews] = useState<ReadonlySet<WorkspaceView>>(() => new Set([getViewFromHash()]));
   const [activeBucket, setActiveBucket] = useState<QueueBucket>("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<DealStatusFilter>("open");
@@ -123,6 +124,18 @@ export const useQueueDashboard = ({
 
     window.localStorage.removeItem(ACTIVE_PROSPECT_STORAGE_KEY);
   };
+
+  useEffect(() => {
+    setVisitedViews((current) => {
+      if (current.has(activeView)) {
+        return current;
+      }
+
+      const next = new Set(current);
+      next.add(activeView);
+      return next;
+    });
+  }, [activeView]);
 
   useEffect(() => {
     const handleRouteChange = () => setActiveViewState(getViewFromHash());
@@ -386,9 +399,11 @@ export const useQueueDashboard = ({
     activeBucket,
     activeProspect,
     activeView,
+    visitedViews,
     adminError,
     adminMessage,
     averageProbability: filteredSummary.averageProbability,
+    baseFilteredProspects,
     bucketCounts,
     disconnectLoading,
     filteredProspects,

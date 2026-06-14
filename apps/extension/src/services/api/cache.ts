@@ -115,6 +115,7 @@ export const clearHubSpotOrgCaches = (orgId: string): void => {
   clearAnalyticsCacheByPrefix(HUBSPOT_LEADS_CACHE_PREFIX);
   clearAnalyticsCacheByPrefix(`sales-activity:${orgId}:`);
   clearAnalyticsCacheByPrefix(`probability-timeline:${orgId}:`);
+  clearAnalyticsCacheByPrefix("calls:");
   runRegisteredCacheClearers();
 };
 

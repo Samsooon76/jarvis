@@ -1,12 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent } from "react";
-import { Bot, CircleX, Euro, RotateCcw, Sigma } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+import {
+  AlertTriangle,
+  AlignLeft,
+  ChevronRight,
+  CircleX,
+  History,
+  Lightbulb,
+  ListChecks,
+  MessageCircleWarning,
+  RefreshCw,
+  Sparkles,
+  TrendingUp,
+  type LucideIcon,
+} from "lucide-react";
 import type {
   CloseLostBreakdownRow,
   CloseLostDealDetailResult,
   CloseLostDealListItem,
-  CloseLostMetric,
   CloseLostOverviewResult,
   CloseLostScope,
   HubSpotOwnerOption,
@@ -15,8 +26,7 @@ import { formatAmount, formatDate, formatDateTime } from "../../../utils/dashboa
 import {
   type BreakdownTableRow,
   getDetailOwnerDisplayName,
-  getMetricTone,
-  formatMetricValue,
+  getKeyInsight,
   severityLabels,
   type TrendPoint,
 } from "./utils";
@@ -29,36 +39,26 @@ type TreemapRect = {
   height: number;
 };
 
-const metricIcons: Record<CloseLostMetric["id"], LucideIcon> = {
-  analyzedDeals: Bot,
-  averageLoss: Sigma,
-  lostDeals: CircleX,
-  lostValue: Euro,
-  reactivationScore: RotateCcw,
-};
-
 const analysisStatusLabels: Record<CloseLostDealListItem["analysisStatus"], string> = {
-  fresh: "Analysee",
-  missing: "Non analysee",
-  stale: "Analysee",
+  fresh: "Analysée",
+  missing: "À analyser",
+  stale: "Analysée",
 };
 
-export const MetricCard = ({ metric }: { metric: CloseLostMetric }) => {
-  const Icon = metricIcons[metric.id];
+const getAnalysisStatusClass = (status: CloseLostDealListItem["analysisStatus"]): string => {
+  if (status === "fresh" || status === "stale") {
+    return "jv-meta-ok";
+  }
 
-  return (
-    <article className="ae-close-lost-metric">
-      <span className="ae-close-lost-metric-icon" aria-hidden="true">
-        <Icon size={20} strokeWidth={2.2} />
-      </span>
-      <div>
-        <small>{metric.label}</small>
-        <strong>{formatMetricValue(metric)}</strong>
-        <em className={getMetricTone(metric)}>{metric.caption}</em>
-      </div>
-    </article>
-  );
+  return "jv-meta-pending";
 };
+
+export const SectionLabel = ({ children, icon: Icon }: { children: string; icon: LucideIcon }) => (
+  <span className="jv-section-label">
+    <Icon aria-hidden="true" className="jv-section-icon" size={13} strokeWidth={1.5} />
+    {children}
+  </span>
+);
 
 export const FilterToolbar = ({
   dateFrom,
@@ -85,58 +85,92 @@ export const FilterToolbar = ({
   owners: HubSpotOwnerOption[];
   scope: CloseLostScope;
 }) => (
-  <div className="ae-close-lost-toolbar">
-    <label>
-      Periode
-      <span>
-        <input onChange={(event) => onDateFromChange(event.target.value)} type="date" value={dateFrom} />
-        <input onChange={(event) => onDateToChange(event.target.value)} type="date" value={dateTo} />
+  <div className="jv-toolbar">
+    <div className="jv-toolbar-filters">
+      <span className="jv-date-range" aria-label="Période d'analyse">
+        <input
+          className="jv-date-input"
+          onChange={(event) => onDateFromChange(event.target.value)}
+          type="date"
+          value={dateFrom}
+        />
+        <span aria-hidden="true">→</span>
+        <input
+          className="jv-date-input"
+          onChange={(event) => onDateToChange(event.target.value)}
+          type="date"
+          value={dateTo}
+        />
       </span>
-    </label>
-    <label>
-      Propriétaire
-      <select disabled={scope !== "owner" || owners.length === 0} onChange={(event) => onOwnerChange(event.target.value)} value={ownerId}>
-        {owners.map((owner) => (
-          <option key={owner.ownerId} value={owner.ownerId}>
-            {[owner.name, owner.teamName].filter(Boolean).join(" - ")}
-          </option>
-        ))}
-      </select>
-    </label>
-    <label>
-      Equipe
-      <select onChange={(event) => onScopeChange(event.target.value as CloseLostScope)} value={scope}>
-        <option value="sales_ae">Toutes</option>
-        <option value="owner">Owner selectionne</option>
-      </select>
-    </label>
-    <button disabled={isLoading} onClick={onRun} type="button">
-      + Analyser
-    </button>
+      <div className="jv-filter-pills" role="group" aria-label="Périmètre">
+        <button
+          className={scope === "sales_ae" ? "active" : ""}
+          onClick={() => onScopeChange("sales_ae")}
+          type="button"
+        >
+          Toute l&apos;équipe
+        </button>
+        <button
+          className={scope === "owner" ? "active" : ""}
+          onClick={() => onScopeChange("owner")}
+          type="button"
+        >
+          Par owner
+        </button>
+      </div>
+      {scope === "owner" ? (
+        <select
+          aria-label="Propriétaire"
+          className="jv-select"
+          disabled={owners.length === 0}
+          onChange={(event) => onOwnerChange(event.target.value)}
+          value={ownerId}
+        >
+          {owners.map((owner) => (
+            <option key={owner.ownerId} value={owner.ownerId}>
+              {[owner.name, owner.teamName].filter(Boolean).join(" · ")}
+            </option>
+          ))}
+        </select>
+      ) : null}
+    </div>
+    <div className="jv-toolbar-actions">
+      <button className="jv-btn-primary" disabled={isLoading} onClick={onRun} type="button">
+        {isLoading ? (
+          <RefreshCw aria-hidden="true" className="jv-spin" size={14} strokeWidth={1.5} />
+        ) : (
+          <Sparkles aria-hidden="true" size={14} strokeWidth={1.5} />
+        )}
+        Analyser
+      </button>
+    </div>
   </div>
 );
 
-export const KeyInsight = ({
-  detail,
-  onRecommendationsClick,
-  title,
+export const RunProgress = ({
+  analyzedCount,
+  currentStep,
+  failedCount,
+  progress,
+  reusedCount,
 }: {
-  detail: string;
-  onRecommendationsClick: () => void;
-  title: string;
+  analyzedCount: number;
+  currentStep: string;
+  failedCount: number;
+  progress: number;
+  reusedCount: number;
 }) => (
-  <section className="ae-close-lost-insight">
-    <span className="ae-close-lost-bulb" aria-hidden="true">
-      !
-    </span>
-    <div>
-      <strong>Key insight</strong>
-      <p>{title}</p>
-      <small>{detail}</small>
+  <section aria-live="polite" className="jv-run-progress">
+    <div className="jv-run-progress-head">
+      <span>{currentStep}</span>
+      <strong>{progress}%</strong>
     </div>
-    <button onClick={onRecommendationsClick} type="button">
-      Voir recommandations
-    </button>
+    <span className="jv-run-progress-bar">
+      <span style={{ width: `${progress}%` }} />
+    </span>
+    <small>
+      {analyzedCount} analysé(s), {reusedCount} cache(s), {failedCount} erreur(s)
+    </small>
   </section>
 );
 
@@ -192,6 +226,8 @@ export const buildTreemapRects = (
   ];
 };
 
+const TREEMAP_COLORS = ["#d4714a", "#e8a088", "#f0c4b8", "#f5ddd6", "#faf0ec"];
+
 export const LossTreemap = ({ rows }: { rows: CloseLostBreakdownRow[] }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const rectsRef = useRef<TreemapRect[]>([]);
@@ -224,29 +260,28 @@ export const LossTreemap = ({ rows }: { rows: CloseLostBreakdownRow[] }) => {
       context.setTransform(ratio, 0, 0, ratio, 0, 0);
       context.clearRect(0, 0, width, height);
 
-      const colors = ["#0f6f5c", "#93c9bd", "#c8e2db", "#dcece7", "#edf6f3"];
       const rects = buildTreemapRects(visibleRows, 0, 0, width, height, true);
       rectsRef.current = rects;
 
       rects.forEach((rect, index) => {
         const isActive = rect.row.id === hoveredRowId;
-        context.fillStyle = colors[index] ?? "#edf6f3";
+        context.fillStyle = TREEMAP_COLORS[index] ?? "#faf0ec";
         context.fillRect(rect.x + 1, rect.y + 1, Math.max(0, rect.width - 2), Math.max(0, rect.height - 2));
 
         if (isActive) {
-          context.strokeStyle = "#073f36";
-          context.lineWidth = 3;
+          context.strokeStyle = "#b95734";
+          context.lineWidth = 2;
           context.strokeRect(rect.x + 3, rect.y + 3, Math.max(0, rect.width - 6), Math.max(0, rect.height - 6));
         }
 
-        const textColor = index === 0 ? "#ffffff" : "#17332e";
+        const textColor = index === 0 ? "#ffffff" : "#44403c";
         context.fillStyle = textColor;
-        context.font = "950 12px ui-sans-serif, system-ui";
+        context.font = "500 12px DM Sans, ui-sans-serif, system-ui";
         context.textBaseline = "top";
         context.fillText(rect.row.label, rect.x + 14, rect.y + 14, Math.max(20, rect.width - 28));
 
         if (rect.width > 120 && rect.height > 62) {
-          context.font = "900 12px ui-sans-serif, system-ui";
+          context.font = "500 11px DM Sans, ui-sans-serif, system-ui";
           context.textBaseline = "bottom";
           context.fillText(
             `${formatAmount(rect.row.lostValue)} (${rect.row.share}%)`,
@@ -292,14 +327,12 @@ export const LossTreemap = ({ rows }: { rows: CloseLostBreakdownRow[] }) => {
   };
 
   return (
-    <article className="ae-close-lost-panel ae-close-lost-treemap-panel">
-      <div className="ae-close-lost-panel-head">
-        <h3>Repartition des pertes par raison (par valeur)</h3>
-      </div>
+    <div className="jv-theme-block chart-block">
+      <SectionLabel icon={MessageCircleWarning}>Pertes par raison (valeur)</SectionLabel>
       {visibleRows.length > 0 ? (
-        <div className="ae-close-lost-treemap">
+        <div className="jv-chart-wrap">
           <canvas
-            aria-label="Repartition interactive des pertes par raison"
+            aria-label="Répartition interactive des pertes par raison"
             onPointerLeave={() => {
               setHoveredRowId(null);
               setTooltip(null);
@@ -309,7 +342,7 @@ export const LossTreemap = ({ rows }: { rows: CloseLostBreakdownRow[] }) => {
             role="img"
           />
           {tooltip ? (
-            <div className="ae-close-lost-treemap-tooltip" role="status" style={{ left: tooltip.x, top: tooltip.y }}>
+            <div className="jv-chart-tooltip" role="status" style={{ left: tooltip.x, top: tooltip.y }}>
               <strong>{tooltip.row.label}</strong>
               <span>Valeur perdue : {formatAmount(tooltip.row.lostValue)}</span>
               <span>{tooltip.row.dealCount} deal(s)</span>
@@ -318,9 +351,9 @@ export const LossTreemap = ({ rows }: { rows: CloseLostBreakdownRow[] }) => {
           ) : null}
         </div>
       ) : (
-        <p className="ae-empty">Aucune raison analysee.</p>
+        <p className="jv-theme-empty">Aucune raison analysée.</p>
       )}
-    </article>
+    </div>
   );
 };
 
@@ -328,7 +361,7 @@ export const ValueTrendChart = ({ points }: { points: TrendPoint[] }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const maxValue = useMemo(() => Math.max(...points.map((point) => point.cumulativeValue), 1), [points]);
-  const activePoint = hoverIndex === null ? null : points[hoverIndex] ?? null;
+  const activePoint = hoverIndex === null ? null : (points[hoverIndex] ?? null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -342,12 +375,7 @@ export const ValueTrendChart = ({ points }: { points: TrendPoint[] }) => {
       const width = Math.max(320, Math.floor(parent?.clientWidth ?? 640));
       const height = 220;
       const ratio = window.devicePixelRatio || 1;
-      const padding = {
-        bottom: 28,
-        left: 44,
-        right: 22,
-        top: 18,
-      };
+      const padding = { bottom: 28, left: 44, right: 22, top: 18 };
       const plotWidth = width - padding.left - padding.right;
       const plotHeight = height - padding.top - padding.bottom;
       const context = canvas.getContext("2d");
@@ -363,10 +391,10 @@ export const ValueTrendChart = ({ points }: { points: TrendPoint[] }) => {
       context.setTransform(ratio, 0, 0, ratio, 0, 0);
       context.clearRect(0, 0, width, height);
 
-      context.strokeStyle = "#e6ece8";
+      context.strokeStyle = "rgba(28, 25, 23, 0.08)";
       context.lineWidth = 1;
-      context.font = "700 10px ui-sans-serif, system-ui";
-      context.fillStyle = "#66737b";
+      context.font = "500 10px DM Sans, ui-sans-serif, system-ui";
+      context.fillStyle = "#a8a29e";
 
       for (let index = 0; index <= 3; index += 1) {
         const y = padding.top + (index / 3) * plotHeight;
@@ -380,7 +408,8 @@ export const ValueTrendChart = ({ points }: { points: TrendPoint[] }) => {
         return;
       }
 
-      const getX = (index: number) => padding.left + (points.length <= 1 ? 0.5 : index / (points.length - 1)) * plotWidth;
+      const getX = (index: number) =>
+        padding.left + (points.length <= 1 ? 0.5 : index / (points.length - 1)) * plotWidth;
       const getY = (value: number) => padding.top + plotHeight - (value / maxValue) * plotHeight;
       const coordinates = points.map((point, index) => ({
         x: getX(index),
@@ -399,7 +428,7 @@ export const ValueTrendChart = ({ points }: { points: TrendPoint[] }) => {
       context.lineTo(coordinates[coordinates.length - 1].x, padding.top + plotHeight);
       context.lineTo(coordinates[0].x, padding.top + plotHeight);
       context.closePath();
-      context.fillStyle = "rgba(15, 111, 92, 0.11)";
+      context.fillStyle = "rgba(212, 113, 74, 0.11)";
       context.fill();
 
       context.beginPath();
@@ -411,24 +440,21 @@ export const ValueTrendChart = ({ points }: { points: TrendPoint[] }) => {
 
         context.lineTo(coordinate.x, coordinate.y);
       });
-      context.strokeStyle = "#0f6f5c";
+      context.strokeStyle = "#d4714a";
       context.lineCap = "round";
       context.lineJoin = "round";
-      context.lineWidth = 3;
+      context.lineWidth = 2.5;
       context.stroke();
 
       coordinates.forEach((coordinate, index) => {
         const isActive = index === hoverIndex;
         context.beginPath();
-        context.arc(coordinate.x, coordinate.y, isActive ? 7 : 4.5, 0, Math.PI * 2);
-        context.fillStyle = "#0f6f5c";
+        context.arc(coordinate.x, coordinate.y, isActive ? 6 : 4, 0, Math.PI * 2);
+        context.fillStyle = "#d4714a";
         context.fill();
-        context.lineWidth = isActive ? 4 : 0;
-        context.strokeStyle = isActive ? "rgba(15, 111, 92, 0.18)" : "transparent";
-        context.stroke();
 
-        context.fillStyle = "#66737b";
-        context.font = "800 10px ui-sans-serif, system-ui";
+        context.fillStyle = "#a8a29e";
+        context.font = "500 10px DM Sans, ui-sans-serif, system-ui";
         context.textAlign = index === 0 ? "left" : index === coordinates.length - 1 ? "right" : "center";
         context.fillText(points[index].label, coordinate.x, height - 6);
       });
@@ -438,7 +464,7 @@ export const ValueTrendChart = ({ points }: { points: TrendPoint[] }) => {
         context.beginPath();
         context.moveTo(coordinate.x, padding.top);
         context.lineTo(coordinate.x, padding.top + plotHeight);
-        context.strokeStyle = "rgba(15, 111, 92, 0.28)";
+        context.strokeStyle = "rgba(212, 113, 74, 0.28)";
         context.lineWidth = 1;
         context.stroke();
       }
@@ -474,22 +500,22 @@ export const ValueTrendChart = ({ points }: { points: TrendPoint[] }) => {
   };
 
   return (
-    <article className="ae-close-lost-panel ae-close-lost-trend-panel">
-      <div className="ae-close-lost-panel-head">
-        <h3>Evolution de la valeur perdue</h3>
-        <span>Cumule</span>
+    <div className="jv-theme-block chart-block">
+      <div className="jv-theme-block-head">
+        <SectionLabel icon={TrendingUp}>Évolution valeur perdue</SectionLabel>
+        <span>Cumulé</span>
       </div>
       {points.length > 0 ? (
-        <div className="ae-close-lost-chart">
+        <div className="jv-chart-wrap">
           <canvas
-            aria-label="Evolution interactive de la valeur perdue"
+            aria-label="Évolution interactive de la valeur perdue"
             onPointerLeave={() => setHoverIndex(null)}
             onPointerMove={handlePointerMove}
             ref={canvasRef}
             role="img"
           />
           {activePoint ? (
-            <div className="ae-close-lost-chart-tooltip" role="status">
+            <div className="jv-chart-tooltip floating" role="status">
               <strong>{activePoint.label}</strong>
               <span>Perdu sur le mois : {formatAmount(activePoint.value)}</span>
               <span>Cumul : {formatAmount(activePoint.cumulativeValue)}</span>
@@ -497,40 +523,11 @@ export const ValueTrendChart = ({ points }: { points: TrendPoint[] }) => {
           ) : null}
         </div>
       ) : (
-        <p className="ae-empty">Pas encore assez de dates de cloture pour tracer une tendance.</p>
+        <p className="jv-theme-empty">Pas assez de dates de clôture pour tracer une tendance.</p>
       )}
-    </article>
+    </div>
   );
 };
-
-export const SegmentTable = ({ rows }: { rows: BreakdownTableRow[] }) => (
-  <article className="ae-close-lost-panel">
-    <div className="ae-close-lost-panel-head">
-      <h3>Analyse par segment</h3>
-    </div>
-    <div className="ae-close-lost-mini-table">
-      <div className="head">
-        <span>Segment</span>
-        <span>Deals lost</span>
-        <span>Valeur perdue</span>
-        <span>Perte moyenne</span>
-        <span>Part</span>
-      </div>
-      {rows.map((row) => (
-        <div key={row.id}>
-          <strong>{row.label}</strong>
-          <span>{row.dealCount}</span>
-          <span>{formatAmount(row.lostValue)}</span>
-          <span>{formatAmount(row.averageLoss)}</span>
-          <span>
-            {row.share}%
-            <i style={{ width: `${Math.max(6, row.share)}%` }} />
-          </span>
-        </div>
-      ))}
-    </div>
-  </article>
-);
 
 export const TopFactors = ({ overview }: { overview: CloseLostOverviewResult | null }) => {
   const factors =
@@ -542,122 +539,162 @@ export const TopFactors = ({ overview }: { overview: CloseLostOverviewResult | n
     })) ??
     overview?.lossReasons.slice(0, 5).map((row) => ({
       title: row.label,
-      impact: row.share >= 30 ? "Eleve" : row.share >= 15 ? "Moyen" : "Faible",
+      impact: row.share >= 30 ? "Élevé" : row.share >= 15 ? "Moyen" : "Faible",
       dealShare: row.share,
       rationale: `${row.dealCount} deal(s), ${formatAmount(row.lostValue)} de valeur perdue.`,
     })) ??
     [];
 
   return (
-    <article className="ae-close-lost-panel">
-      <div className="ae-close-lost-panel-head">
-        <h3>Top facteurs influencant les pertes</h3>
-      </div>
-      <div className="ae-close-lost-factor-list">
-        {factors.map((factor) => (
-          <div key={factor.title}>
-            <strong>{factor.title}</strong>
-            <i style={{ width: `${Math.max(8, factor.dealShare)}%` }} />
-            <span>{factor.impact}</span>
-            <em>{factor.dealShare}%</em>
-            <small>{factor.rationale}</small>
-          </div>
-        ))}
-      </div>
-    </article>
+    <div className="jv-theme-block">
+      <SectionLabel icon={AlertTriangle}>Patterns de perte</SectionLabel>
+      {factors.length > 0 ? (
+        <div className="jv-factor-list">
+          {factors.map((factor) => (
+            <div className="jv-factor-item" key={factor.title}>
+              <div className="jv-factor-item-head">
+                <strong>{factor.title}</strong>
+                <em>{factor.dealShare}%</em>
+              </div>
+              <div className="jv-factor-bar">
+                <span style={{ width: `${Math.max(8, factor.dealShare)}%` }} />
+              </div>
+              <small>
+                {factor.impact} · {factor.rationale}
+              </small>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="jv-theme-empty">Aucun pattern détecté. Lancez une analyse globale.</p>
+      )}
+    </div>
   );
 };
 
-export const Recommendations = ({
-  overview,
-  panelRef,
-}: {
-  overview: CloseLostOverviewResult | null;
-  panelRef: (node: HTMLElement | null) => void;
-}) => (
-  <article className="ae-close-lost-panel ae-close-lost-recommendations-panel" ref={panelRef}>
-    <div className="ae-close-lost-panel-head">
-      <h3>Recommandations cles</h3>
+export const Recommendations = ({ overview }: { overview: CloseLostOverviewResult | null }) => {
+  const keyInsight = getKeyInsight(overview);
+  const insightShare = overview?.lossReasons[0]?.share ?? null;
+  const recommendations = overview?.recommendations ?? [];
+
+  return (
+    <div className="jv-theme-block">
+      <SectionLabel icon={Lightbulb}>Recommandations</SectionLabel>
+
+      <div className="jv-theme-insight">
+        <div className="jv-theme-insight-head">
+          <span className="jv-theme-insight-label">
+            <Sparkles aria-hidden="true" size={11} strokeWidth={1.5} />
+            Insight clé
+          </span>
+          {insightShare !== null ? <em>{insightShare}%</em> : null}
+        </div>
+        <p className="jv-prose">{keyInsight.title}</p>
+        <small>{keyInsight.detail}</small>
+      </div>
+
+      {recommendations.length > 0 ? (
+        <div className="jv-recommendation-list">
+          {recommendations.slice(0, 5).map((recommendation) => (
+            <div className="jv-recommendation-item" key={recommendation.title}>
+              <div className="jv-recommendation-item-head">
+                <strong>{recommendation.title}</strong>
+                <span>{severityLabels[recommendation.priority]}</span>
+              </div>
+              <small>{recommendation.rationale}</small>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="jv-theme-empty">Lancez une analyse globale pour générer des recommandations actionnables.</p>
+      )}
     </div>
-    {overview?.recommendations.length ? (
-      <div className="ae-close-lost-recommendations">
-        {overview.recommendations.map((recommendation) => (
-          <p key={recommendation.title}>
-            <strong>{recommendation.title}</strong>
-            <span>{severityLabels[recommendation.priority]}</span>
-            <small>{recommendation.rationale}</small>
-          </p>
+  );
+};
+
+export const CompactBreakdown = ({ rows, title }: { rows: CloseLostBreakdownRow[]; title: string }) => (
+  <div className="jv-theme-block">
+    <SectionLabel icon={History}>{title}</SectionLabel>
+    {rows.length > 0 ? (
+      <div className="jv-compact-breakdown">
+        {rows.slice(0, 5).map((row) => (
+          <div className="jv-compact-row" key={row.id}>
+            <strong>{row.label}</strong>
+            <span>{row.dealCount} deals</span>
+            <em>{row.share}%</em>
+            <div className="jv-compact-row-bar">
+              <span style={{ width: `${Math.max(6, row.share)}%` }} />
+            </div>
+          </div>
         ))}
       </div>
     ) : (
-      <p className="ae-empty">Lance une analyse globale pour produire les recommandations manager.</p>
+      <p className="jv-theme-empty">Aucune donnée sur cette période.</p>
     )}
-  </article>
+  </div>
 );
 
-export const CompactBreakdown = ({ rows, title }: { rows: CloseLostBreakdownRow[]; title: string }) => (
-  <article className="ae-close-lost-panel">
-    <div className="ae-close-lost-panel-head">
-      <h3>{title}</h3>
-    </div>
-    <div className="ae-close-lost-compact-breakdown">
-      {rows.slice(0, 5).map((row) => (
-        <p key={row.id}>
-          <strong>{row.label}</strong>
-          <span>{row.dealCount} deals</span>
-          <em>{row.share}%</em>
-          <i style={{ width: `${Math.max(6, row.share)}%` }} />
-        </p>
-      ))}
-    </div>
-  </article>
+const DealMeta = ({ deal }: { deal: CloseLostDealListItem }) => (
+  <span className="jv-item-meta">
+    <span>{deal.stage}</span>
+    <span>{deal.primaryLossReason ?? "Non analysé"}</span>
+    <span className={getAnalysisStatusClass(deal.analysisStatus)}>
+      {analysisStatusLabels[deal.analysisStatus]}
+    </span>
+  </span>
 );
 
-export const DealTable = ({
+export const DealList = ({
   activeDealId,
   deals,
+  isLoading,
   onDealSelect,
 }: {
   activeDealId: string | null;
   deals: CloseLostDealListItem[];
+  isLoading: boolean;
   onDealSelect: (hubspotDealId: string) => void;
 }) => (
-  <article className="ae-close-lost-panel ae-close-lost-table-panel">
-    <div className="ae-close-lost-panel-head">
-      <h3>Focus pertes significatives</h3>
-      <span>{deals.length} deal(s)</span>
-    </div>
-    <div className="ae-close-lost-table">
-      <div className="ae-close-lost-row header">
-        <span>Deal</span>
-        <span>Valeur perdue</span>
-        <span>Raison principale</span>
-        <span>Etape</span>
-        <span>Perdu le</span>
-        <span>Deep dive</span>
-      </div>
+  <section aria-busy={isLoading} aria-label="Deals perdus" className="jv-list-shell">
+    <header className="jv-list-head">
+      <SectionLabel icon={History}>Pertes significatives</SectionLabel>
+      <span className="jv-list-count">
+        {deals.length} résultat{deals.length > 1 ? "s" : ""}
+      </span>
+    </header>
+    <div className="jv-list-body">
+      {isLoading && deals.length === 0 ? <p className="jv-list-empty">Chargement des deals…</p> : null}
+      {!isLoading && deals.length === 0 ? (
+        <p className="jv-list-empty">Aucun deal perdu sur cette période.</p>
+      ) : null}
       {deals.map((deal) => (
         <button
-          className={`ae-close-lost-row${activeDealId === deal.hubspotDealId ? " active" : ""}`}
+          className={activeDealId === deal.hubspotDealId ? "jv-list-item selected" : "jv-list-item"}
           key={deal.hubspotDealId}
           onClick={() => onDealSelect(deal.hubspotDealId)}
           type="button"
         >
-          <span>
+          <span className="jv-list-main">
             <strong>{deal.companyName}</strong>
             <small>{deal.dealName ?? deal.contactName ?? deal.hubspotDealId}</small>
+            <DealMeta deal={deal} />
           </span>
-          <span>{formatAmount(deal.amount)}</span>
-          <span>{deal.primaryLossReason ?? "Non analyse"}</span>
-          <span>{deal.stage}</span>
-          <span>{deal.closedAt ? formatDate(deal.closedAt) : "Sans date"}</span>
-          <span className={`ae-close-lost-status ${deal.analysisStatus}`}>
-            {analysisStatusLabels[deal.analysisStatus]}
+          <span className="jv-list-side">
+            <time>{deal.closedAt ? formatDate(deal.closedAt) : "Sans date"}</time>
+            <em>{formatAmount(deal.amount)}</em>
+            <ChevronRight aria-hidden="true" size={14} strokeWidth={1.5} />
           </span>
         </button>
       ))}
     </div>
-  </article>
+  </section>
+);
+
+const DetailSection = ({ children, icon, label }: { children: React.ReactNode; icon: LucideIcon; label: string }) => (
+  <section className="jv-detail-section">
+    <SectionLabel icon={icon}>{label}</SectionLabel>
+    {children}
+  </section>
 );
 
 export const DealDeepDive = ({
@@ -674,106 +711,146 @@ export const DealDeepDive = ({
   isLoading: boolean;
   onAnalyze: () => void;
   ownersById: Map<string, HubSpotOwnerOption>;
-}) => (
-  <aside className="ae-close-lost-detail">
-    <div className="ae-close-lost-detail-head">
-      <div>
-        <span>Deal deep dive</span>
-        <h3>{detail?.deal.companyName ?? "Selectionne un deal"}</h3>
-      </div>
-      <button disabled={!detail || isAnalyzing || Boolean(detail?.analysis)} onClick={onAnalyze} type="button">
-        {isAnalyzing ? "Analyse..." : detail?.analysis ? "Analyse terminee" : "Analyser"}
-      </button>
-    </div>
+}) => {
+  if (!detail && !isLoading) {
+    return (
+      <aside className="jv-detail">
+        <div className="jv-detail-empty">
+          <CircleX aria-hidden="true" size={20} strokeWidth={1.25} />
+          <strong>Sélectionnez un deal</strong>
+          <p>Analyse IA des causes de perte, signaux de risque et playbook de réactivation.</p>
+        </div>
+      </aside>
+    );
+  }
 
-    {isLoading ? <p className="ae-empty">Chargement du deal...</p> : null}
-    {error ? <p className="ae-detail-error">{error}</p> : null}
+  const subtitle = detail
+    ? [
+        detail.deal.dealName,
+        getDetailOwnerDisplayName(detail, ownersById),
+        detail.deal.closedAt ? formatDate(detail.deal.closedAt) : null,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : "";
 
-    {detail ? (
-      <>
-        <dl className="ae-close-lost-detail-facts">
-          <div>
-            <dt>Valeur perdue</dt>
-            <dd>{formatAmount(detail.deal.amount)}</dd>
-          </div>
-          <div>
-            <dt>Stage</dt>
-            <dd>{detail.deal.stage}</dd>
-          </div>
-          <div>
-            <dt>Owner</dt>
-            <dd>{getDetailOwnerDisplayName(detail, ownersById)}</dd>
-          </div>
-          <div>
-            <dt>Derniere analyse</dt>
-            <dd>{detail.generatedAt ? formatDateTime(detail.generatedAt) : "Non analysee"}</dd>
-          </div>
-        </dl>
+  return (
+    <aside aria-busy={isLoading} className="jv-detail">
+      <header className="jv-detail-head">
+        <div>
+          <h2>{detail?.deal.companyName ?? "Chargement…"}</h2>
+          {subtitle ? <p>{subtitle}</p> : null}
+        </div>
+        <button
+          className="jv-btn-ghost"
+          disabled={!detail || isAnalyzing || Boolean(detail?.analysis)}
+          onClick={onAnalyze}
+          type="button"
+        >
+          {isAnalyzing ? (
+            <RefreshCw aria-hidden="true" className="jv-spin" size={14} strokeWidth={1.5} />
+          ) : (
+            <Sparkles aria-hidden="true" size={14} strokeWidth={1.5} />
+          )}
+          {isAnalyzing ? "Analyse…" : detail?.analysis ? "Analysé" : "Analyser"}
+        </button>
+      </header>
 
-        {detail.analysis ? (
-          <div className="ae-close-lost-detail-grid">
-            <section>
-              <h4>Resume perte IA</h4>
-              <p>{detail.analysis.summary}</p>
-              <ul>
-                <li>
-                  <strong>Raison principale</strong>
-                  <span>{detail.analysis.primaryLossReason}</span>
-                </li>
-                <li>
-                  <strong>Raison secondaire</strong>
-                  <span>{detail.analysis.secondaryLossReason ?? "Non identifiee"}</span>
-                </li>
-                <li>
-                  <strong>Concurrent gagnant</strong>
-                  <span>{detail.analysis.competitorName ?? "Non identifie"}</span>
-                </li>
-                <li>
-                  <strong>Score de reactivation</strong>
-                  <span>{detail.analysis.reactivationScore}/100</span>
-                </li>
-              </ul>
-            </section>
+      {isLoading ? <p className="jv-detail-loading">Chargement du deal…</p> : null}
+      {error ? <p className="jv-banner jv-banner-error">{error}</p> : null}
 
-            <section>
-              <h4>Signaux avant perte</h4>
-              {detail.analysis.riskSignals.map((signal) => (
-                <p className={`ae-close-lost-signal ${signal.severity}`} key={signal.title}>
-                  <strong>{signal.title}</strong>
-                  <span>{severityLabels[signal.severity]}</span>
-                  <small>{signal.detail}</small>
-                </p>
-              ))}
-            </section>
+      {detail ? (
+        <>
+          <dl className="jv-detail-facts">
+            <div>
+              <dt>Valeur perdue</dt>
+              <dd>{formatAmount(detail.deal.amount)}</dd>
+            </div>
+            <div>
+              <dt>Étape</dt>
+              <dd>{detail.deal.stage}</dd>
+            </div>
+            <div>
+              <dt>Owner</dt>
+              <dd>{getDetailOwnerDisplayName(detail, ownersById)}</dd>
+            </div>
+            <div>
+              <dt>Dernière analyse</dt>
+              <dd>{detail.generatedAt ? formatDateTime(detail.generatedAt) : "Non analysée"}</dd>
+            </div>
+          </dl>
 
-            <section>
-              <h4>Sante avant perte</h4>
-              {detail.analysis.healthBeforeLoss.map((dimension) => (
-                <p className="ae-close-lost-health" key={dimension.label}>
-                  <strong>{dimension.label}</strong>
-                  <i style={{ width: `${dimension.score}%` }} />
-                  <span>{dimension.detail}</span>
-                </p>
-              ))}
-            </section>
+          {detail.analysis ? (
+            <>
+              <DetailSection icon={AlignLeft} label="Résumé perte IA">
+                <p className="jv-prose">{detail.analysis.summary}</p>
+                <ul className="jv-bullet-list">
+                  <li>
+                    Raison principale : {detail.analysis.primaryLossReason}
+                  </li>
+                  <li>
+                    Raison secondaire : {detail.analysis.secondaryLossReason ?? "Non identifiée"}
+                  </li>
+                  <li>Concurrent gagnant : {detail.analysis.competitorName ?? "Non identifié"}</li>
+                  <li>
+                    Score de réactivation :{" "}
+                    <span className="jv-meta-score">{detail.analysis.reactivationScore}/100</span>
+                  </li>
+                </ul>
+              </DetailSection>
 
-            <section>
-              <h4>Playbook de reactivation</h4>
-              {detail.analysis.playbook.map((action) => (
-                <p className="ae-close-lost-action" key={action.title}>
-                  <strong>{action.title}</strong>
-                  <span>{action.timing}</span>
-                  <small>{action.rationale}</small>
-                </p>
-              ))}
-            </section>
-          </div>
-        ) : (
-          <p className="ae-empty">Aucune analyse IA stockee pour ce deal. Lance le deep dive pour generer l'analyse.</p>
-        )}
-      </>
-    ) : (
-      <p className="ae-empty">Choisis un deal perdu dans le tableau pour ouvrir son analyse detaillee.</p>
-    )}
-  </aside>
-);
+              <DetailSection icon={AlertTriangle} label="Signaux avant perte">
+                <ul className="jv-risk-list">
+                  {detail.analysis.riskSignals.map((signal) => (
+                    <li className={signal.severity} key={signal.title}>
+                      <AlertTriangle aria-hidden="true" size={13} strokeWidth={1.5} />
+                      <span className="jv-risk-detail">
+                        <strong>{signal.title}</strong>
+                        <span>{severityLabels[signal.severity]}</span>
+                        <small>{signal.detail}</small>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </DetailSection>
+
+              <DetailSection icon={TrendingUp} label="Santé avant perte">
+                {detail.analysis.healthBeforeLoss.map((dimension) => (
+                  <div className="jv-health-item" key={dimension.label}>
+                    <div className="jv-health-item-head">
+                      <strong>{dimension.label}</strong>
+                    </div>
+                    <div className="jv-health-bar">
+                      <span style={{ width: `${dimension.score}%` }} />
+                    </div>
+                    <span>{dimension.detail}</span>
+                  </div>
+                ))}
+              </DetailSection>
+
+              <DetailSection icon={ListChecks} label="Playbook de réactivation">
+                {detail.analysis.playbook.map((action) => (
+                  <div className="jv-action-item" key={action.title}>
+                    <div className="jv-action-item-head">
+                      <strong>{action.title}</strong>
+                      <span>{action.timing}</span>
+                    </div>
+                    <small>{action.rationale}</small>
+                  </div>
+                ))}
+              </DetailSection>
+            </>
+          ) : (
+            <div className="jv-callout">
+              <Sparkles aria-hidden="true" size={16} strokeWidth={1.5} />
+              <div>
+                <p>Ce deal n&apos;a pas encore été analysé.</p>
+                <small>Lancez l&apos;analyse IA pour générer le deep dive et le playbook de réactivation.</small>
+              </div>
+            </div>
+          )}
+        </>
+      ) : null}
+    </aside>
+  );
+};

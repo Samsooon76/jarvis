@@ -1,0 +1,376 @@
+/* Loading screens — design spec §8.3, scoped under .jv-loading-screen */
+
+.jv-loading-screen {
+  --jv-bg: #f4f3f0;
+  --jv-surface: #ffffff;
+  --jv-surface-muted: #f8f7f4;
+  --jv-text: #1c1917;
+  --jv-text-soft: #44403c;
+  --jv-muted: #57534e;
+  --jv-faint: #a8a29e;
+  --jv-border: rgba(28, 25, 23, 0.08);
+  --jv-border-strong: rgba(28, 25, 23, 0.14);
+  --jv-terra: #d4714a;
+  --jv-terra-soft: rgba(212, 113, 74, 0.14);
+  --jv-success: #2d8a5e;
+  --jv-font: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --jv-ease-spring: cubic-bezier(0.2, 1.18, 0.47, 1);
+
+  align-content: center;
+  background: var(--jv-bg);
+  box-sizing: border-box;
+  color: var(--jv-text);
+  display: grid;
+  font-family: var(--jv-font);
+  gap: 20px;
+  justify-items: center;
+  margin: 0;
+  min-height: 100vh;
+  padding: 28px;
+  text-align: center;
+  width: 100%;
+  -webkit-font-smoothing: antialiased;
+}
+
+.jv-loading-screen *,
+.jv-loading-screen *::before,
+.jv-loading-screen *::after {
+  box-sizing: border-box;
+}
+
+.jv-loading-screen h1,
+.jv-loading-screen h2,
+.jv-loading-screen p {
+  margin: 0;
+}
+
+/* ── Brand ── */
+
+.jv-loading-brand {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+}
+
+.jv-loading-brand-icon {
+  color: var(--jv-terra);
+  flex-shrink: 0;
+  opacity: 0.9;
+}
+
+.jv-loading-brand h1 {
+  color: var(--jv-text);
+  font-size: 28px;
+  font-weight: 300;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+.jv-loading-brand p {
+  color: var(--jv-muted);
+  font-size: 14px;
+  line-height: 1.4;
+  margin-top: 6px;
+}
+
+/* ── Card (sync screen) ── */
+
+.jv-loading-screen-sync {
+  align-content: center;
+  gap: 0;
+  justify-items: stretch;
+}
+
+.jv-loading-card {
+  background: var(--jv-surface);
+  border: 1px solid var(--jv-border);
+  border-radius: 14px;
+  display: grid;
+  gap: 18px;
+  margin-inline: auto;
+  padding: 24px;
+  text-align: left;
+  width: min(560px, 100%);
+}
+
+.jv-loading-sync-head {
+  align-items: center;
+  display: flex;
+  gap: 14px;
+  min-width: 0;
+}
+
+.jv-loading-sync-head > div {
+  min-width: 0;
+}
+
+.jv-loading-sync-head h2 {
+  color: var(--jv-text);
+  font-size: 22px;
+  font-weight: 300;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+.jv-loading-sync-head p {
+  color: var(--jv-muted);
+  font-size: 14px;
+  line-height: 1.35;
+  margin-top: 6px;
+}
+
+/* ── Loading state (inline + panel) ── */
+
+.jv-loading-state {
+  align-items: center;
+  color: var(--jv-text);
+  display: flex;
+  gap: 14px;
+  text-align: left;
+}
+
+.jv-loading-state.panel {
+  justify-content: center;
+  min-height: 180px;
+  padding: 24px;
+  width: 100%;
+}
+
+.jv-loading-state.inline {
+  min-height: 0;
+  padding: 0;
+}
+
+.jv-loading-screen .jv-loading-state.inline {
+  justify-content: center;
+  max-width: min(420px, 100%);
+}
+
+.jv-loading-icon {
+  color: var(--jv-terra);
+  flex-shrink: 0;
+  opacity: 0.9;
+}
+
+.jv-loading-state strong {
+  color: var(--jv-text);
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.25;
+}
+
+.jv-loading-state p {
+  color: var(--jv-muted);
+  font-size: 13px;
+  line-height: 1.4;
+  margin-top: 5px;
+}
+
+.jv-loading-error {
+  color: var(--jv-muted);
+  font-size: 14px;
+  line-height: 1.45;
+  max-width: min(420px, 100%);
+}
+
+/* ── Spinner ── */
+
+.jv-spin {
+  animation: jv-loading-spin 0.9s linear infinite;
+}
+
+@keyframes jv-loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ── Run progress ── */
+
+.jv-loading-screen .jv-run-progress {
+  background: var(--jv-surface-muted);
+  border: 1px solid var(--jv-border);
+  border-radius: 10px;
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+}
+
+.jv-loading-screen .jv-run-progress-head {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.jv-loading-screen .jv-run-progress-head span {
+  color: var(--jv-muted);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.jv-loading-screen .jv-run-progress-head strong {
+  color: var(--jv-text);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+.jv-loading-screen .jv-run-progress-bar {
+  background: rgba(28, 25, 23, 0.06);
+  border-radius: 999px;
+  display: block;
+  height: 6px;
+  overflow: hidden;
+}
+
+.jv-loading-screen .jv-run-progress-bar span {
+  background: var(--jv-terra);
+  border-radius: 999px;
+  display: block;
+  height: 100%;
+  transition: width 0.3s ease;
+}
+
+/* ── Sync steps ── */
+
+.jv-sync-steps {
+  display: grid;
+  gap: 0;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.jv-sync-steps li {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 24px minmax(0, 1fr);
+  min-height: 48px;
+  padding-bottom: 12px;
+  position: relative;
+}
+
+.jv-sync-steps li::after {
+  background: rgba(28, 25, 23, 0.08);
+  border-radius: 999px;
+  bottom: 0;
+  content: "";
+  left: 11px;
+  position: absolute;
+  top: 24px;
+  width: 2px;
+}
+
+.jv-sync-steps li:last-child {
+  min-height: 24px;
+  padding-bottom: 0;
+}
+
+.jv-sync-steps li:last-child::after {
+  display: none;
+}
+
+.jv-sync-steps li > span {
+  background: var(--jv-surface);
+  border: 1px solid var(--jv-border-strong);
+  border-radius: 999px;
+  display: grid;
+  height: 24px;
+  place-items: center;
+  position: relative;
+  width: 24px;
+  z-index: 1;
+}
+
+.jv-sync-steps li > span::before {
+  background: var(--jv-faint);
+  border-radius: 999px;
+  content: "";
+  height: 8px;
+  width: 8px;
+}
+
+.jv-sync-steps li.done > span {
+  background: var(--jv-success);
+  border-color: var(--jv-success);
+}
+
+.jv-sync-steps li.done > span::before {
+  background: transparent;
+  border-bottom: 2px solid #ffffff;
+  border-left: 2px solid #ffffff;
+  border-radius: 0;
+  height: 5px;
+  transform: translateY(-1px) rotate(-45deg);
+  width: 9px;
+}
+
+.jv-sync-steps li.current > span {
+  border-color: var(--jv-terra);
+  box-shadow: 0 0 0 5px var(--jv-terra-soft);
+}
+
+.jv-sync-steps li.current > span::before {
+  animation: jv-loading-dot 1s ease-in-out infinite;
+  background: var(--jv-terra);
+}
+
+.jv-sync-steps li.done::after {
+  background: rgba(45, 138, 94, 0.35);
+}
+
+.jv-sync-steps strong,
+.jv-sync-steps small {
+  display: block;
+}
+
+.jv-sync-steps strong {
+  color: var(--jv-text);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.25;
+}
+
+.jv-sync-steps small {
+  color: var(--jv-muted);
+  font-size: 12px;
+  line-height: 1.35;
+  margin-top: 3px;
+}
+
+.jv-sync-steps li.waiting strong,
+.jv-sync-steps li.waiting small {
+  color: var(--jv-faint);
+}
+
+@keyframes jv-loading-dot {
+  0%,
+  100% {
+    transform: scale(0.82);
+  }
+
+  50% {
+    transform: scale(1.15);
+  }
+}
+
+/* ── Responsive ── */
+
+@media (max-width: 420px) {
+  .jv-loading-state {
+    flex-direction: column;
+    text-align: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jv-spin,
+  .jv-sync-steps li.current > span::before {
+    animation: none !important;
+  }
+
+  .jv-loading-screen .jv-run-progress-bar span {
+    transition: none;
+  }
+}

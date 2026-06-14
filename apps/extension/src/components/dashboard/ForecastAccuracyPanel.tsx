@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { BarChart3, RefreshCw, Users, type LucideIcon } from "lucide-react";
 import { fetchForecastAccuracy, type ForecastAccuracyOverview } from "../../services/api";
 
 const PERIOD_OPTIONS = [
@@ -10,12 +11,9 @@ const PERIOD_OPTIONS = [
 const CATEGORY_LABELS: Record<string, string> = {
   commit: "Commit",
   bestCase: "Best case",
-  atRisk: "A risque",
+  atRisk: "À risque",
   slipping: "Slipping",
 };
-
-const formatAmount = (value: number): string =>
-  new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(value);
 
 const formatPct = (value: number | null): string => (value !== null ? `${value}%` : "n/a");
 
@@ -27,6 +25,13 @@ const formatBias = (value: number | null): string => {
   return value > 0 ? `+${value}% (sur-commit)` : value < 0 ? `${value}% (sous-commit)` : "0%";
 };
 
+const SectionLabel = ({ children, icon: Icon }: { children: string; icon: LucideIcon }) => (
+  <span className="jv-section-label">
+    <Icon aria-hidden="true" className="jv-section-icon" size={13} strokeWidth={1.5} />
+    {children}
+  </span>
+);
+
 const CalibrationBars = ({
   title,
   buckets,
@@ -34,46 +39,36 @@ const CalibrationBars = ({
   title: string;
   buckets: ForecastAccuracyOverview["calibration"]["crm"];
 }) => (
-  <article className="ae-forecast-panel">
-    <div className="ae-panel-heading">
-      <h4>{title}</h4>
-      <small>Win rate observe par tranche de probabilite annoncee</small>
-    </div>
-    <div className="ae-forecast-list">
-      {buckets.length === 0 ? (
-        <p className="ae-empty">Pas encore de deals resolus avec cette source.</p>
-      ) : (
-        buckets.map((bucket) => {
+  <article className="jv-theme-block">
+    <SectionLabel icon={BarChart3}>{title}</SectionLabel>
+    <small className="jv-toolbar-meta">Win rate observé par tranche de probabilité annoncée</small>
+    {buckets.length === 0 ? (
+      <p className="jv-theme-empty">Pas encore de deals résolus avec cette source.</p>
+    ) : (
+      <div className="jv-factor-list">
+        {buckets.map((bucket) => {
           const ideal = bucket.bucket + 5;
+          const observed = bucket.observedWinRate ?? 0;
 
           return (
-            <div key={bucket.bucket}>
-              <span>
-                {bucket.bucket}-{bucket.bucket + 10}% annonce
-              </span>
-              <div style={{ position: "relative", height: "10px", borderRadius: "5px", background: "rgba(127,127,127,0.15)", overflow: "hidden" }}>
-                <i
-                  style={{
-                    position: "absolute",
-                    insetBlock: 0,
-                    left: 0,
-                    width: `${bucket.observedWinRate ?? 0}%`,
-                    background: (bucket.observedWinRate ?? 0) >= bucket.bucket ? "#26be67" : "#ff8a32",
-                  }}
-                />
-                <i
-                  style={{ position: "absolute", insetBlock: 0, left: `${ideal}%`, width: "2px", background: "#4f7dce" }}
-                  title={`Ideal: ~${ideal}%`}
-                />
+            <div className="jv-factor-item" key={bucket.bucket}>
+              <div className="jv-factor-item-head">
+                <strong>
+                  {bucket.bucket}-{bucket.bucket + 10}% annoncé
+                </strong>
+                <em>{formatPct(bucket.observedWinRate)}</em>
+              </div>
+              <div className="jv-factor-bar">
+                <span style={{ width: `${observed}%`, background: observed >= bucket.bucket ? "var(--jv-success)" : "var(--jv-warning)" }} />
               </div>
               <small>
-                observe {formatPct(bucket.observedWinRate)} sur {bucket.dealCount} deal{bucket.dealCount > 1 ? "s" : ""} (ideal ~{ideal}%)
+                {bucket.dealCount} deal{bucket.dealCount > 1 ? "s" : ""} · idéal ~{ideal}%
               </small>
             </div>
           );
-        })
-      )}
-    </div>
+        })}
+      </div>
+    )}
   </article>
 );
 
@@ -97,7 +92,7 @@ export const ForecastAccuracyPanel = () => {
           return;
         }
 
-        setError(fetchError instanceof Error ? fetchError.message : "Impossible de charger la fiabilite forecast.");
+        setError(fetchError instanceof Error ? fetchError.message : "Impossible de charger la fiabilité forecast.");
         setIsLoading(false);
       });
   }, []);
@@ -112,14 +107,14 @@ export const ForecastAccuracyPanel = () => {
 
   return (
     <>
-      <div className="ae-forecast-header">
-        <span className="ae-forecast-last-update">
+      <div className="jv-toolbar">
+        <span className="jv-toolbar-meta">
           {overview
-            ? `Fiabilite mesuree sur ${overview.resolvedDealCount} deal${overview.resolvedDealCount > 1 ? "s" : ""} resolu${overview.resolvedDealCount > 1 ? "s" : ""} (${overview.dateFrom} au ${overview.dateTo}).`
-            : "Forecast vs realite"}
+            ? `Fiabilité mesurée sur ${overview.resolvedDealCount} deal${overview.resolvedDealCount > 1 ? "s" : ""} résolu${overview.resolvedDealCount > 1 ? "s" : ""} (${overview.dateFrom} au ${overview.dateTo}).`
+            : "Forecast vs réalité"}
         </span>
-        <div className="ae-forecast-header-meta">
-          <span className="ae-forecast-period-toggle">
+        <div className="jv-toolbar-actions">
+          <div aria-label="Période fiabilité" className="jv-filter-pills" role="group">
             {PERIOD_OPTIONS.map((option) => (
               <button
                 className={periodDays === option.days ? "active" : ""}
@@ -130,102 +125,99 @@ export const ForecastAccuracyPanel = () => {
                 {option.label}
               </button>
             ))}
-          </span>
-          <button className="ae-forecast-link" disabled={isLoading} onClick={() => load(periodDays, true)} type="button">
+          </div>
+          <button className="jv-btn-ghost" disabled={isLoading} onClick={() => load(periodDays, true)} type="button">
+            <RefreshCw aria-hidden="true" size={14} strokeWidth={1.5} />
             Actualiser
           </button>
         </div>
       </div>
 
-      {error ? <p className="ae-admin-feedback error">{error}</p> : null}
-      {isLoading && !overview ? <p className="ae-empty">Calcul de la fiabilite...</p> : null}
+      {error ? <p className="jv-banner jv-banner-error">{error}</p> : null}
+      {isLoading && !overview ? <p className="jv-list-empty">Calcul de la fiabilité…</p> : null}
 
       {overview ? (
         <>
           {overview.resolvedDealCount === 0 ? (
-            <p className="ae-empty">
-              Pas encore de deals resolus sur la periode: la capture quotidienne des snapshots vient de demarrer, la
-              valeur apparait apres quelques semaines de donnees.
+            <p className="jv-theme-empty">
+              Pas encore de deals résolus sur la période : la capture quotidienne des snapshots vient de démarrer, la
+              valeur apparaît après quelques semaines de données.
             </p>
           ) : null}
 
           {overview.lowConfidence && overview.resolvedDealCount > 0 ? (
-            <p className="ae-admin-feedback">
-              Moins de 10 deals resolus sur la periode: les pourcentages sont indicatifs, pas significatifs.
+            <p className="jv-banner jv-banner-success">
+              Moins de 10 deals résolus sur la période : les pourcentages sont indicatifs, pas significatifs.
             </p>
           ) : null}
 
-          <section className="ae-forecast-kpis">
-            <div>
-              <small>Commit accuracy</small>
-              <strong>{formatPct(overview.overallCommitAccuracy)}</strong>
-              <small>montant commit ~J-30 effectivement signe</small>
+          <section aria-label="Indicateurs fiabilité" className="jv-stat-strip cols-4">
+            <div className="jv-stat">
+              <span className="jv-stat-label">Commit accuracy</span>
+              <span className="jv-stat-value">{formatPct(overview.overallCommitAccuracy)}</span>
+              <small className="jv-stat-caption">montant commit ~J-30 effectivement signé</small>
             </div>
-            <div>
-              <small>Biais global</small>
-              <strong>{formatBias(overview.overallBiasPct)}</strong>
-              <small>commit vs realise</small>
+            <div className="jv-stat">
+              <span className="jv-stat-label">Biais global</span>
+              <span className="jv-stat-value">{formatBias(overview.overallBiasPct)}</span>
+              <small className="jv-stat-caption">commit vs réalisé</small>
             </div>
-            <div>
-              <small>Deals resolus</small>
-              <strong>{overview.resolvedDealCount}</strong>
-              <small>{overview.snapshotCount} snapshots sur la periode</small>
+            <div className="jv-stat">
+              <span className="jv-stat-label">Deals résolus</span>
+              <span className="jv-stat-value">{overview.resolvedDealCount}</span>
+              <small className="jv-stat-caption">{overview.snapshotCount} snapshots sur la période</small>
+            </div>
+            <div className="jv-stat">
+              <span className="jv-stat-label">Période</span>
+              <span className="jv-stat-value">{periodDays}j</span>
+              <small className="jv-stat-caption">
+                {overview.dateFrom} → {overview.dateTo}
+              </small>
             </div>
           </section>
 
-          <article className="ae-forecast-panel">
-            <div className="ae-panel-heading">
-              <h4>Fiabilite par commercial</h4>
-              <small>Alimente le 1:1 (cf. Coaching IA)</small>
-            </div>
-            <div className="ae-forecast-list">
+          <section className="jv-themes-row">
+            <article className="jv-theme-block">
+              <SectionLabel icon={Users}>Fiabilité par commercial</SectionLabel>
               {overview.reps.length === 0 ? (
-                <p className="ae-empty">Aucun commercial avec des deals suivis sur la periode.</p>
+                <p className="jv-theme-empty">Aucun commercial avec des deals suivis sur la période.</p>
               ) : (
-                overview.reps.map((rep) => (
-                  <div key={rep.userId ?? "none"}>
-                    <strong>
-                      {rep.repName}
-                      {rep.lowConfidence ? " (volume faible)" : ""}
-                    </strong>
-                    <p>
-                      Commit {formatAmount(rep.committedAmount)} vs signe {formatAmount(rep.realizedAmount)} - accuracy{" "}
-                      {formatPct(rep.commitAccuracy)} - biais {formatBias(rep.biasPct)}
-                    </p>
-                    <small>
-                      Slippage {formatPct(rep.slippageRate)} ({rep.slippedDealCount}/{rep.trackedDealCount} deals suivis) -{" "}
-                      {rep.wonCount}/{rep.resolvedCount} deals gagnes
-                    </small>
-                  </div>
-                ))
+                <ul className="jv-theme-list">
+                  {overview.reps.map((rep) => (
+                    <li key={rep.userId ?? "none"}>
+                      <span>
+                        {rep.repName}
+                        {rep.lowConfidence ? " (volume faible)" : ""}
+                      </span>
+                      <em>{formatPct(rep.commitAccuracy)}</em>
+                    </li>
+                  ))}
+                </ul>
               )}
-            </div>
-          </article>
+            </article>
 
-          <article className="ae-forecast-panel">
-            <div className="ae-panel-heading">
-              <h4>Taux de close reel par verdict IA</h4>
-              <small>Les deals classes Commit closent-ils vraiment?</small>
-            </div>
-            <div className="ae-forecast-list">
+            <article className="jv-theme-block">
+              <SectionLabel icon={BarChart3}>Taux de close réel par verdict IA</SectionLabel>
               {overview.categories.every((category) => category.resolvedCount === 0) ? (
-                <p className="ae-empty">Pas encore de deals resolus avec un verdict IA.</p>
+                <p className="jv-theme-empty">Pas encore de deals résolus avec un verdict IA.</p>
               ) : (
-                overview.categories
-                  .filter((category) => category.resolvedCount > 0)
-                  .map((category) => (
-                    <div key={category.category}>
-                      <strong>{CATEGORY_LABELS[category.category] ?? category.category}</strong>
-                      <p>
-                        {formatPct(category.closeRate)} de close reel ({category.wonCount}/{category.resolvedCount} deals)
-                      </p>
-                    </div>
-                  ))
+                <ul className="jv-theme-list">
+                  {overview.categories
+                    .filter((category) => category.resolvedCount > 0)
+                    .map((category) => (
+                      <li key={category.category}>
+                        <span>{CATEGORY_LABELS[category.category] ?? category.category}</span>
+                        <em>
+                          {formatPct(category.closeRate)} ({category.wonCount}/{category.resolvedCount})
+                        </em>
+                      </li>
+                    ))}
+                </ul>
               )}
-            </div>
-          </article>
+            </article>
+          </section>
 
-          <section className="ae-forecast-layout">
+          <section className="jv-themes-row">
             <CalibrationBars buckets={overview.calibration.crm} title="Calibration CRM" />
             <CalibrationBars buckets={overview.calibration.ai} title="Calibration IA" />
           </section>

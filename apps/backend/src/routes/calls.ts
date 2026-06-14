@@ -274,12 +274,17 @@ export const registerCallRoutes = async (app: FastifyInstance): Promise<void> =>
     },
   );
 
-  app.get<{ Querystring: Pick<CallsQuery, "orgId" | "period">; Reply: ApiResponse<CallInsightSummary> }>(
+  app.get<{ Querystring: Pick<CallsQuery, "orgId" | "period" | "userId">; Reply: ApiResponse<CallInsightSummary> }>(
     "/api/calls/insights",
     async (request, reply) => {
       try {
         const auth = requireAuth(request);
-        const insights = await getCallInsights(auth, request.query.orgId, parsePeriod(request.query.period));
+        const insights = await getCallInsights(
+          auth,
+          request.query.orgId,
+          parsePeriod(request.query.period),
+          request.query.userId ?? null,
+        );
 
         return reply.send({ success: true, data: insights });
       } catch (error) {

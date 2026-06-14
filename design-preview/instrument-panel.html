@@ -1,0 +1,1192 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Jarvis — Design preview</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Newsreader:ital,opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --jv-bg: #f4f3f0;
+      --jv-bg-warm: #ece9e3;
+      --jv-surface: #ffffff;
+      --jv-surface-soft: #faf9f7;
+      --jv-surface-sidebar: #f7f4ef;
+      --jv-border: rgba(28, 25, 23, 0.09);
+      --jv-border-strong: rgba(28, 25, 23, 0.16);
+      --jv-text: #1c1917;
+      --jv-text-secondary: #44403c;
+      --jv-text-muted: #57534e;
+      --jv-text-faint: #a8a29e;
+
+      --jv-terra: #d4714a;
+      --jv-terra-deep: #b85a38;
+      --jv-terra-soft: rgba(212, 113, 74, 0.12);
+      --jv-terra-glow: rgba(212, 113, 74, 0.28);
+
+      --jv-success: #2d8a5e;
+      --jv-success-soft: rgba(45, 138, 94, 0.1);
+      --jv-warning: #c47d1a;
+      --jv-warning-soft: rgba(196, 125, 26, 0.1);
+      --jv-danger: #c4453a;
+      --jv-danger-soft: rgba(196, 69, 58, 0.1);
+
+      --jv-font-ui: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+      --jv-font-display: "Newsreader", Georgia, "Times New Roman", serif;
+
+      --jv-radius-sm: 6px;
+      --jv-radius-md: 10px;
+      --jv-radius-lg: 14px;
+      --jv-sidebar-width: 228px;
+    }
+
+    body {
+      font-family: var(--jv-font-ui);
+      font-size: 14px;
+      line-height: 1.5;
+      color: var(--jv-text);
+      background: #e8e5df;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Preview chrome ── */
+    .preview-banner {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 12px 24px;
+      background: #1c1917;
+      color: #fafaf9;
+      font-size: 13px;
+    }
+
+    .preview-banner span { color: #a8a29e; }
+
+    .preview-toggle {
+      display: flex;
+      gap: 4px;
+      padding: 3px;
+      border-radius: 10px;
+      background: rgba(255,255,255,0.07);
+    }
+
+    .preview-toggle button {
+      padding: 6px 14px;
+      border: none;
+      border-radius: 7px;
+      background: transparent;
+      color: #a8a29e;
+      font: inherit;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 140ms, color 140ms;
+    }
+
+    .preview-toggle button.active {
+      background: var(--jv-terra);
+      color: #fff;
+    }
+
+    .preview-section {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 28px 24px 64px;
+    }
+
+    .preview-note {
+      margin-bottom: 14px;
+      font-size: 13px;
+      color: #78716c;
+    }
+
+    .preview-note strong { color: #44403c; }
+
+    .preview-frame {
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow:
+        0 1px 0 rgba(255,255,255,0.6) inset,
+        0 24px 60px rgba(28, 25, 23, 0.14);
+      border: 1px solid rgba(28, 25, 23, 0.08);
+    }
+
+    /* ── App ── */
+    .jv-app {
+      display: grid;
+      grid-template-columns: var(--jv-sidebar-width) 1fr;
+      min-height: 740px;
+      background: var(--jv-bg);
+      color: var(--jv-text);
+      font-family: var(--jv-font-ui);
+      position: relative;
+    }
+
+    /* Subtle paper grain */
+    .jv-app::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0.35;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+      mix-blend-mode: multiply;
+    }
+
+    /* ── Sidebar ── */
+    .jv-sidebar {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 22px 16px;
+      border-right: 1px solid var(--jv-border);
+      background: var(--jv-surface-sidebar);
+    }
+
+    .refined .jv-sidebar {
+      background:
+        radial-gradient(ellipse 120% 80% at 0% 0%, rgba(212,113,74,0.06), transparent 55%),
+        var(--jv-surface-sidebar);
+    }
+
+    .generic .jv-sidebar {
+      background: linear-gradient(180deg, rgba(255,255,255,0.65), rgba(244,243,240,0.15)), var(--jv-surface-sidebar);
+    }
+
+    .jv-sidebar-brand {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      margin-bottom: 22px;
+      padding: 0 4px;
+    }
+
+    .jv-mark {
+      display: grid;
+      place-items: center;
+      width: 36px;
+      height: 36px;
+      border-radius: 11px;
+      font-family: var(--jv-font-display);
+      font-size: 18px;
+      font-weight: 600;
+      color: #fff;
+      background: linear-gradient(145deg, #e08862 0%, var(--jv-terra) 45%, var(--jv-terra-deep) 100%);
+      box-shadow: 0 2px 10px var(--jv-terra-glow);
+    }
+
+    .generic .jv-mark {
+      border: 1px solid rgba(212,113,74,0.2);
+      background: var(--jv-terra-soft);
+      color: var(--jv-terra);
+      box-shadow: none;
+      font-family: var(--jv-font-ui);
+      font-size: 16px;
+    }
+
+    .jv-sidebar-brand strong {
+      display: block;
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+
+    .jv-sidebar-brand small {
+      display: block;
+      font-size: 11px;
+      color: var(--jv-text-faint);
+    }
+
+    .jv-sidebar-nav { display: grid; gap: 3px; }
+
+    .jv-nav-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 10px;
+      border: 1px solid transparent;
+      border-radius: var(--jv-radius-sm);
+      background: transparent;
+      color: var(--jv-text-muted);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      text-align: left;
+      width: 100%;
+      transition: background 140ms, color 140ms, border-color 140ms;
+    }
+
+    .jv-nav-item svg {
+      width: 17px;
+      height: 17px;
+      flex-shrink: 0;
+      opacity: 0.65;
+    }
+
+    .jv-nav-item:hover {
+      background: rgba(255,255,255,0.55);
+      color: var(--jv-text);
+    }
+
+    .jv-nav-item.active {
+      color: var(--jv-text);
+      font-weight: 600;
+    }
+
+    .refined .jv-nav-item.active {
+      border-color: rgba(212,113,74,0.14);
+      background: rgba(255,255,255,0.72);
+      box-shadow: 0 1px 0 rgba(28,25,23,0.04);
+      border-left: 3px solid var(--jv-terra);
+      padding-left: 7px;
+    }
+
+    .refined .jv-nav-item.active svg { color: var(--jv-terra); opacity: 1; }
+
+    .generic .jv-nav-item.active {
+      background: var(--jv-terra-soft);
+      border-color: rgba(212,113,74,0.16);
+    }
+
+    .generic .jv-nav-item.active svg { color: var(--jv-terra); opacity: 1; }
+
+    .jv-nav-section {
+      margin: 16px 8px 5px;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--jv-text-faint);
+    }
+
+    /* ── Main ── */
+    .jv-main {
+      position: relative;
+      z-index: 1;
+      padding: 30px 34px;
+      overflow: auto;
+    }
+
+    .jv-page-header {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px 24px;
+      align-items: end;
+      margin-bottom: 26px;
+    }
+
+    .jv-page-header__eyebrow {
+      grid-column: 1;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--jv-text-muted);
+    }
+
+    .refined .jv-page-header__eyebrow::before {
+      content: "";
+      width: 18px;
+      height: 2px;
+      border-radius: 1px;
+      background: var(--jv-terra);
+    }
+
+    .generic .jv-page-header__eyebrow {
+      font-size: 11px;
+      font-weight: 650;
+      text-transform: uppercase;
+      color: var(--jv-text-faint);
+    }
+
+    .jv-page-header__title {
+      grid-column: 1;
+      font-family: var(--jv-font-display);
+      font-size: 32px;
+      font-weight: 500;
+      line-height: 1.1;
+      letter-spacing: -0.02em;
+      color: var(--jv-text);
+    }
+
+    .generic .jv-page-header__title {
+      font-family: var(--jv-font-ui);
+      font-weight: 650;
+    }
+
+    .jv-page-header__subtitle {
+      grid-column: 1;
+      font-size: 14px;
+      color: var(--jv-text-muted);
+      max-width: 48ch;
+      margin-top: 2px;
+    }
+
+    .jv-page-header__actions {
+      grid-column: 2;
+      grid-row: 1 / span 3;
+      display: flex;
+      gap: 8px;
+      align-self: center;
+    }
+
+    /* ── Buttons ── */
+    .jv-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      height: 38px;
+      padding: 0 16px;
+      border: 1px solid var(--jv-border-strong);
+      border-radius: var(--jv-radius-sm);
+      background: var(--jv-surface);
+      font: inherit;
+      font-size: 13px;
+      font-weight: 560;
+      color: var(--jv-text-secondary);
+      cursor: pointer;
+      transition: transform 120ms, box-shadow 120ms, background 120ms, border-color 120ms;
+    }
+
+    .jv-btn:hover {
+      background: var(--jv-surface-soft);
+      transform: translateY(-1px);
+    }
+
+    .jv-btn:active { transform: translateY(0); }
+
+    .jv-btn--primary {
+      border-color: transparent;
+      color: #fff;
+      background: linear-gradient(180deg, #de7f58 0%, var(--jv-terra) 40%, var(--jv-terra-deep) 100%);
+      box-shadow:
+        0 1px 0 rgba(255,255,255,0.22) inset,
+        0 4px 14px var(--jv-terra-glow);
+    }
+
+    .jv-btn--primary:hover {
+      box-shadow:
+        0 1px 0 rgba(255,255,255,0.22) inset,
+        0 6px 20px rgba(212,113,74,0.38);
+    }
+
+    .jv-btn--primary .jv-btn-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #fff;
+      opacity: 0.9;
+      animation: pulse-dot 2s ease infinite;
+    }
+
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 0.9; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.85); }
+    }
+
+    .generic .jv-btn {
+      border-radius: 8px;
+      font-weight: 500;
+      box-shadow: none;
+      transform: none;
+    }
+
+    .generic .jv-btn:hover { transform: none; }
+
+    .generic .jv-btn--primary {
+      background: var(--jv-terra);
+      border-color: var(--jv-terra);
+      box-shadow: none;
+    }
+
+    /* ── Signal KPI cards (distinctive) ── */
+    .jv-signal-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px;
+      margin-bottom: 26px;
+    }
+
+    .jv-signal {
+      position: relative;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: 6px;
+      min-height: 108px;
+      padding: 16px 16px 14px;
+      border: 1px solid var(--jv-border);
+      border-radius: var(--jv-radius-md);
+      background: var(--jv-surface);
+      overflow: hidden;
+      transition: box-shadow 180ms, transform 180ms;
+    }
+
+    .refined .jv-signal {
+      box-shadow: 0 1px 0 rgba(255,255,255,0.8) inset;
+    }
+
+    .refined .jv-signal:hover {
+      box-shadow:
+        0 1px 0 rgba(255,255,255,0.8) inset,
+        0 8px 24px rgba(28,25,23,0.07);
+      transform: translateY(-2px);
+    }
+
+    .refined .jv-signal::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 3px;
+      background: linear-gradient(90deg, var(--jv-terra), transparent 70%);
+      opacity: 0.7;
+    }
+
+    .refined .jv-signal--hot::before {
+      background: linear-gradient(90deg, var(--jv-danger), transparent 70%);
+    }
+
+    .refined .jv-signal--good::before {
+      background: linear-gradient(90deg, var(--jv-success), transparent 70%);
+    }
+
+    .jv-signal__head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .jv-signal__label {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--jv-text-muted);
+    }
+
+    .refined .jv-signal__index {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      color: var(--jv-text-faint);
+    }
+
+    .jv-signal__value {
+      font-family: var(--jv-font-display);
+      font-size: 34px;
+      font-weight: 500;
+      line-height: 1;
+      letter-spacing: -0.03em;
+      font-variant-numeric: tabular-nums;
+      color: var(--jv-text);
+    }
+
+    .jv-signal__value--danger { color: var(--jv-danger); }
+    .jv-signal__value--success { color: var(--jv-success); }
+
+    .jv-signal__foot {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .jv-signal__meta {
+      font-size: 12px;
+      color: var(--jv-text-faint);
+    }
+
+    .jv-signal__meta strong {
+      color: var(--jv-success);
+      font-weight: 600;
+    }
+
+    /* Mini sparkline — signature detail */
+    .jv-spark {
+      display: block;
+      width: 56px;
+      height: 22px;
+      opacity: 0.85;
+    }
+
+    .refined .jv-spark path { stroke: var(--jv-terra); }
+    .refined .jv-signal--hot .jv-spark path { stroke: var(--jv-danger); }
+    .refined .jv-signal--good .jv-spark path { stroke: var(--jv-success); }
+
+    /* Generic KPI = boring boxes */
+    .generic .jv-signal {
+      min-height: 112px;
+      border-radius: 8px;
+      box-shadow: 0 1px 0 rgba(28,25,23,0.04);
+    }
+
+    .generic .jv-signal::before { display: none; }
+
+    .generic .jv-signal__value {
+      font-family: var(--jv-font-ui);
+      font-size: 28px;
+      font-weight: 650;
+    }
+
+    .generic .jv-signal__label {
+      font-weight: 650;
+      text-transform: uppercase;
+      font-size: 11px;
+    }
+
+    .generic .jv-signal__head {
+      flex-direction: row-reverse;
+    }
+
+    .generic .jv-signal-icon {
+      display: grid;
+      place-items: center;
+      width: 38px;
+      height: 38px;
+      border-radius: 8px;
+      border: 1px solid rgba(212,113,74,0.2);
+      background: var(--jv-terra-soft);
+      color: var(--jv-terra);
+      font-size: 15px;
+    }
+
+    .refined .jv-signal-icon,
+    .refined .jv-signal__index { display: none; }
+
+    .generic .jv-spark { display: none; }
+
+    /* ── Segmented tabs (refined) vs underline (generic) ── */
+    .jv-tabs-refined {
+      display: inline-flex;
+      gap: 4px;
+      padding: 4px;
+      margin-bottom: 18px;
+      border: 1px solid var(--jv-border);
+      border-radius: 12px;
+      background: rgba(255,255,255,0.5);
+    }
+
+    .jv-tabs-refined button {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 8px;
+      background: transparent;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--jv-text-muted);
+      cursor: pointer;
+      transition: background 140ms, color 140ms, box-shadow 140ms;
+    }
+
+    .jv-tabs-refined button.active {
+      background: var(--jv-surface);
+      color: var(--jv-text);
+      font-weight: 600;
+      box-shadow: 0 1px 4px rgba(28,25,23,0.08);
+    }
+
+    .jv-tabs-refined button .jv-tab-count {
+      display: inline-flex;
+      margin-left: 6px;
+      padding: 1px 6px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+      background: var(--jv-bg-warm);
+      color: var(--jv-text-muted);
+    }
+
+    .jv-tabs-refined button.active .jv-tab-count {
+      background: var(--jv-terra-soft);
+      color: var(--jv-terra-deep);
+    }
+
+    .jv-tabs-generic {
+      display: flex;
+      gap: 22px;
+      border-bottom: 1px solid var(--jv-border);
+      margin-bottom: 16px;
+    }
+
+    .jv-tabs-generic button {
+      padding: 10px 0;
+      border: none;
+      background: none;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--jv-text-muted);
+      cursor: pointer;
+      position: relative;
+      margin-bottom: -1px;
+    }
+
+    .jv-tabs-generic button.active {
+      color: var(--jv-text);
+      font-weight: 600;
+    }
+
+    .jv-tabs-generic button.active::after {
+      content: "";
+      position: absolute;
+      left: 0; right: 0; bottom: 0;
+      height: 2px;
+      background: var(--jv-terra);
+    }
+
+    /* ── Filter bar ── */
+    .jv-filter {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 14px;
+      border: 1px solid var(--jv-border);
+      border-bottom: none;
+      border-radius: var(--jv-radius-md) var(--jv-radius-md) 0 0;
+      background: var(--jv-surface-soft);
+    }
+
+    .refined .jv-filter {
+      background: rgba(255,255,255,0.65);
+    }
+
+    .jv-search {
+      position: relative;
+      flex: 1;
+      min-width: 200px;
+    }
+
+    .jv-search svg {
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 15px;
+      height: 15px;
+      color: var(--jv-text-faint);
+      pointer-events: none;
+    }
+
+    .jv-search input,
+    .jv-filter select {
+      height: 38px;
+      border: 1px solid var(--jv-border);
+      border-radius: var(--jv-radius-sm);
+      background: var(--jv-surface);
+      font: inherit;
+      font-size: 13px;
+      color: var(--jv-text);
+    }
+
+    .jv-search input {
+      width: 100%;
+      padding: 0 12px 0 36px;
+    }
+
+    .refined .jv-search input {
+      border-radius: 999px;
+      background: var(--jv-bg);
+    }
+
+    .jv-filter select {
+      padding: 0 12px;
+      min-width: 140px;
+    }
+
+    .jv-filter__count {
+      margin-left: auto;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--jv-text-muted);
+    }
+
+    /* ── Table ── */
+    .jv-panel {
+      border: 1px solid var(--jv-border);
+      border-radius: 0 0 var(--jv-radius-md) var(--jv-radius-md);
+      background: var(--jv-surface);
+      overflow: hidden;
+    }
+
+    .jv-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    .jv-table th {
+      padding: 11px 16px;
+      text-align: left;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      color: var(--jv-text-faint);
+      background: var(--jv-surface-soft);
+      border-bottom: 1px solid var(--jv-border);
+    }
+
+    .generic .jv-table th {
+      font-weight: 650;
+      color: var(--jv-text-muted);
+    }
+
+    .jv-table td {
+      padding: 13px 16px;
+      border-bottom: 1px solid var(--jv-border);
+      vertical-align: middle;
+    }
+
+    .jv-table tbody tr { transition: background 120ms; }
+    .jv-table tbody tr:hover { background: rgba(244,243,240,0.6); }
+    .jv-table tbody tr:last-child td { border-bottom: none; }
+
+    .refined .jv-table tbody tr.priority-row {
+      background: linear-gradient(90deg, rgba(212,113,74,0.06) 0%, transparent 28%);
+    }
+
+    .refined .jv-table tbody tr.priority-row td:first-child {
+      box-shadow: inset 3px 0 0 var(--jv-terra);
+    }
+
+    .jv-table .name {
+      font-weight: 600;
+      color: var(--jv-text);
+      letter-spacing: -0.01em;
+    }
+
+    .jv-table .sub {
+      font-size: 12px;
+      color: var(--jv-text-muted);
+      margin-top: 1px;
+    }
+
+    .jv-avatar {
+      display: inline-grid;
+      place-items: center;
+      width: 30px;
+      height: 30px;
+      border-radius: 9px;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--jv-terra-deep);
+      background: var(--jv-terra-soft);
+      margin-right: 10px;
+      vertical-align: middle;
+    }
+
+    .generic .jv-avatar { display: none; }
+
+    .jv-cell-name {
+      display: flex;
+      align-items: center;
+    }
+
+    .jv-amount {
+      font-variant-numeric: tabular-nums;
+      font-weight: 500;
+      color: var(--jv-text-secondary);
+    }
+
+    /* Score ring — distinctive vs generic bar */
+    .jv-score-ring {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .jv-ring {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--jv-text-secondary);
+      background:
+        radial-gradient(circle at center, var(--jv-surface) 58%, transparent 59%),
+        conic-gradient(var(--jv-terra) var(--pct), var(--jv-bg-warm) 0);
+    }
+
+    .jv-score-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .jv-score-bar__track {
+      width: 64px;
+      height: 4px;
+      border-radius: 2px;
+      background: var(--jv-bg-warm);
+      overflow: hidden;
+    }
+
+    .jv-score-bar__track span {
+      display: block;
+      height: 100%;
+      background: var(--jv-terra);
+      border-radius: 2px;
+    }
+
+    .refined .jv-score-bar { display: none; }
+    .generic .jv-score-ring { display: none; }
+
+    /* Badges */
+    .jv-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 9px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+      border: 1px solid var(--jv-border);
+      background: var(--jv-surface-soft);
+      color: var(--jv-text-secondary);
+    }
+
+    .refined .jv-badge--act {
+      border-color: rgba(212,113,74,0.22);
+      background: var(--jv-terra-soft);
+      color: var(--jv-terra-deep);
+    }
+
+    .refined .jv-badge--act::before {
+      content: "";
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--jv-terra);
+    }
+
+    .jv-badge--risk {
+      border-color: rgba(196,125,26,0.2);
+      background: var(--jv-warning-soft);
+      color: var(--jv-warning);
+    }
+
+    .jv-badge--won {
+      border-color: rgba(45,138,94,0.2);
+      background: var(--jv-success-soft);
+      color: var(--jv-success);
+    }
+
+    .generic .jv-badge--act::before { display: none; }
+
+    /* Gallery */
+    .gallery {
+      margin-top: 40px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+    }
+
+    .gallery-card {
+      padding: 18px;
+      border-radius: 12px;
+      border: 1px solid rgba(28,25,23,0.08);
+      background: #fff;
+    }
+
+    .gallery-card h3 {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--jv-text-muted);
+      margin-bottom: 12px;
+    }
+
+    .gallery-card .row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .design-notes {
+      margin-top: 20px;
+      padding: 16px 18px;
+      border-radius: 12px;
+      border: 1px dashed rgba(212,113,74,0.3);
+      background: rgba(212,113,74,0.05);
+      font-size: 13px;
+      color: var(--jv-text-muted);
+      line-height: 1.55;
+    }
+
+    .design-notes strong { color: var(--jv-text); }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+
+  <div class="preview-banner">
+    <div>
+      <strong>Jarvis — Design preview</strong>
+      <span> · même palette, composants retravaillés</span>
+    </div>
+    <div class="preview-toggle" role="tablist">
+      <button type="button" class="active" data-mode="refined" role="tab">Jarvis raffiné</button>
+      <button type="button" data-mode="generic" role="tab">Générique (actuel)</button>
+    </div>
+  </div>
+
+  <div class="preview-section">
+    <p class="preview-note">
+      <strong>Palette conservée</strong> — stone <code>#f4f3f0</code> + terra <code>#d4714a</code>.
+      Le toggle montre la différence de <em>composition</em>, pas de couleur.
+    </p>
+
+    <div class="preview-frame">
+      <div class="jv-app refined" id="app">
+
+        <aside class="jv-sidebar">
+          <div class="jv-sidebar-brand">
+            <div class="jv-mark">J</div>
+            <div>
+              <strong>Jarvis</strong>
+              <small>Sales copilot</small>
+            </div>
+          </div>
+          <nav class="jv-sidebar-nav">
+            <button class="jv-nav-item active" type="button">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+              Overview
+            </button>
+            <button class="jv-nav-item" type="button">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+              Appels
+            </button>
+            <button class="jv-nav-item" type="button">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+              Forecast IA
+            </button>
+            <button class="jv-nav-item" type="button">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+              Digest
+            </button>
+            <div class="jv-nav-section">Intelligence</div>
+            <button class="jv-nav-item" type="button">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
+              Coaching IA
+            </button>
+          </nav>
+        </aside>
+
+        <main class="jv-main">
+          <header class="jv-page-header">
+            <p class="jv-page-header__eyebrow" id="eyebrow">Espace commercial</p>
+            <h1 class="jv-page-header__title">Pipeline inbox</h1>
+            <p class="jv-page-header__subtitle">La queue priorisée pour savoir qui relancer aujourd'hui — triée par score IA et urgence deal.</p>
+            <div class="jv-page-header__actions">
+              <button class="jv-btn jv-btn--primary" type="button" id="sync-btn">
+                <span class="jv-btn-dot refined-only"></span>
+                Synchroniser HubSpot
+              </button>
+              <button class="jv-btn" type="button">Exporter</button>
+            </div>
+          </header>
+
+          <div class="jv-signal-row" id="signals"></div>
+
+          <div id="tabs-slot"></div>
+
+          <div class="jv-filter">
+            <div class="jv-search">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+              <input type="search" placeholder="Rechercher un prospect…" />
+            </div>
+            <select><option>Tous les owners</option><option>Hugo</option></select>
+            <select><option>Tous les stages</option><option>Negotiation</option></select>
+            <span class="jv-filter__count">24 prospects</span>
+          </div>
+
+          <div class="jv-panel">
+            <table class="jv-table">
+              <thead>
+                <tr>
+                  <th>Prospect</th>
+                  <th>Deal</th>
+                  <th>Montant</th>
+                  <th>Stage</th>
+                  <th>Score IA</th>
+                  <th>Priorité</th>
+                </tr>
+              </thead>
+              <tbody id="table-body"></tbody>
+            </table>
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <div class="design-notes refined-only-block" id="notes">
+      <strong>Touches distinctives Jarvis</strong> — serif Newsreader sur les chiffres clés, rail terra en haut des KPIs, sparklines, score en anneau, tabs segmentés, bouton primaire avec relief chaud, lignes prioritaires marquées dans le tableau. Même palette, mais une vraie grammaire visuelle.
+    </div>
+
+    <div class="gallery">
+      <div class="gallery-card">
+        <h3>Bouton primaire</h3>
+        <div class="row">
+          <button class="jv-btn jv-btn--primary" type="button"><span class="jv-btn-dot"></span>Action</button>
+        </div>
+      </div>
+      <div class="gallery-card">
+        <h3>Signal card</h3>
+        <div class="jv-signal" style="max-width:220px">
+          <div class="jv-signal__head">
+            <span class="jv-signal__label">Pipeline</span>
+            <span class="jv-signal__index">02</span>
+          </div>
+          <span class="jv-signal__value">€1,2M</span>
+          <div class="jv-signal__foot">
+            <span class="jv-signal__meta"><strong>+12%</strong> vs M-1</span>
+            <svg class="jv-spark" viewBox="0 0 56 22"><path d="M2 18 L12 14 L22 16 L34 8 L44 10 L54 4" fill="none" stroke-width="2" stroke-linecap="round"/></svg>
+          </div>
+        </div>
+      </div>
+      <div class="gallery-card">
+        <h3>Score ring</h3>
+        <div class="jv-score-ring">
+          <div class="jv-ring" style="--pct: 92%">92</div>
+          <span class="jv-badge jv-badge--act">Agir maintenant</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const app = document.getElementById('app');
+    const signals = document.getElementById('signals');
+    const tabsSlot = document.getElementById('tabs-slot');
+    const tableBody = document.getElementById('table-body');
+    const eyebrow = document.getElementById('eyebrow');
+    const syncBtn = document.getElementById('sync-btn');
+    const notes = document.getElementById('notes');
+    const toggleBtns = document.querySelectorAll('.preview-toggle button');
+    const refinedOnlyBlocks = document.querySelectorAll('.refined-only-block, .refined-only');
+
+    const spark = (d) => `<svg class="jv-spark" viewBox="0 0 56 22"><path d="${d}" fill="none" stroke-width="2" stroke-linecap="round"/></svg>`;
+
+    const signalData = [
+      { label: 'Prospects actifs', value: '24', meta: '<strong>+3</strong> depuis hier', index: '01', spark: 'M2 16 L10 14 L20 15 L30 10 L40 12 L54 8', icon: '📊' },
+      { label: 'Pipeline ouvert', value: '€1,2M', meta: '12 deals en cours', index: '02', spark: 'M2 18 L12 14 L22 16 L34 8 L44 10 L54 4', icon: '💰' },
+      { label: 'À traiter aujourd\'hui', value: '8', meta: 'Score &gt; 80', index: '03', spark: 'M2 10 L14 12 L24 8 L36 14 L46 6 L54 12', icon: '🔥', mod: 'jv-signal--hot', valueMod: 'jv-signal__value--danger' },
+      { label: 'Taux de closing', value: '68%', meta: '30 derniers jours', index: '04', spark: 'M2 14 L12 12 L22 10 L32 11 L42 7 L54 5', icon: '✓', mod: 'jv-signal--good', valueMod: 'jv-signal__value--success' },
+    ];
+
+    const rows = [
+      { name: 'Marie Dupont', co: 'Acme Corp · VP Sales', init: 'MD', deal: 'Renouvellement Q3', amt: '€84 000', stage: 'Negotiation', score: 92, pri: 'act', priLabel: 'Agir maintenant', priority: true },
+      { name: 'Thomas Martin', co: 'Globex · Head of Ops', init: 'TM', deal: 'Expansion EMEA', amt: '€210 000', stage: 'Proposal', score: 78, pri: 'risk', priLabel: 'Cette semaine' },
+      { name: 'Sophie Bernard', co: 'Initech · CFO', init: 'SB', deal: 'Pilote annuel', amt: '€45 000', stage: 'Qualified', score: 61, pri: '', priLabel: 'En veille' },
+      { name: 'Lucas Petit', co: 'Umbrella · CTO', init: 'LP', deal: 'Upsell modules IA', amt: '€128 000', stage: 'Closed won', score: 100, pri: 'won', priLabel: 'Gagné' },
+    ];
+
+    function renderSignals(refined) {
+      signals.innerHTML = signalData.map(s => refined ? `
+        <article class="jv-signal ${s.mod || ''}">
+          <div class="jv-signal__head">
+            <span class="jv-signal__label">${s.label}</span>
+            <span class="jv-signal__index">${s.index}</span>
+          </div>
+          <span class="jv-signal__value ${s.valueMod || ''}">${s.value}</span>
+          <div class="jv-signal__foot">
+            <span class="jv-signal__meta">${s.meta}</span>
+            ${spark(s.spark)}
+          </div>
+        </article>
+      ` : `
+        <article class="jv-signal">
+          <div class="jv-signal__head">
+            <span class="jv-signal__label">${s.label}</span>
+            <span class="jv-signal-icon">${s.icon}</span>
+          </div>
+          <span class="jv-signal__value ${s.valueMod || ''}">${s.value}</span>
+          <span class="jv-signal__meta">${s.meta.replace(/<[^>]+>/g, '')}</span>
+        </article>
+      `).join('');
+    }
+
+    function renderTabs(refined) {
+      tabsSlot.innerHTML = refined ? `
+        <div class="jv-tabs-refined">
+          <button class="active" type="button">À traiter <span class="jv-tab-count">8</span></button>
+          <button type="button">Cette semaine <span class="jv-tab-count">11</span></button>
+          <button type="button">En veille <span class="jv-tab-count">5</span></button>
+        </div>
+      ` : `
+        <div class="jv-tabs-generic">
+          <button class="active" type="button">À traiter</button>
+          <button type="button">Cette semaine</button>
+          <button type="button">En veille</button>
+        </div>
+      `;
+    }
+
+    function renderTable(refined) {
+      tableBody.innerHTML = rows.map(r => `
+        <tr class="${refined && r.priority ? 'priority-row' : ''}">
+          <td>
+            <div class="jv-cell-name">
+              ${refined ? `<span class="jv-avatar">${r.init}</span>` : ''}
+              <div>
+                <div class="name">${r.name}</div>
+                <div class="sub">${r.co}</div>
+              </div>
+            </div>
+          </td>
+          <td>${r.deal}</td>
+          <td class="jv-amount">${r.amt}</td>
+          <td><span class="jv-badge">${r.stage}</span></td>
+          <td>
+            <div class="jv-score-ring">
+              <div class="jv-ring" style="--pct: ${r.score}%">${r.score}</div>
+            </div>
+            <div class="jv-score-bar">
+              <div class="jv-score-bar__track"><span style="width:${r.score}%"></span></div>
+              <span>${r.score}</span>
+            </div>
+          </td>
+          <td><span class="jv-badge ${r.pri ? 'jv-badge--' + r.pri : ''}">${r.priLabel}</span></td>
+        </tr>
+      `).join('');
+    }
+
+    function setMode(mode) {
+      const refined = mode === 'refined';
+      app.classList.toggle('refined', refined);
+      app.classList.toggle('generic', !refined);
+      eyebrow.textContent = refined ? 'Espace commercial' : 'AE WORKSPACE';
+      syncBtn.querySelector('.jv-btn-dot')?.classList.toggle('hidden', !refined);
+      notes.classList.toggle('hidden', !refined);
+      renderSignals(refined);
+      renderTabs(refined);
+      renderTable(refined);
+      toggleBtns.forEach(btn => {
+        const active = btn.dataset.mode === mode;
+        btn.classList.toggle('active', active);
+        btn.setAttribute('aria-selected', active);
+      });
+    }
+
+    toggleBtns.forEach(btn => btn.addEventListener('click', () => setMode(btn.dataset.mode)));
+    setMode('refined');
+  </script>
+</body>
+</html>

@@ -1,5 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
-import { Bot } from "lucide-react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import {
+  BarChart3,
+  ChartNoAxesCombined,
+  RefreshCw,
+  Sparkles,
+  TrendingUp,
+  type LucideIcon,
+} from "lucide-react";
 import {
   analyzeForecastDeal,
   fetchForecastOverview,
@@ -30,21 +37,40 @@ import { ForecastInsightPanels } from "./ForecastInsightPanels";
 import { ForecastJobProgress } from "./ForecastJobProgress";
 import { ForecastKpiCards } from "./ForecastKpiCards";
 import { MonthlyProjectionCards } from "./MonthlyProjectionCards";
-import { OpenDealsTable, SignedDealsTable, VsDealsTable } from "./ForecastDealTables";
+import {
+  ForecastDealDetail,
+  OpenDealsTable,
+  SignedDealsTable,
+  VsDealsTable,
+} from "./ForecastDealTables";
 import { ProjectionChart } from "./ProjectionChart";
 import { SynthesisPanel } from "./SynthesisPanel";
 import type { HubSpotOwnerOption } from "../../../services/api";
+import "../../styles/forecast.css";
 
 type ForecastViewProps = {
   orgId: string;
   owners: HubSpotOwnerOption[];
   selectedAiProvider: AiProviderOption;
   selectedOwnerId?: string;
-  /** Managers/admins can switch between the whole team and any individual sales rep. Sales reps stay locked to their own deals. */
   canViewTeamForecast?: boolean;
 };
 
 type ForecastTab = "overview" | "synthesis" | "vs" | "accuracy";
+
+const tabOptions: Array<{ id: ForecastTab; label: string }> = [
+  { id: "overview", label: "Vue d'ensemble" },
+  { id: "synthesis", label: "Synthèse IA" },
+  { id: "vs", label: "CRM vs IA" },
+  { id: "accuracy", label: "Fiabilité" },
+];
+
+const SectionLabel = ({ children, icon: Icon }: { children: string; icon: LucideIcon }) => (
+  <span className="jv-section-label">
+    <Icon aria-hidden="true" className="jv-section-icon" size={13} strokeWidth={1.5} />
+    {children}
+  </span>
+);
 
 export const ForecastView = ({
   orgId,
@@ -60,6 +86,7 @@ export const ForecastView = ({
   const [dateTo, setDateTo] = useState(defaultDates.dateTo);
   const [overview, setOverview] = useState<ForecastOverviewResult | null>(null);
   const [activeTab, setActiveTab] = useState<ForecastTab>("overview");
+  const [activeDealId, setActiveDealId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analyzingDealId, setAnalyzingDealId] = useState<string | null>(null);
@@ -131,6 +158,21 @@ export const ForecastView = ({
   const landingAmount = overview?.landingAmount ?? overview?.forecastAmount ?? 0;
   const gapToFill = objectiveAmount === null ? null : Math.max(0, objectiveAmount - landingAmount);
   const trend = projection.length > 1 ? getTrend(projection[projection.length - 1].forecast, projection[0].forecast) : { value: 0, className: "flat" };
+  const activeDeal = useMemo(
+    () => openDeals.find((deal) => deal.hubspotDealId === activeDealId) ?? null,
+    [activeDealId, openDeals],
+  );
+
+  useEffect(() => {
+    if (openDeals.length === 0) {
+      setActiveDealId(null);
+      return;
+    }
+
+    if (!activeDealId || !openDeals.some((deal) => deal.hubspotDealId === activeDealId)) {
+      setActiveDealId(openDeals[0]?.hubspotDealId ?? null);
+    }
+  }, [activeDealId, openDeals]);
 
   const setPeriod = (nextMode: ForecastPeriodMode) => {
     setPeriodMode(nextMode);
@@ -174,7 +216,7 @@ export const ForecastView = ({
 
       setOverview(result.overview);
       setMessage(
-        `Analyse complete terminee par lots de ${result.batchSize}: ${result.analyzedCount} deal(s) traite(s), ${result.reusedCount} reutilise(s), ${result.failedCount} echec(s).`,
+        `Analyse complète terminée par lots de ${result.batchSize} : ${result.analyzedCount} deal(s) traité(s), ${result.reusedCount} réutilisé(s), ${result.failedCount} échec(s).`,
       );
     } catch (analyzeError) {
       setError(analyzeError instanceof Error ? analyzeError.message : "Erreur inconnue pendant l'analyse forecast.");
@@ -200,7 +242,7 @@ export const ForecastView = ({
       });
 
       setOverview(result.overview);
-      setMessage(`Analyse complete relancee pour ${deal.dealName ?? deal.hubspotDealId}.`);
+      setMessage(`Analyse complète relancée pour ${deal.dealName ?? deal.hubspotDealId}.`);
     } catch (analyzeError) {
       setError(analyzeError instanceof Error ? analyzeError.message : "Erreur inconnue pendant l'analyse du deal.");
     } finally {
@@ -225,11 +267,11 @@ export const ForecastView = ({
       setOverview(result.overview);
       setMessage(
         result.synthesis
-          ? `Synthese IA generee: ${result.synthesis.deals.length} deal(s) classe(s).`
-          : "Aucun deal ouvert analyse: lance d'abord l'analyse des deals ouverts.",
+          ? `Synthèse IA générée : ${result.synthesis.deals.length} deal(s) classé(s).`
+          : "Aucun deal ouvert analysé : lance d'abord l'analyse des deals ouverts.",
       );
     } catch (synthesisError) {
-      setError(synthesisError instanceof Error ? synthesisError.message : "Erreur inconnue pendant la synthese forecast.");
+      setError(synthesisError instanceof Error ? synthesisError.message : "Erreur inconnue pendant la synthèse forecast.");
     } finally {
       setIsGeneratingSynthesis(false);
     }
@@ -244,23 +286,79 @@ export const ForecastView = ({
       }
     }
 
-    return isTechnicalOwnerFallback(deal.ownerName) ? "Non assigne" : deal.ownerName ?? "Non assigne";
+    return isTechnicalOwnerFallback(deal.ownerName) ? "Non assigné" : deal.ownerName ?? "Non assigné";
   };
 
+  const confidenceDegrees = (overview?.confidenceScore ?? 0) * 3.6;
+  const visibleTabs = tabOptions.filter((tab) => tab.id !== "accuracy" || canViewTeamForecast);
+
   return (
-    <section className="ae-view-panel ae-forecast-page" aria-label="Forecast IA">
-      <div className="ae-forecast-header">
-        <span className="ae-forecast-last-update">
-          Derniere mise a jour IA : {overview?.lastAnalyzedAt ? formatDateTime(overview.lastAnalyzedAt) : "aucune analyse"}
-        </span>
-        <div className="ae-forecast-header-meta">
-          <button disabled={isAnalyzing || openDeals.length === 0} onClick={() => void handleAnalyze(false)} type="button">
-            {isAnalyzing ? "Analyse..." : "Analyser les deals ouverts"}
+    <div className="jv-forecast-page" aria-label="Forecast IA">
+      <header className="jv-page-header">
+        <ChartNoAxesCombined aria-hidden="true" className="jv-page-icon" size={18} strokeWidth={1.5} />
+        <h1>
+          Forecast
+          <span className="jv-page-kicker">IA</span>
+        </h1>
+      </header>
+
+      <div className="jv-toolbar">
+        <ForecastFilters
+          canViewTeamForecast={canViewTeamForecast}
+          dateFrom={dateFrom}
+          dateTo={dateTo}
+          onDateFromChange={handleDateFromChange}
+          onDateToChange={handleDateToChange}
+          onOwnerIdChange={setOwnerId}
+          onPeriodChange={setPeriod}
+          ownerId={ownerId}
+          owners={owners}
+          periodMode={periodMode}
+        />
+        <div className="jv-toolbar-actions">
+          <span className="jv-toolbar-meta">
+            Dernière MAJ IA : {overview?.lastAnalyzedAt ? formatDateTime(overview.lastAnalyzedAt) : "aucune analyse"}
+          </span>
+          <button
+            className="jv-btn-ghost"
+            disabled={isAnalyzing || openDeals.length === 0}
+            onClick={() => void handleAnalyze(true)}
+            type="button"
+          >
+            Recalculer
           </button>
-          <button disabled={isAnalyzing || openDeals.length === 0} onClick={() => void handleAnalyze(true)} type="button">
-            Recalculer les deals ouverts
+          <button
+            className="jv-btn-primary"
+            disabled={isAnalyzing || openDeals.length === 0}
+            onClick={() => void handleAnalyze(false)}
+            type="button"
+          >
+            {isAnalyzing ? (
+              <>
+                <RefreshCw aria-hidden="true" className="jv-spin" size={14} strokeWidth={1.5} />
+                Analyse…
+              </>
+            ) : (
+              <>
+                <Sparkles aria-hidden="true" size={14} strokeWidth={1.5} />
+                Analyser les deals ouverts
+              </>
+            )}
           </button>
         </div>
+      </div>
+
+      <div aria-label="Sections forecast" className="jv-section-tabs jv-filter-pills" role="group">
+        {visibleTabs.map((tab) => (
+          <button
+            className={activeTab === tab.id ? "active" : ""}
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            type="button"
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
 
       {forecastJob ? (
@@ -271,63 +369,13 @@ export const ForecastView = ({
         />
       ) : null}
 
-      <ForecastFilters
-        canViewTeamForecast={canViewTeamForecast}
-        dateFrom={dateFrom}
-        dateTo={dateTo}
-        onDateFromChange={handleDateFromChange}
-        onDateToChange={handleDateToChange}
-        onOwnerIdChange={setOwnerId}
-        onPeriodChange={setPeriod}
-        ownerId={ownerId}
-        owners={owners}
-        periodMode={periodMode}
-      />
-
-      <div className="ae-forecast-tabs" aria-label="Forecast sections">
-        <button className={activeTab === "overview" ? "active" : ""} onClick={() => setActiveTab("overview")} type="button">
-          Vue d'ensemble
-        </button>
-        <button className={activeTab === "synthesis" ? "active" : ""} onClick={() => setActiveTab("synthesis")} type="button">
-          Synthese IA
-        </button>
-        <button className={activeTab === "vs" ? "active" : ""} onClick={() => setActiveTab("vs")} type="button">
-          CRM vs IA
-        </button>
-        {canViewTeamForecast ? (
-          <button className={activeTab === "accuracy" ? "active" : ""} onClick={() => setActiveTab("accuracy")} type="button">
-            Fiabilite
-          </button>
-        ) : null}
-      </div>
-
-      {error ? <p className="ae-admin-feedback error">{error}</p> : null}
-      {message ? <p className="ae-admin-feedback">{message}</p> : null}
+      {error ? <p className="jv-banner jv-banner-error">{error}</p> : null}
+      {message ? <p className="jv-banner jv-banner-success">{message}</p> : null}
 
       {activeTab === "overview" ? (
         <>
-          <article className="ae-forecast-banner">
-            <div className="ae-forecast-spark" aria-label="AI" role="img">
-              <Bot size={21} strokeWidth={2.3} />
-            </div>
-            <div>
-              <span>Atterrissage forecast</span>
-              <strong>
-                {overview
-                  ? `${formatAmount(overview.signedAmount)} deja signe + ${formatAmount(overview.openForecastAmount)} de forecast ouvert = ${formatAmount(landingAmount)} prevus sur la periode.`
-                  : "Chargement du forecast IA depuis Supabase."}
-              </strong>
-              {overview && overview.missingAnalysisCount > 0 ? (
-                <small>{overview.missingAnalysisCount} deal(s) ouverts doivent encore etre analyses par l'IA.</small>
-              ) : null}
-              {overview && overview.signedDealCount > 0 ? <small>{overview.signedDealCount} deal(s) signe(s) integre(s) a 100%.</small> : null}
-            </div>
-            <button disabled={openDeals.length === 0 || isAnalyzing} onClick={() => void handleAnalyze(false)} type="button">
-              Actualiser l'IA
-            </button>
-          </article>
-
           <ForecastKpiCards
+            analyzedRatio={analyzedRatio}
             dateFrom={dateFrom}
             dateTo={dateTo}
             forecastShare={forecastShare}
@@ -338,124 +386,194 @@ export const ForecastView = ({
             trendClassName={trend.className}
           />
 
-          <section className="ae-forecast-layout">
-            <article className="ae-forecast-panel large">
-              <div className="ae-panel-heading">
-                <span>Projection mois par mois</span>
-                <strong>{overview ? `${overview.monthlyProjection.length} mois` : "--"}</strong>
+          <section aria-label="Confiance forecast" className="jv-score-banner">
+            <div
+              className="jv-score-ring"
+              style={{
+                background: `conic-gradient(var(--jv-terra) ${confidenceDegrees}deg, #ece9e3 0)`,
+              }}
+            >
+              <span>{overview ? `${overview.confidenceScore}%` : "—"}</span>
+            </div>
+            <div className="jv-score-copy">
+              <strong>Atterrissage forecast</strong>
+              <p>
+                {overview
+                  ? `${formatAmount(overview.signedAmount)} déjà signé + ${formatAmount(overview.openForecastAmount)} de forecast ouvert = ${formatAmount(landingAmount)} prévus sur la période.`
+                  : "Chargement du forecast IA depuis Supabase."}
+              </p>
+              {overview && overview.missingAnalysisCount > 0 ? (
+                <small>{overview.missingAnalysisCount} deal(s) ouverts doivent encore être analysés par l&apos;IA.</small>
+              ) : null}
+              {overview && overview.signedDealCount > 0 ? (
+                <small>{overview.signedDealCount} deal(s) signé(s) intégré(s) à 100%.</small>
+              ) : null}
+              {overview && (overview.reliability ?? []).length > 0 ? (
+                <div className="jv-reliability">
+                  {overview.reliability.map((item) => (
+                    <div key={item.id}>
+                      <span>{item.label}</span>
+                      <span className="jv-meter">
+                        <i style={{ "--value": `${item.score}%`, width: `${item.score}%` } as CSSProperties} />
+                      </span>
+                      <strong>{item.score}%</strong>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+            <span className="jv-score-badge">
+              <Sparkles aria-hidden="true" size={11} strokeWidth={1.5} />
+              IA
+            </span>
+          </section>
+
+          <ForecastInsightPanels overview={overview} />
+
+          <section className="jv-workspace">
+            <OpenDealsTable
+              activeDealId={activeDealId}
+              getOwnerDisplayName={getOwnerDisplayName}
+              isLoading={isLoading}
+              onDealSelect={setActiveDealId}
+              openDeals={openDeals}
+            />
+            <ForecastDealDetail
+              analyzingDealId={analyzingDealId}
+              deal={activeDeal}
+              getOwnerDisplayName={getOwnerDisplayName}
+              isAnalyzing={isAnalyzing}
+              mode="overview"
+              onAnalyzeDeal={(deal) => void handleAnalyzeDeal(deal)}
+            />
+          </section>
+
+          <section className="jv-panel-grid">
+            <article className="jv-theme-block chart-block">
+              <div className="jv-theme-block-head">
+                <SectionLabel icon={BarChart3}>Projection mois par mois</SectionLabel>
+                <span>{overview ? `${overview.monthlyProjection.length} mois` : "—"}</span>
               </div>
               {projection.length > 0 ? (
-                <ProjectionChart objectiveLabel={objectiveAmount === null ? "non defini" : formatAmount(objectiveAmount)} points={projection} />
+                <ProjectionChart
+                  objectiveLabel={objectiveAmount === null ? "non défini" : formatAmount(objectiveAmount)}
+                  points={projection}
+                />
               ) : (
-                <p className="ae-empty">{isLoading ? "Chargement Supabase..." : "Aucun deal forecastable sur cette periode."}</p>
+                <p className="jv-theme-empty">
+                  {isLoading ? "Chargement Supabase…" : "Aucun deal forecastable sur cette période."}
+                </p>
               )}
             </article>
 
-            <article className="ae-forecast-panel">
-              <div className="ae-panel-heading">
-                <span>Scenarios</span>
-                <strong>Scenario central</strong>
-              </div>
-              <div className="ae-forecast-scenarios">
+            <article className="jv-theme-block">
+              <SectionLabel icon={TrendingUp}>Scénarios</SectionLabel>
+              <div className="jv-scenarios">
                 {(overview?.scenarios ?? []).map((scenario) => (
                   <div className={getScenarioClassName(scenario.id)} key={scenario.id}>
                     <span>{scenario.label}</span>
                     <strong>{formatAmount(scenario.amount)}</strong>
-                    <small>Probabilite {scenario.probability}%</small>
+                    <small>Probabilité {scenario.probability}%</small>
                   </div>
                 ))}
               </div>
             </article>
           </section>
 
-          {projection.length > 0 ? (
-            <MonthlyProjectionCards months={overview?.monthlyProjection ?? []} />
-          ) : null}
-
-          <ForecastInsightPanels analyzedRatio={analyzedRatio} overview={overview} />
+          {projection.length > 0 ? <MonthlyProjectionCards months={overview?.monthlyProjection ?? []} /> : null}
 
           <SignedDealsTable getOwnerDisplayName={getOwnerDisplayName} isLoading={isLoading} signedDeals={signedDeals} />
-
-          <OpenDealsTable
-            analyzingDealId={analyzingDealId}
-            getOwnerDisplayName={getOwnerDisplayName}
-            isAnalyzing={isAnalyzing}
-            isLoading={isLoading}
-            onAnalyzeDeal={(deal) => void handleAnalyzeDeal(deal)}
-            openDeals={openDeals}
-          />
         </>
       ) : activeTab === "accuracy" ? (
         <ForecastAccuracyPanel />
       ) : activeTab === "synthesis" ? (
         <>
-          <article className="ae-forecast-banner">
-            <div className="ae-forecast-spark" aria-label="AI" role="img">
-              <Bot size={21} strokeWidth={2.3} />
+          <section className="jv-score-banner">
+            <div className="jv-score-ring" style={{ background: "conic-gradient(var(--jv-terra) 280deg, #ece9e3 0)" }}>
+              <span>
+                <Sparkles aria-hidden="true" size={16} strokeWidth={1.5} />
+              </span>
             </div>
-            <div>
-              <span>Synthese IA du portefeuille</span>
-              <strong>
+            <div className="jv-score-copy">
+              <strong>Synthèse IA du portefeuille</strong>
+              <p>
                 {synthesis
                   ? synthesis.headline
-                  : "L'IA classe tes deals ouverts (commit / best case / a risque / slipping) et te donne le plan pour atteindre l'objectif."}
-              </strong>
+                  : "L'IA classe vos deals ouverts (commit / best case / à risque / slipping) et propose un plan pour atteindre l'objectif."}
+              </p>
               {synthesis ? (
                 <small>
-                  {getConfidenceLabel(synthesis.confidence)} · {synthesis.analyzedDealCount} deal(s) analyse(s) · l'IA estime closer {formatAmount(synthesis.projectedCloseAmount)}
-                  {synthesis.status === "stale" ? " · synthese a regenerer (deals modifies)" : ""}
+                  {getConfidenceLabel(synthesis.confidence)} · {synthesis.analyzedDealCount} deal(s) analysé(s) · l&apos;IA
+                  estime closer {formatAmount(synthesis.projectedCloseAmount)}
+                  {synthesis.status === "stale" ? " · synthèse à régénérer (deals modifiés)" : ""}
                 </small>
               ) : overview && overview.analyzedDealCount === 0 ? (
-                <small>Lance d'abord « Analyser les deals ouverts » pour nourrir la synthese IA.</small>
+                <small>Lancez d&apos;abord « Analyser les deals ouverts » pour nourrir la synthèse IA.</small>
               ) : null}
             </div>
-            <button disabled={isGeneratingSynthesis} onClick={() => void handleGenerateSynthesis()} type="button">
-              {isGeneratingSynthesis ? "Synthese..." : synthesis ? "Regenerer la synthese" : "Generer la synthese IA"}
+            <button
+              className="jv-btn-primary"
+              disabled={isGeneratingSynthesis}
+              onClick={() => void handleGenerateSynthesis()}
+              type="button"
+            >
+              {isGeneratingSynthesis ? "Synthèse…" : synthesis ? "Régénérer la synthèse" : "Générer la synthèse IA"}
             </button>
-          </article>
+          </section>
 
           {synthesis ? (
             <SynthesisPanel synthesis={synthesis} />
           ) : (
-            <p className="ae-empty">
+            <p className="jv-theme-empty jv-list-empty">
               {isGeneratingSynthesis
-                ? "Generation de la synthese IA..."
+                ? "Génération de la synthèse IA…"
                 : isLoading
-                  ? "Chargement Supabase..."
-                  : "Aucune synthese IA pour cette periode. Genere-la a partir des deals ouverts analyses."}
+                  ? "Chargement Supabase…"
+                  : "Aucune synthèse IA pour cette période. Générez-la à partir des deals ouverts analysés."}
             </p>
           )}
         </>
       ) : (
         <>
-          <article className="ae-forecast-banner">
-            <div className="ae-forecast-spark" aria-hidden="true">VS</div>
-            <div>
-              <span>CRM vs IA</span>
-              <strong>
+          <section className="jv-score-banner">
+            <div className="jv-score-ring" style={{ background: "conic-gradient(var(--jv-outbound) 300deg, #ece9e3 0)" }}>
+              <span>VS</span>
+            </div>
+            <div className="jv-score-copy">
+              <strong>CRM vs IA</strong>
+              <p>
                 {overview
-                  ? `Comparez le pourcentage de closing renseigne dans le CRM avec la probabilite calculee par l'IA sur les ${overview.openDealCount} deals ouverts.`
+                  ? `Comparez le pourcentage de closing renseigné dans le CRM avec la probabilité calculée par l'IA sur les ${overview.openDealCount} deals ouverts.`
                   : "Chargement des deals ouverts depuis Supabase."}
-              </strong>
+              </p>
               {overview && overview.missingAnalysisCount > 0 ? (
-                <small>{overview.missingAnalysisCount} deal(s) ouverts doivent encore etre analyses par l'IA.</small>
+                <small>{overview.missingAnalysisCount} deal(s) ouverts doivent encore être analysés par l&apos;IA.</small>
               ) : null}
             </div>
-            <button disabled={isAnalyzing} onClick={() => void handleAnalyze(true)} type="button">
+            <button className="jv-btn-primary" disabled={isAnalyzing} onClick={() => void handleAnalyze(true)} type="button">
               Recalculer les deals ouverts
             </button>
-          </article>
+          </section>
 
-          <VsDealsTable
-            analyzingDealId={analyzingDealId}
-            getOwnerDisplayName={getOwnerDisplayName}
-            isAnalyzing={isAnalyzing}
-            isLoading={isLoading}
-            onAnalyzeDeal={(deal) => void handleAnalyzeDeal(deal)}
-            openDeals={openDeals}
-          />
+          <section className="jv-workspace">
+            <VsDealsTable
+              activeDealId={activeDealId}
+              getOwnerDisplayName={getOwnerDisplayName}
+              isLoading={isLoading}
+              onDealSelect={setActiveDealId}
+              openDeals={openDeals}
+            />
+            <ForecastDealDetail
+              analyzingDealId={analyzingDealId}
+              deal={activeDeal}
+              getOwnerDisplayName={getOwnerDisplayName}
+              isAnalyzing={isAnalyzing}
+              mode="vs"
+              onAnalyzeDeal={(deal) => void handleAnalyzeDeal(deal)}
+            />
+          </section>
         </>
       )}
-    </section>
+    </div>
   );
 };

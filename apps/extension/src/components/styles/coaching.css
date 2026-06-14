@@ -1,0 +1,1659 @@
+/* Coaching IA — design spec §12.5, scoped under .jv-coaching-page */
+
+.jv-coaching-page {
+  --jv-surface: #ffffff;
+  --jv-surface-muted: #f8f7f4;
+  --jv-text: #1c1917;
+  --jv-text-soft: #44403c;
+  --jv-muted: #57534e;
+  --jv-faint: #a8a29e;
+  --jv-border: rgba(28, 25, 23, 0.08);
+  --jv-border-strong: rgba(28, 25, 23, 0.14);
+  --jv-terra: #d4714a;
+  --jv-success: #2d8a5e;
+  --jv-warning: #c47d1a;
+  --jv-danger: #c4453a;
+  --jv-cta: #1c1917;
+  --jv-cta-soft: rgb(150 184 105 / 0.69);
+  --jv-filter-active: #96b869;
+  --jv-outbound: #5b7ab8;
+  --jv-font: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --jv-ease-spring: cubic-bezier(0.2, 1.18, 0.47, 1);
+
+  box-sizing: border-box;
+  color: var(--jv-text);
+  display: grid;
+  font-family: var(--jv-font);
+  gap: 20px;
+  -webkit-font-smoothing: antialiased;
+  width: 100%;
+}
+
+/* Isolation typo : annule les règles globales .ae-inbox (650/450) */
+.ae-inbox .jv-coaching-page :is(p, span, small, em, label, li, time, button, strong) {
+  letter-spacing: normal;
+}
+
+.jv-coaching-page *,
+.jv-coaching-page *::before,
+.jv-coaching-page *::after {
+  box-sizing: border-box;
+}
+
+/* ── Page header ── */
+
+.jv-coaching-page .jv-page-header {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  padding-bottom: 2px;
+}
+
+.jv-coaching-page .jv-page-icon {
+  color: var(--jv-terra);
+  flex-shrink: 0;
+  opacity: 0.9;
+}
+
+.ae-inbox .jv-coaching-page .jv-page-header h1 {
+  align-items: baseline;
+  color: var(--jv-text);
+  display: flex;
+  font-size: 28px;
+  font-weight: 300;
+  gap: 10px;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  margin: 0;
+}
+
+.ae-inbox .jv-coaching-page .jv-page-kicker {
+  color: var(--jv-faint);
+  font-size: 15px;
+  font-weight: 400;
+}
+
+.jv-coaching-page .jv-page-kicker::before {
+  color: rgba(28, 25, 23, 0.14);
+  content: "·";
+  margin-right: 10px;
+}
+
+/* ── Buttons ── */
+
+.jv-coaching-page .jv-btn-primary,
+.jv-coaching-page .jv-btn-ghost {
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  cursor: pointer;
+  display: inline-flex;
+  flex-shrink: 0;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  gap: 7px;
+  height: 36px;
+  padding: 0 16px;
+  transition: transform 0.2s var(--jv-ease-spring), opacity 0.2s ease;
+  white-space: nowrap;
+}
+
+.jv-coaching-page .jv-btn-primary {
+  background: var(--jv-cta-soft);
+  border-color: transparent;
+  color: #fff;
+  font-weight: 500;
+}
+
+.jv-coaching-page .jv-btn-primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.jv-coaching-page .jv-btn-ghost {
+  background: transparent;
+  border-color: var(--jv-border-strong);
+  color: var(--jv-text);
+}
+
+.jv-coaching-page .jv-btn-primary:disabled,
+.jv-coaching-page .jv-btn-ghost:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.jv-coaching-page .jv-spin {
+  animation: jv-coaching-spin 0.9s linear infinite;
+}
+
+@keyframes jv-coaching-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ── Toolbar ── */
+
+.jv-coaching-page .jv-toolbar {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.jv-coaching-page .jv-toolbar-filters {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.jv-coaching-page .jv-toolbar-actions {
+  align-items: center;
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.jv-coaching-page .jv-filter-pills {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.jv-coaching-page .jv-filter-pills button {
+  background: var(--jv-surface-muted);
+  border: 1px solid var(--jv-border);
+  border-radius: 999px;
+  color: var(--jv-muted);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 7px 13px;
+  transition: all 0.2s var(--jv-ease-spring);
+}
+
+.jv-coaching-page .jv-filter-pills button:hover {
+  color: var(--jv-text);
+}
+
+.jv-coaching-page .jv-filter-pills button {
+  align-items: center;
+  display: inline-flex;
+  gap: 6px;
+}
+
+.jv-coaching-page .jv-filter-pills button em {
+  color: var(--jv-faint);
+  font-size: 11px;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+.jv-coaching-page .jv-filter-pills button.active {
+  background: var(--jv-filter-active);
+  border-color: var(--jv-filter-active);
+  color: #fff;
+}
+
+.jv-coaching-page .jv-filter-pills button.active em {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.jv-coaching-page .jv-select {
+  appearance: none;
+  background: var(--jv-surface);
+  border: 1px solid var(--jv-border);
+  border-radius: 999px;
+  color: var(--jv-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  height: 36px;
+  min-width: 148px;
+  padding: 0 32px 0 14px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2357534e' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-position: right 12px center;
+  background-repeat: no-repeat;
+}
+
+/* ── Section label ── */
+
+.ae-inbox .jv-coaching-page .jv-section-label {
+  align-items: center;
+  color: var(--jv-muted);
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 500;
+  gap: 7px;
+}
+
+.jv-coaching-page .jv-section-icon {
+  color: var(--jv-muted);
+  flex-shrink: 0;
+  opacity: 0.72;
+}
+
+/* ── Stat strip ── */
+
+.jv-coaching-page .jv-stat-strip {
+  border: 1px solid var(--jv-border);
+  border-radius: 14px;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  overflow: hidden;
+}
+
+.jv-coaching-page .jv-stat-strip.cols-4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.jv-coaching-page .jv-stat {
+  animation: jv-coaching-stat-enter 0.5s var(--jv-ease-spring) both;
+  background: var(--jv-surface);
+  display: grid;
+  gap: 2px;
+  padding: 16px 18px;
+}
+
+.jv-coaching-page .jv-stat + .jv-stat {
+  border-left: 1px solid rgba(28, 25, 23, 0.06);
+}
+
+.ae-inbox .jv-coaching-page .jv-stat-label {
+  color: var(--jv-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.ae-inbox .jv-coaching-page .jv-stat-value {
+  color: var(--jv-text);
+  font-size: 28px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 300;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+}
+
+.ae-inbox .jv-coaching-page .jv-stat-caption {
+  color: var(--jv-faint);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+/* ── Themes ── */
+
+.jv-coaching-page .jv-themes-row {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.jv-coaching-page .jv-theme-block {
+  background: var(--jv-surface);
+  border: 1px solid var(--jv-border);
+  border-radius: 14px;
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+}
+
+.jv-coaching-page .jv-theme-list {
+  display: grid;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ae-inbox .jv-coaching-page .jv-theme-list li {
+  align-items: center;
+  border-bottom: 1px solid rgba(28, 25, 23, 0.05);
+  display: grid;
+  font-size: 13px;
+  font-weight: 400;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 8px 0;
+}
+
+.jv-coaching-page .jv-theme-list li:last-child {
+  border-bottom: 0;
+}
+
+.ae-inbox .jv-coaching-page .jv-theme-list span {
+  color: var(--jv-text-soft);
+  font-weight: 400;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ae-inbox .jv-coaching-page .jv-theme-list em {
+  color: var(--jv-muted);
+  font-size: 12px;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+.ae-inbox .jv-coaching-page .jv-theme-empty {
+  color: var(--jv-muted);
+  font-size: 13px;
+  font-weight: 400;
+  margin: 0;
+}
+
+/* ── Score banner ── */
+
+.jv-coaching-page .jv-score-banner {
+  align-items: center;
+  background: var(--jv-surface);
+  border: 1px solid var(--jv-border);
+  border-radius: 14px;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  padding: 14px 18px;
+}
+
+.jv-coaching-page .jv-score-ring {
+  align-items: center;
+  border-radius: 50%;
+  display: flex;
+  height: 52px;
+  justify-content: center;
+  width: 52px;
+}
+
+.jv-coaching-page .jv-score-ring span {
+  align-items: center;
+  background: var(--jv-surface);
+  border-radius: 50%;
+  color: var(--jv-text);
+  display: flex;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  height: 38px;
+  justify-content: center;
+  width: 38px;
+}
+
+.ae-inbox .jv-coaching-page .jv-score-copy strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 3px;
+}
+
+.ae-inbox .jv-coaching-page .jv-score-copy p {
+  color: var(--jv-muted);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.ae-inbox .jv-coaching-page .jv-score-copy small {
+  color: var(--jv-faint);
+  display: block;
+  font-size: 12px;
+  font-weight: 400;
+  margin-top: 6px;
+}
+
+.jv-coaching-page .jv-score-badge {
+  align-items: center;
+  border: 1px solid var(--jv-border);
+  border-radius: 999px;
+  color: var(--jv-muted);
+  display: inline-flex;
+  font-size: 11px;
+  font-weight: 500;
+  gap: 4px;
+  padding: 4px 9px;
+}
+
+/* ── Banners ── */
+
+.jv-coaching-page .jv-banner {
+  border-radius: 10px;
+  font-size: 13px;
+  margin: 0;
+  padding: 10px 12px;
+}
+
+.jv-coaching-page .jv-banner-success {
+  background: rgba(45, 138, 94, 0.08);
+  border: 1px solid rgba(45, 138, 94, 0.14);
+  color: var(--jv-success);
+}
+
+.jv-coaching-page .jv-banner-error {
+  background: rgba(196, 69, 58, 0.08);
+  border: 1px solid rgba(196, 69, 58, 0.14);
+  color: var(--jv-danger);
+}
+
+/* ── Workspace ── */
+
+.jv-coaching-page .jv-workspace {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(300px, 1fr) minmax(380px, 1.35fr);
+}
+
+.jv-coaching-page .jv-workspace-single {
+  grid-template-columns: 1fr;
+}
+
+/* ── List ── */
+
+.jv-coaching-page .jv-list-shell {
+  background: var(--jv-surface);
+  border: 1px solid var(--jv-border);
+  border-radius: 14px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.jv-coaching-page .jv-list-head {
+  align-items: center;
+  background: var(--jv-surface);
+  border-bottom: 1px solid rgba(28, 25, 23, 0.06);
+  display: flex;
+  justify-content: space-between;
+  padding: 12px 14px;
+}
+
+.ae-inbox .jv-coaching-page .jv-list-count {
+  color: var(--jv-faint);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.jv-coaching-page .jv-list-body {
+  display: flex;
+  flex-direction: column;
+  max-height: 480px;
+  overflow-y: auto;
+}
+
+.jv-coaching-page .jv-list-empty {
+  color: var(--jv-muted);
+  font-size: 13px;
+  margin: 0;
+  padding: 28px 16px;
+  text-align: center;
+}
+
+.jv-coaching-page .jv-list-item {
+  align-items: center;
+  background: var(--jv-surface);
+  border: 0;
+  border-bottom: 1px solid rgba(28, 25, 23, 0.05);
+  color: inherit;
+  cursor: pointer;
+  display: grid;
+  font-family: inherit;
+  font-size: inherit;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 11px 14px;
+  text-align: left;
+  transition: background 0.15s ease, transform 0.2s var(--jv-ease-spring);
+  width: 100%;
+}
+
+.jv-coaching-page .jv-list-item:last-child {
+  border-bottom: 0;
+}
+
+.jv-coaching-page .jv-list-item:hover {
+  background: rgba(28, 25, 23, 0.02);
+  transform: translateX(2px);
+}
+
+.jv-coaching-page .jv-list-item.selected {
+  background: rgba(212, 113, 74, 0.06);
+}
+
+.jv-coaching-page .jv-list-main {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.ae-inbox .jv-coaching-page .jv-list-main strong {
+  color: var(--jv-text);
+  font-size: 14px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ae-inbox .jv-coaching-page .jv-list-main small {
+  color: var(--jv-muted);
+  font-size: 12px;
+  font-weight: 400;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jv-coaching-page .jv-list-side {
+  align-items: end;
+  color: var(--jv-muted);
+  display: grid;
+  gap: 2px;
+  justify-items: end;
+}
+
+.ae-inbox .jv-coaching-page .jv-list-side time {
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.ae-inbox .jv-coaching-page .jv-list-side em {
+  color: var(--jv-text);
+  font-size: 12px;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+.jv-coaching-page .jv-list-side svg {
+  color: var(--jv-faint);
+  margin-top: 2px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.jv-coaching-page .jv-list-item:hover .jv-list-side svg,
+.jv-coaching-page .jv-list-item.selected .jv-list-side svg {
+  opacity: 1;
+}
+
+/* ── Call meta ── */
+
+.ae-inbox .jv-coaching-page .jv-call-meta {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 11px;
+  font-weight: 400;
+  gap: 6px 10px;
+}
+
+.jv-coaching-page .jv-call-meta > span + span::before {
+  color: rgba(28, 25, 23, 0.12);
+  content: "·";
+  margin-right: 10px;
+}
+
+.jv-coaching-page .jv-meta-outbound {
+  align-items: center;
+  color: var(--jv-outbound);
+  display: inline-flex;
+  gap: 4px;
+}
+
+.jv-coaching-page .jv-meta-inbound {
+  align-items: center;
+  color: var(--jv-terra);
+  display: inline-flex;
+  gap: 4px;
+}
+
+.jv-coaching-page .jv-meta-sentiment-positive {
+  color: var(--jv-success);
+}
+
+.jv-coaching-page .jv-meta-sentiment-neutral {
+  color: var(--jv-muted);
+}
+
+.jv-coaching-page .jv-meta-sentiment-negative {
+  color: var(--jv-danger);
+}
+
+.jv-coaching-page .jv-meta-sentiment-mixed {
+  color: var(--jv-warning);
+}
+
+.jv-coaching-page .jv-meta-ok {
+  color: var(--jv-success);
+}
+
+.jv-coaching-page .jv-meta-pending {
+  color: var(--jv-warning);
+}
+
+.jv-coaching-page .jv-meta-failed {
+  color: var(--jv-danger);
+}
+
+.jv-coaching-page .jv-meta-risk {
+  color: var(--jv-danger);
+  font-weight: 500;
+}
+
+.ae-inbox .jv-coaching-page .jv-item-meta {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 11px;
+  font-weight: 400;
+  gap: 6px 10px;
+}
+
+.jv-coaching-page .jv-item-meta > span + span::before {
+  color: rgba(28, 25, 23, 0.12);
+  content: "·";
+  margin-right: 10px;
+}
+
+.jv-coaching-page .jv-meta-score {
+  color: var(--jv-terra);
+  font-weight: 500;
+}
+
+/* ── Secondary filters ── */
+
+.jv-coaching-page .jv-filter-bar {
+  align-items: end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 12px;
+}
+
+.jv-coaching-page .jv-filter-field {
+  display: grid;
+  gap: 4px;
+}
+
+.ae-inbox .jv-coaching-page .jv-filter-field > span {
+  color: var(--jv-faint);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.jv-coaching-page .jv-filter-field input,
+.jv-coaching-page .jv-filter-field select {
+  appearance: none;
+  background: var(--jv-surface);
+  border: 1px solid var(--jv-border);
+  border-radius: 999px;
+  color: var(--jv-text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  height: 34px;
+  min-width: 0;
+  padding: 0 14px;
+}
+
+.jv-coaching-page .jv-filter-field input[type="search"] {
+  min-width: 200px;
+}
+
+.jv-coaching-page .jv-filter-field input[type="date"] {
+  border-radius: 10px;
+  min-width: 132px;
+}
+
+/* ── Last update list ── */
+
+.jv-coaching-page .jv-update-item small {
+  color: var(--jv-muted);
+  display: block;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+/* ── Detail panel ── */
+
+.jv-coaching-page .jv-detail {
+  background: var(--jv-surface);
+  border: 1px solid var(--jv-border);
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: min(80vh, 720px);
+  min-width: 0;
+  overflow-y: auto;
+  padding: 16px 18px;
+}
+
+.jv-coaching-page .jv-detail-head {
+  align-items: flex-start;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.ae-inbox .jv-coaching-page .jv-detail-head h2 {
+  color: var(--jv-text);
+  font-size: 17px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+.ae-inbox .jv-coaching-page .jv-detail-head p {
+  color: var(--jv-muted);
+  font-size: 12px;
+  font-weight: 400;
+  margin: 5px 0 0;
+}
+
+.jv-coaching-page .jv-detail-source {
+  color: var(--jv-faint);
+  font-size: 12px;
+  margin: -6px 0 0;
+}
+
+.jv-coaching-page .jv-detail-empty {
+  align-items: center;
+  color: var(--jv-muted);
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  justify-content: center;
+  min-height: 320px;
+  text-align: center;
+}
+
+.ae-inbox .jv-coaching-page .jv-detail-empty strong {
+  color: var(--jv-text);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.ae-inbox .jv-coaching-page .jv-detail-empty p {
+  font-size: 13px;
+  font-weight: 400;
+  margin: 0;
+  max-width: 240px;
+}
+
+.jv-coaching-page .jv-callout {
+  align-items: flex-start;
+  border: 1px dashed rgba(212, 113, 74, 0.28);
+  border-radius: 10px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: auto minmax(0, 1fr);
+  padding: 12px 14px;
+}
+
+.jv-coaching-page .jv-callout svg {
+  color: var(--jv-terra);
+  margin-top: 2px;
+}
+
+.ae-inbox .jv-coaching-page .jv-callout p {
+  color: var(--jv-text);
+  font-size: 13px;
+  font-weight: 500;
+  margin: 0;
+}
+
+.ae-inbox .jv-coaching-page .jv-callout small {
+  color: var(--jv-muted);
+  display: block;
+  font-size: 12px;
+  font-weight: 400;
+  margin-top: 3px;
+}
+
+.jv-coaching-page .jv-detail-section {
+  border-top: 1px solid rgba(28, 25, 23, 0.06);
+  display: grid;
+  gap: 8px;
+  padding-top: 14px;
+}
+
+.ae-inbox .jv-coaching-page .jv-prose {
+  color: var(--jv-text-soft);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.55;
+  margin: 0;
+}
+
+.ae-inbox .jv-coaching-page .jv-bullet-list {
+  display: grid;
+  font-size: 14px;
+  font-weight: 400;
+  gap: 6px;
+  line-height: 1.5;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ae-inbox .jv-coaching-page .jv-bullet-list li {
+  color: var(--jv-text-soft);
+  font-weight: 400;
+  padding-left: 12px;
+  position: relative;
+}
+
+.jv-coaching-page .jv-bullet-list li::before {
+  background: var(--jv-terra);
+  border-radius: 50%;
+  content: "";
+  height: 4px;
+  left: 0;
+  position: absolute;
+  top: 0.62em;
+  width: 4px;
+}
+
+.ae-inbox .jv-coaching-page .jv-risk-list {
+  display: grid;
+  font-size: 14px;
+  font-weight: 400;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ae-inbox .jv-coaching-page .jv-risk-list li {
+  align-items: flex-start;
+  color: var(--jv-text-soft);
+  display: flex;
+  font-weight: 400;
+  gap: 6px;
+}
+
+.jv-coaching-page .jv-risk-list svg {
+  color: var(--jv-danger);
+  flex-shrink: 0;
+  margin-top: 3px;
+}
+
+.ae-inbox .jv-coaching-page .jv-transcript {
+  background: rgba(28, 25, 23, 0.02);
+  border: 1px solid rgba(28, 25, 23, 0.06);
+  border-radius: 10px;
+  color: var(--jv-text-soft);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.6;
+  max-height: 160px;
+  overflow-y: auto;
+  padding: 12px 14px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.jv-coaching-page .jv-detail-loading {
+  color: var(--jv-muted);
+  font-size: 13px;
+  margin: 0;
+}
+
+.ae-inbox .jv-coaching-page .jv-detail-facts {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ae-inbox .jv-coaching-page .jv-detail-facts li {
+  display: grid;
+  gap: 2px;
+}
+
+.ae-inbox .jv-coaching-page .jv-detail-facts span {
+  color: var(--jv-faint);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.ae-inbox .jv-coaching-page .jv-detail-facts strong {
+  color: var(--jv-text);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.ae-inbox .jv-coaching-page .jv-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ae-inbox .jv-coaching-page .jv-detail-feedback {
+  font-size: 13px;
+  font-weight: 400;
+  margin: 0;
+}
+
+.ae-inbox .jv-coaching-page .jv-detail-feedback.error {
+  color: var(--jv-danger);
+}
+
+.ae-inbox .jv-coaching-page .jv-detail-feedback.success {
+  color: var(--jv-success);
+}
+
+@keyframes jv-coaching-stat-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── Responsive ── */
+
+@media (max-width: 1024px) {
+  .jv-coaching-page .jv-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .jv-coaching-page .jv-stat-strip,
+  .jv-coaching-page .jv-stat-strip.cols-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .jv-coaching-page .jv-score-banner {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .jv-coaching-page .jv-score-badge {
+    display: none;
+  }
+
+  .jv-coaching-page .jv-stat:nth-child(odd) {
+    border-left: 0;
+  }
+
+  .jv-coaching-page .jv-stat:nth-child(n + 3) {
+    border-top: 1px solid rgba(28, 25, 23, 0.06);
+  }
+
+  .jv-coaching-page .jv-stat:nth-child(3) {
+    border-left: 0;
+  }
+
+  .jv-coaching-page .jv-themes-row {
+    grid-template-columns: 1fr;
+  }
+
+  .jv-coaching-page .jv-toolbar-actions {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .jv-coaching-page .jv-select {
+    flex: 1;
+  }
+}
+
+@media (max-width: 640px) {
+  .jv-coaching-page .jv-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .jv-coaching-page .jv-toolbar-filters {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .ae-inbox .jv-coaching-page .jv-page-header h1 {
+    font-size: 22px;
+  }
+}
+
+/* ── Coaching-specific ── */
+
+.jv-coaching-page .jv-coaching-back {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.jv-coaching-page .jv-coaching-rep-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.jv-coaching-page .jv-coaching-rep-card {
+  background: var(--jv-surface);
+  border: 1px solid var(--jv-border);
+  border-radius: 14px;
+  border-top: 3px solid var(--jv-border-strong);
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  padding: 16px 18px;
+  transition: border-color 0.15s ease, transform 0.2s var(--jv-ease-spring);
+}
+
+.jv-coaching-page .jv-coaching-rep-card:hover {
+  border-color: var(--jv-border-strong);
+  transform: translateY(-1px);
+}
+
+.jv-coaching-page .jv-coaching-rep-card.declining {
+  border-top-color: var(--jv-danger);
+}
+
+.jv-coaching-page .jv-coaching-rep-card.improving {
+  border-top-color: var(--jv-success);
+}
+
+.jv-coaching-page .jv-coaching-rep-card.stable {
+  border-top-color: var(--jv-outbound);
+}
+
+.jv-coaching-page .jv-coaching-rep-card.pending {
+  border-top-color: var(--jv-faint);
+}
+
+.jv-coaching-page .jv-coaching-rep-head {
+  align-items: flex-start;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.ae-inbox .jv-coaching-page .jv-coaching-rep-head h3 {
+  color: var(--jv-text);
+  font-size: 15px;
+  font-weight: 500;
+  margin: 0;
+}
+
+.ae-inbox .jv-coaching-page .jv-coaching-rep-head small {
+  color: var(--jv-muted);
+  display: block;
+  font-size: 12px;
+  font-weight: 400;
+  margin-top: 3px;
+}
+
+.jv-coaching-page .jv-coaching-status {
+  border-radius: 999px;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 500;
+  max-width: 120px;
+  overflow: hidden;
+  padding: 4px 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jv-coaching-page .jv-coaching-status.declining {
+  background: rgba(212, 113, 74, 0.1);
+  color: var(--jv-terra);
+}
+
+.jv-coaching-page .jv-coaching-status.improving {
+  background: rgba(45, 138, 94, 0.1);
+  color: var(--jv-success);
+}
+
+.jv-coaching-page .jv-coaching-status.stable {
+  background: rgba(91, 122, 184, 0.1);
+  color: var(--jv-outbound);
+}
+
+.jv-coaching-page .jv-coaching-status.pending {
+  background: var(--jv-surface-muted);
+  color: var(--jv-muted);
+}
+
+.jv-coaching-page .jv-coaching-score-ring-row {
+  align-items: center;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.jv-coaching-page .jv-coaching-win-ring {
+  align-items: center;
+  border-radius: 50%;
+  display: grid;
+  flex-shrink: 0;
+  gap: 2px;
+  height: 72px;
+  justify-items: center;
+  place-content: center;
+  position: relative;
+  width: 72px;
+}
+
+.jv-coaching-page .jv-coaching-win-ring::after {
+  background: var(--jv-surface);
+  border-radius: 50%;
+  content: "";
+  inset: 8px;
+  position: absolute;
+}
+
+.jv-coaching-page .jv-coaching-win-ring span,
+.jv-coaching-page .jv-coaching-win-ring strong {
+  position: relative;
+  z-index: 1;
+}
+
+.jv-coaching-page .jv-coaching-win-ring span {
+  color: var(--jv-faint);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.ae-inbox .jv-coaching-page .jv-coaching-win-ring strong {
+  color: var(--jv-text);
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+.jv-coaching-page .jv-coaching-deal-breakdown {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.jv-coaching-page .jv-coaching-deal-breakdown div {
+  align-items: center;
+  border-bottom: 1px solid rgba(28, 25, 23, 0.05);
+  display: flex;
+  justify-content: space-between;
+  padding-bottom: 6px;
+}
+
+.jv-coaching-page .jv-coaching-deal-breakdown div:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.ae-inbox .jv-coaching-page .jv-coaching-deal-breakdown dt {
+  color: var(--jv-muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.ae-inbox .jv-coaching-page .jv-coaching-deal-breakdown dd {
+  color: var(--jv-text);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  margin: 0;
+}
+
+.ae-inbox .jv-coaching-page .jv-coaching-headline {
+  color: var(--jv-text-soft);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.48;
+  margin: 0;
+}
+
+.ae-inbox .jv-coaching-page .jv-coaching-headline.muted {
+  color: var(--jv-muted);
+}
+
+.jv-coaching-page .jv-coaching-profile-button {
+  background: transparent;
+  border: 1px solid rgba(212, 113, 74, 0.28);
+  border-radius: 999px;
+  color: var(--jv-terra);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  min-height: 38px;
+  transition: background 0.15s ease, border-color 0.15s ease;
+  width: 100%;
+}
+
+.jv-coaching-page .jv-coaching-profile-button:hover {
+  background: rgba(212, 113, 74, 0.06);
+  border-color: var(--jv-terra);
+}
+
+.jv-coaching-page .jv-coaching-profile {
+  display: grid;
+  gap: 14px;
+}
+
+.jv-coaching-page .jv-coaching-profile-section {
+  background: var(--jv-surface);
+  border: 1px solid var(--jv-border);
+  border-radius: 14px;
+  display: grid;
+  gap: 12px;
+  padding: 16px 18px;
+}
+
+.jv-coaching-page .jv-coaching-profile-loading {
+  color: var(--jv-muted);
+  font-size: 14px;
+  margin: 0;
+  padding: 40px 0;
+  text-align: center;
+}
+
+.jv-coaching-page .jv-progress {
+  background: var(--jv-surface);
+  border: 1px solid var(--jv-border);
+  border-radius: 10px;
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+}
+
+.jv-coaching-page .jv-progress-head {
+  align-items: center;
+  color: var(--jv-muted);
+  display: flex;
+  font-size: 12px;
+  font-weight: 500;
+  justify-content: space-between;
+}
+
+.jv-coaching-page .jv-progress-track {
+  background: rgba(28, 25, 23, 0.06);
+  border-radius: 999px;
+  height: 6px;
+  overflow: hidden;
+}
+
+.jv-coaching-page .jv-progress-track i {
+  background: var(--jv-terra);
+  border-radius: 999px;
+  display: block;
+  height: 100%;
+  transition: width 0.3s ease;
+}
+
+.jv-coaching-page .jv-coaching-funnel-legend {
+  color: var(--jv-muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 11px;
+  font-weight: 500;
+  gap: 12px;
+}
+
+.jv-coaching-page .jv-coaching-funnel-legend span {
+  align-items: center;
+  display: inline-flex;
+  gap: 6px;
+}
+
+.jv-coaching-page .jv-coaching-funnel-legend span::before {
+  border-radius: 50%;
+  content: "";
+  height: 8px;
+  width: 8px;
+}
+
+.jv-coaching-page .jv-coaching-funnel-legend .won::before {
+  background: var(--jv-success);
+}
+
+.jv-coaching-page .jv-coaching-funnel-legend .open::before {
+  background: var(--jv-outbound);
+}
+
+.jv-coaching-page .jv-coaching-funnel-legend .lost::before {
+  background: var(--jv-danger);
+}
+
+.jv-coaching-page .jv-coaching-funnel-row {
+  display: grid;
+  gap: 6px;
+}
+
+.jv-coaching-page .jv-coaching-funnel-row > span {
+  color: var(--jv-text);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.jv-coaching-page .jv-coaching-funnel-bar {
+  background: rgba(28, 25, 23, 0.04);
+  border-radius: 999px;
+  display: flex;
+  height: 8px;
+  overflow: hidden;
+  width: 100%;
+}
+
+.jv-coaching-page .jv-coaching-funnel-bar i {
+  display: block;
+  height: 100%;
+  min-width: 0;
+}
+
+.jv-coaching-page .jv-coaching-funnel-bar i.won {
+  background: var(--jv-success);
+}
+
+.jv-coaching-page .jv-coaching-funnel-bar i.open {
+  background: var(--jv-outbound);
+}
+
+.jv-coaching-page .jv-coaching-funnel-bar i.lost {
+  background: var(--jv-danger);
+}
+
+.jv-coaching-page .jv-coaching-funnel-row small {
+  color: var(--jv-faint);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.jv-coaching-page .jv-coaching-insight-card {
+  border: 1px solid var(--jv-border);
+  border-left: 3px solid var(--jv-border-strong);
+  border-radius: 10px;
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+}
+
+.jv-coaching-page .jv-coaching-insight-card.strength {
+  border-left-color: var(--jv-success);
+}
+
+.jv-coaching-page .jv-coaching-insight-card.growth {
+  border-left-color: var(--jv-terra);
+}
+
+.jv-coaching-page .jv-coaching-insight-card > span {
+  background: var(--jv-surface-muted);
+  border-radius: 999px;
+  color: var(--jv-muted);
+  font-size: 11px;
+  font-weight: 500;
+  padding: 3px 8px;
+  width: fit-content;
+}
+
+.jv-coaching-page .jv-coaching-insight-card.strength > span {
+  background: rgba(45, 138, 94, 0.1);
+  color: var(--jv-success);
+}
+
+.jv-coaching-page .jv-coaching-insight-card.growth > span {
+  background: rgba(212, 113, 74, 0.1);
+  color: var(--jv-terra);
+}
+
+.ae-inbox .jv-coaching-page .jv-coaching-insight-card strong {
+  color: var(--jv-text);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.ae-inbox .jv-coaching-page .jv-coaching-insight-card p {
+  color: var(--jv-text-soft);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.jv-coaching-page .jv-coaching-insight-list {
+  display: grid;
+  gap: 8px;
+}
+
+.jv-coaching-page .jv-coaching-source-deals {
+  margin-top: 4px;
+}
+
+.jv-coaching-page .jv-coaching-source-deals summary {
+  color: var(--jv-terra);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  width: fit-content;
+}
+
+.jv-coaching-page .jv-coaching-source-deals > div {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.jv-coaching-page .jv-coaching-source-deals article {
+  background: var(--jv-surface-muted);
+  border: 1px solid var(--jv-border);
+  border-radius: 10px;
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+}
+
+.ae-inbox .jv-coaching-page .jv-coaching-source-deals article strong {
+  color: var(--jv-text);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.ae-inbox .jv-coaching-page .jv-coaching-source-deals article span,
+.ae-inbox .jv-coaching-page .jv-coaching-source-deals article small {
+  color: var(--jv-muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.jv-coaching-page .jv-coaching-evidence-source-list {
+  display: grid;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.jv-coaching-page .jv-coaching-evidence-source-list section {
+  background: var(--jv-surface);
+  border: 1px solid var(--jv-border);
+  border-radius: 8px;
+  display: grid;
+  gap: 4px;
+  padding: 8px 10px;
+}
+
+.ae-inbox .jv-coaching-page .jv-coaching-evidence-source-list section small {
+  color: var(--jv-terra);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.ae-inbox .jv-coaching-page .jv-coaching-evidence-source-list section p {
+  color: var(--jv-text-soft);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.jv-coaching-page .jv-coaching-loss-patterns {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.jv-coaching-page .jv-coaching-loss-pattern {
+  border: 1px solid var(--jv-border);
+  border-radius: 10px;
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+}
+
+.jv-coaching-page .jv-coaching-loss-pattern > span {
+  background: var(--jv-surface-muted);
+  border-radius: 999px;
+  color: var(--jv-muted);
+  font-size: 11px;
+  font-weight: 500;
+  padding: 3px 8px;
+  width: fit-content;
+}
+
+.ae-inbox .jv-coaching-page .jv-coaching-loss-pattern strong {
+  color: var(--jv-text);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.jv-coaching-page .jv-coaching-source-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.jv-coaching-page .jv-coaching-source-card {
+  border: 1px solid var(--jv-border);
+  border-radius: 10px;
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+}
+
+.jv-coaching-page .jv-coaching-source-card > span {
+  background: var(--jv-surface-muted);
+  border-radius: 999px;
+  color: var(--jv-muted);
+  font-size: 11px;
+  font-weight: 500;
+  padding: 3px 8px;
+  width: fit-content;
+}
+
+.ae-inbox .jv-coaching-page .jv-coaching-source-card > strong {
+  color: var(--jv-text);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.jv-coaching-page .jv-coaching-action-list {
+  display: grid;
+  gap: 8px;
+}
+
+.jv-coaching-page .jv-coaching-action-card {
+  border: 1px solid var(--jv-border);
+  border-radius: 10px;
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  transition: border-color 0.15s ease;
+}
+
+.jv-coaching-page .jv-coaching-action-card:hover {
+  border-color: var(--jv-border-strong);
+}
+
+.jv-coaching-page .jv-coaching-action-button {
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  display: grid;
+  font-family: inherit;
+  gap: 6px;
+  padding: 0;
+  text-align: left;
+  width: 100%;
+}
+
+.jv-coaching-page .jv-coaching-action-button > span {
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 3px 8px;
+  width: fit-content;
+}
+
+.jv-coaching-page .jv-coaching-action-button > span.high {
+  background: rgba(212, 113, 74, 0.1);
+  color: var(--jv-terra);
+}
+
+.jv-coaching-page .jv-coaching-action-button > span.medium {
+  background: rgba(91, 122, 184, 0.1);
+  color: var(--jv-outbound);
+}
+
+.ae-inbox .jv-coaching-page .jv-coaching-action-button strong {
+  color: var(--jv-text);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.ae-inbox .jv-coaching-page .jv-coaching-action-card p {
+  color: var(--jv-muted);
+  font-size: 13px;
+  font-weight: 400;
+  margin: 0;
+}
+
+.ae-inbox .jv-coaching-page .jv-coaching-action-card small {
+  color: var(--jv-success);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.jv-coaching-page .jv-themes-layout {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (max-width: 1024px) {
+  .jv-coaching-page .jv-coaching-rep-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .jv-coaching-page .jv-coaching-loss-patterns,
+  .jv-coaching-page .jv-coaching-source-grid,
+  .jv-coaching-page .jv-themes-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .jv-coaching-page .jv-coaching-rep-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .jv-coaching-page .jv-coaching-score-ring-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jv-coaching-page .jv-stat,
+  .jv-coaching-page .jv-list-item,
+  .jv-coaching-page .jv-btn-primary {
+    animation: none !important;
+    transition: none !important;
+  }
+}

@@ -1,4 +1,4 @@
-import { RefreshCw } from "lucide-react";
+import { AlertTriangle, ListTodo, Users, type LucideIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { QueueProspect } from "@jarvis/shared";
 import {
@@ -46,10 +46,46 @@ import {
   type TaskSection,
   type TaskSectionId,
 } from "../../../utils/dashboard/tasks";
+import "../../styles/tasks.css";
 import { TaskDigestSidebar, type SelectedTaskAnalysis } from "./TaskDigestSidebar";
 import { TaskFiltersBar } from "./TaskFiltersBar";
-import { TaskFilterTabs, TaskMetrics } from "./TaskMetrics";
+import { TaskMetrics } from "./TaskMetrics";
 import { TaskSectionList } from "./TaskSectionList";
+
+const SectionLabel = ({ children, icon: Icon }: { children: string; icon: LucideIcon }) => (
+  <span className="jv-section-label">
+    <Icon aria-hidden="true" className="jv-section-icon" size={13} strokeWidth={1.5} />
+    {children}
+  </span>
+);
+
+const ThemeBlock = ({
+  empty,
+  icon,
+  items,
+  title,
+}: {
+  empty: string;
+  icon: LucideIcon;
+  items: Array<{ label: string; count: number }>;
+  title: string;
+}) => (
+  <div className="jv-theme-block">
+    <SectionLabel icon={icon}>{title}</SectionLabel>
+    {items.length > 0 ? (
+      <ul className="jv-theme-list">
+        {items.slice(0, 5).map((item) => (
+          <li key={item.label}>
+            <span>{item.label}</span>
+            <em>{item.count}</em>
+          </li>
+        ))}
+      </ul>
+    ) : (
+      <p className="jv-theme-empty">{empty}</p>
+    )}
+  </div>
+);
 
 type TasksViewProps = {
   hubspotPortalId?: string | null;
@@ -303,8 +339,7 @@ export const TasksView = ({
   const openTasks = enrichedTasks.filter(isOpenTask);
   const todayTaskCount = openTasks.filter((task) => getTaskDateBucket(task.dueAt) === "today").length;
   const overdueTaskCount = overdueTasks.length;
-  const upcomingTaskCount = openTasks.filter((task) => getTaskDateBucket(task.dueAt) === "upcoming").length;
-  const laterTaskCount = openTasks.filter((task) => getTaskDateBucket(task.dueAt) === "later").length;
+  const completedTaskCount = tasks.filter((task) => !isOpenTask(task)).length;
   const batchIsRunning = batchProgress !== null && batchProgress.done + batchProgress.failed < batchProgress.total;
   const analyzeButtonLabel = batchIsRunning
     ? `${batchProgress.done + batchProgress.failed}/${batchProgress.total}`
@@ -360,6 +395,24 @@ export const TasksView = ({
       .sort((left, right) => right.taskCount - left.taskCount)
       .slice(0, 4);
   }, [openTasks, ownerById, selectedOwnerId, selectedOwnerName]);
+
+  const blockingThemes = useMemo(
+    () =>
+      overdueTasks.slice(0, 5).map((task) => ({
+        label: task.dealName ?? task.companyName ?? task.title,
+        count: 1,
+      })),
+    [overdueTasks],
+  );
+
+  const teamReminderThemes = useMemo(
+    () =>
+      ownerWorkload.slice(0, 5).map((owner) => ({
+        label: owner.label,
+        count: owner.taskCount,
+      })),
+    [ownerWorkload],
+  );
 
   const applySalesTaskToState = (salesTask: SalesTaskListItem): void => {
     const displayTask = mapSalesTaskToDisplayTask(salesTask, selectedOwnerId);
@@ -627,29 +680,21 @@ export const TasksView = ({
   };
 
   return (
-    <section className="ae-view-panel ae-tasks-light-page" aria-label="Taches HubSpot">
-      <div className="ae-view-title ae-task-titlebar ae-tasks-light-titlebar">
-        <div>
-          <h2>Taches</h2>
-          <span>/ {new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long", year: "numeric" }).format(new Date())}</span>
-        </div>
-        <button
-          aria-label="Rafraichir les taches"
-          className="ae-icon-action ae-task-refresh"
-          disabled={isLoading || !selectedOwnerId}
-          onClick={loadTasks}
-          title="Rafraichir"
-          type="button"
-        >
-          <RefreshCw size={16} />
-        </button>
-      </div>
+    <div className="jv-tasks-page" aria-label="Tâches HubSpot">
+      <header className="jv-page-header">
+        <ListTodo aria-hidden="true" className="jv-page-icon" size={18} strokeWidth={1.5} />
+        <h1>Tâches</h1>
+      </header>
 
       <TaskFiltersBar
         analyzeButtonLabel={analyzeButtonLabel}
         batchIsRunning={batchIsRunning}
+        dateFilter={dateFilter}
+        isLoading={isLoading}
+        onDateFilterChange={setDateFilter}
         onOwnerChange={onOwnerChange}
         onProcessOverdueTasks={() => void handleProcessOverdueTasks()}
+        onRefresh={() => void loadTasks()}
         onSearchTermChange={setSearchTerm}
         ownerById={ownerById}
         owners={owners}
@@ -661,26 +706,37 @@ export const TasksView = ({
       />
 
       <TaskMetrics
-        laterTaskCount={laterTaskCount}
+        completedTaskCount={completedTaskCount}
         overdueTaskCount={overdueTaskCount}
         todayTaskCount={todayTaskCount}
-        upcomingTaskCount={upcomingTaskCount}
+        totalTaskCount={openTasks.length}
       />
 
-      <TaskFilterTabs dateFilter={dateFilter} onDateFilterChange={setDateFilter} />
+      <section className="jv-themes-row" aria-label="Insights tâches">
+        <ThemeBlock
+          empty="Aucun bloquant."
+          icon={AlertTriangle}
+          items={blockingThemes}
+          title="Bloquants"
+        />
+        <ThemeBlock
+          empty="Aucun rappel équipe."
+          icon={Users}
+          items={teamReminderThemes}
+          title="Rappels équipe"
+        />
+      </section>
 
       {batchProgress ? (
-        <div className="ae-task-bulkbar">
-          <small>
-            Batchs de {TASK_BATCH_SIZE} · {batchProgress.done} reussie(s) · {batchProgress.failed} echec(s)
-          </small>
-        </div>
+        <p className="jv-bulkbar">
+          Batchs de {TASK_BATCH_SIZE} · {batchProgress.done} réussie(s) · {batchProgress.failed} échec(s)
+        </p>
       ) : null}
 
-      {error ? <p className="ae-admin-error">{error}</p> : null}
-      {taskActionMessage ? <p className="ae-admin-success">{taskActionMessage}</p> : null}
+      {error ? <p className="jv-banner jv-banner-error">{error}</p> : null}
+      {taskActionMessage ? <p className="jv-banner jv-banner-success">{taskActionMessage}</p> : null}
 
-      <div className="ae-task-workspace">
+      <div className="jv-workspace">
         <TaskSectionList
           analysisApplyingId={analysisApplyingId}
           analysisByTaskId={analysisByTaskId}
@@ -700,6 +756,7 @@ export const TasksView = ({
           priorityUpdatingId={priorityUpdatingId}
           processingTaskIds={processingTaskIds}
           selectedOwnerId={selectedOwnerId}
+          selectedTaskId={selectedTaskAnalysis?.taskId ?? null}
           taskActionUpdatingId={taskActionUpdatingId}
           taskSections={taskSections}
           usingSalesOperatingQueue={usingSalesOperatingQueue}
@@ -716,6 +773,6 @@ export const TasksView = ({
           urgentTask={urgentTask}
         />
       </div>
-    </section>
+    </div>
   );
 };

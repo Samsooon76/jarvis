@@ -1,8 +1,11 @@
+import { RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { QueueView } from "./components/QueueView";
 import { AuthLanding, OnboardingGate } from "./components/auth/AuthLanding";
 import { FirstRunOnboarding } from "./components/dashboard/FirstRunOnboarding";
 import { LoadingState } from "./components/dashboard/LoadingState";
+import { LoadingScreenBrand } from "./components/loading/LoadingScreenBrand";
+import "./components/styles/loading.css";
 import { DEFAULT_ORG_ID, getHubSpotOwnerStorageKey, isAbortError } from "./config/runtime";
 import { useQueue } from "./hooks/useQueue";
 import {
@@ -23,6 +26,11 @@ import {
 import { clearApiAuthToken, setApiAuthSession } from "./services/api/client";
 import { getSupabaseClient, isSupabaseAuthConfigured, type JarvisSession } from "./services/supabase";
 import { setSentryUser } from "./sentry";
+import {
+  clearCachedAuthProfile,
+  readCachedAuthProfile,
+  writeCachedAuthProfile,
+} from "./utils/sessionCache";
 
 const getStoredHubSpotOwnerId = (orgId: string): string | null => {
   const storedOwnerId = window.localStorage.getItem(getHubSpotOwnerStorageKey(orgId))?.trim();
@@ -58,8 +66,8 @@ const areLastUpdatesEqual = (left: HubSpotLastUpdateItem[], right: HubSpotLastUp
   });
 
 export const ExtensionApp = () => {
-  const [authProfile, setAuthProfile] = useState<AppUserProfile | null>(null);
-  const [authLoading, setAuthLoading] = useState(true);
+  const [authProfile, setAuthProfile] = useState<AppUserProfile | null>(() => readCachedAuthProfile());
+  const [authLoading, setAuthLoading] = useState(() => readCachedAuthProfile() === null);
   const [authError, setAuthError] = useState<string | null>(null);
   const [selectedOwnerId, setSelectedOwnerId] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -80,6 +88,7 @@ export const ExtensionApp = () => {
   const loadProfileForSession = useCallback(async (session: JarvisSession | null): Promise<void> => {
     if (!session) {
       clearApiAuthToken();
+      clearCachedAuthProfile();
       setAuthProfile(null);
       setAuthLoading(false);
       setAuthError(null);
@@ -87,7 +96,17 @@ export const ExtensionApp = () => {
     }
 
     try {
-      setAuthLoading(true);
+      const cachedProfile = readCachedAuthProfile();
+
+      if (!cachedProfile || cachedProfile.authUserId !== session.user.id) {
+        if (cachedProfile && cachedProfile.authUserId !== session.user.id) {
+          clearCachedAuthProfile();
+          setAuthProfile(null);
+        }
+
+        setAuthLoading(true);
+      }
+
       setAuthError(null);
       setApiAuthSession(session);
 
@@ -96,17 +115,21 @@ export const ExtensionApp = () => {
       if (profile.onboardingRequired) {
         try {
           const joinedProfile = await completeMemberOnboarding();
+          writeCachedAuthProfile(joinedProfile);
           setAuthProfile(joinedProfile);
           return;
         } catch {
+          writeCachedAuthProfile(profile);
           setAuthProfile(profile);
           return;
         }
       }
 
+      writeCachedAuthProfile(profile);
       setAuthProfile(profile);
     } catch (profileError) {
       setAuthError(profileError instanceof Error ? profileError.message : "Impossible de charger la session Jarvis.");
+      clearCachedAuthProfile();
       setAuthProfile(null);
     } finally {
       setAuthLoading(false);
@@ -457,6 +480,7 @@ export const ExtensionApp = () => {
   const handleSignOut = async () => {
     await getSupabaseClient().auth.signOut();
     clearApiAuthToken();
+    clearCachedAuthProfile();
     clearJarvisBrowserCaches();
     setAuthProfile(null);
     setSelectedOwnerId(null);
@@ -469,8 +493,8 @@ export const ExtensionApp = () => {
 
   if (authLoading) {
     return (
-      <main className="ae-loading-screen">
-        <h1>Jarvis</h1>
+      <main className="jv-loading-screen" aria-busy="true" aria-live="polite">
+        <LoadingScreenBrand />
         <LoadingState detail="Verification de la session Jarvis." label="Chargement du profil" tone="inline" />
       </main>
     );
@@ -491,51 +515,56 @@ export const ExtensionApp = () => {
     const progress = connectionSyncJob?.progress ?? 0;
 
     return (
-      <main className="ae-loading-screen ae-hubspot-sync-screen">
-        <div className="ae-loading-head">
-          <div className="ae-loading-orbit" aria-hidden="true">
-            <span />
-            <i />
-          </div>
-          <div>
-            <h1>Sync HubSpot vers Supabase</h1>
-            <p>{connectionSyncJob?.currentStep ?? "Preparation de la synchronisation..."}</p>
-          </div>
+      <main className="jv-loading-screen jv-loading-screen-sync" aria-busy="true" aria-live="polite">
+        <div className="jv-loading-card">
+          <header className="jv-loading-sync-head">
+            <RefreshCw aria-hidden="true" className="jv-loading-icon jv-spin" size={18} strokeWidth={1.5} />
+            <div>
+              <h2>Sync HubSpot vers Supabase</h2>
+              <p>{connectionSyncJob?.currentStep ?? "Preparation de la synchronisation..."}</p>
+            </div>
+          </header>
+          <section aria-label={`Progression ${progress}%`} className="jv-run-progress">
+            <div className="jv-run-progress-head">
+              <span>Synchronisation en cours</span>
+              <strong>{progress}%</strong>
+            </div>
+            <span className="jv-run-progress-bar">
+              <span style={{ width: `${progress}%` }} />
+            </span>
+          </section>
+          <ol className="jv-sync-steps">
+            <li className={progress >= 10 ? "done" : "current"}>
+              <span aria-hidden="true" />
+              <div>
+                <strong>Connexion validee</strong>
+                <small>Les tokens HubSpot sont stockes cote backend.</small>
+              </div>
+            </li>
+            <li className={progress >= 68 ? "done" : progress >= 10 ? "current" : "waiting"}>
+              <span aria-hidden="true" />
+              <div>
+                <strong>CRM et leads</strong>
+                <small>Contacts, deals, companies et leads sont ecrits dans Supabase.</small>
+              </div>
+            </li>
+            <li className={progress >= 100 ? "done" : progress >= 68 ? "current" : "waiting"}>
+              <span aria-hidden="true" />
+              <div>
+                <strong>Queue Jarvis</strong>
+                <small>La morning queue est rechargee avec la derniere data synchronisee.</small>
+              </div>
+            </li>
+          </ol>
         </div>
-        <div className="ae-loading-progress" aria-label={`Progression ${progress}%`}>
-          <span style={{ width: `${progress}%` }} />
-        </div>
-        <ol className="ae-loading-steps">
-          <li className={progress >= 10 ? "done" : "current"}>
-            <span />
-            <div>
-              <strong>Connexion validee</strong>
-              <small>Les tokens HubSpot sont stockes cote backend.</small>
-            </div>
-          </li>
-          <li className={progress >= 68 ? "done" : progress >= 10 ? "current" : "waiting"}>
-            <span />
-            <div>
-              <strong>CRM et leads</strong>
-              <small>Contacts, deals, companies et leads sont ecrits dans Supabase.</small>
-            </div>
-          </li>
-          <li className={progress >= 100 ? "done" : progress >= 68 ? "current" : "waiting"}>
-            <span />
-            <div>
-              <strong>Queue Jarvis</strong>
-              <small>La morning queue est rechargee avec la derniere data synchronisee.</small>
-            </div>
-          </li>
-        </ol>
       </main>
     );
   }
 
   if (isLoading && !data) {
     return (
-      <main className="ae-loading-screen">
-        <h1>Jarvis</h1>
+      <main className="jv-loading-screen" aria-busy="true" aria-live="polite">
+        <LoadingScreenBrand />
         <LoadingState detail="On recupere la queue, les deals et le statut HubSpot." label="Chargement des donnees" tone="inline" />
       </main>
     );

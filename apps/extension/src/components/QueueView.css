@@ -1,7 +1,9 @@
 @import "./styles/dashboard-analytics.css";
 @import "./styles/app-shell.css";
 @import "./styles/visual-theme.css";
+@import "./styles/sidebar.css";
+@import "./styles/tasks.css";
 @import "./styles/tasks-and-first-run.css";
 @import "./styles/pulse.css";
-@import "./styles/win-analysis-refresh.css";
+@import "./styles/win-analysis.css";
 @import "./styles/playbook.css";

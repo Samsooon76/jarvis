@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Jarvis — Motion preview (inspiré taap.it Radar)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #f4f3f0;
+      --surface: #ffffff;
+      --surface-muted: #f8f7f4;
+      --dot-bg: #eeede9;
+      --border: rgba(28, 25, 23, 0.08);
+      --text: #1c1917;
+      --muted: #57534e;
+      --faint: #a8a29e;
+
+      --terra: #d4714a;
+      --terra-deep: #b85a38;
+      --terra-soft: rgba(212, 113, 74, 0.14);
+      --terra-glow: rgba(212, 113, 74, 0.22);
+
+      --green: #2d8a5e;
+      --green-soft: rgba(45, 138, 94, 0.12);
+      --amber: #c47d1a;
+      --amber-soft: rgba(196, 125, 26, 0.12);
+      --red: #c4453a;
+      --red-soft: rgba(196, 69, 58, 0.12);
+
+      --ease-enter: cubic-bezier(0.42, 0, 0, 0.25);
+      --ease-spring: cubic-bezier(0.2, 1.18, 0.47, 1);
+      --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+
+      --font: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+    }
+
+    body {
+      font-family: var(--font);
+      font-size: 15px;
+      line-height: 1.55;
+      color: var(--text);
+      background: var(--bg);
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+
+    /* ── taap.it motion tokens (extracted) ── */
+    @keyframes enter-up {
+      from { opacity: 0; transform: translateY(32px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes fade-left {
+      from { opacity: 0; transform: translateX(-48px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+    @keyframes fade-right {
+      from { opacity: 0; transform: translateX(48px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+    @keyframes widget-appear {
+      from { opacity: 0; transform: scale(0.88); }
+      to   { opacity: 1; transform: scale(1); }
+    }
+    @keyframes shimmer {
+      0%   { transform: translateX(-120%); opacity: 0; }
+      20%  { opacity: 0.6; }
+      100% { transform: translateX(220%); opacity: 0; }
+    }
+    @keyframes ring-fill {
+      from { --score: 0deg; }
+      to   { --score: var(--target); }
+    }
+    @keyframes flow-pulse {
+      0%, 100% { opacity: 0.55; transform: scaleX(1); }
+      50%      { opacity: 1; transform: scaleX(1.02); }
+    }
+    @keyframes slide-hint {
+      0%, 100% { transform: translateX(0); }
+      50%      { transform: translateX(6px); }
+    }
+
+    .enter {
+      opacity: 0;
+      transform: translateY(32px);
+      transition: opacity 1s var(--ease-enter), transform 1s var(--ease-spring);
+    }
+    .enter.visible { opacity: 1; transform: translateY(0); }
+    .enter.d1 { transition-delay: 0.12s; }
+    .enter.d2 { transition-delay: 0.24s; }
+    .enter.d3 { transition-delay: 0.36s; }
+    .enter.d4 { transition-delay: 0.48s; }
+
+    /* ── Banner ── */
+    .banner {
+      position: sticky; top: 0; z-index: 50;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 24px;
+      background: rgba(28, 25, 23, 0.92);
+      backdrop-filter: blur(8px);
+      color: #fafaf9;
+      font-size: 13px;
+    }
+    .banner span { color: #a8a29e; }
+    .banner-hint {
+      display: flex; align-items: center; gap: 6px;
+      color: #d6d3d1; font-size: 12px;
+    }
+    .banner-hint svg { animation: slide-hint 1.8s ease infinite; }
+
+    /* ── Page ── */
+    .page { max-width: 1180px; margin: 0 auto; padding: 40px 24px 80px; }
+
+    .section-label {
+      display: inline-flex; align-items: center; gap: 7px;
+      margin-bottom: 18px;
+      font-size: 12px; font-weight: 600; color: var(--muted);
+    }
+    .section-label .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--terra);
+      box-shadow: 0 0 0 3px var(--terra-soft);
+    }
+
+    /* ══════════════════════════════════════
+       SECTION 1 — Score + métriques (img 1)
+    ══════════════════════════════════════ */
+    .hero-grid {
+      display: grid;
+      grid-template-columns: 1fr 1.15fr;
+      gap: 0;
+      min-height: 380px;
+      border-radius: 20px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      box-shadow: 0 20px 50px rgba(28, 25, 23, 0.08);
+      margin-bottom: 56px;
+    }
+
+    .hero-copy {
+      padding: 36px 32px;
+      background: var(--surface);
+      display: flex; flex-direction: column; justify-content: center;
+    }
+    .hero-copy h2 {
+      font-size: clamp(22px, 2.4vw, 30px);
+      font-weight: 650;
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+      margin-bottom: 14px;
+    }
+    .hero-copy p { color: var(--muted); font-size: 14px; margin-bottom: 10px; }
+    .hero-copy p:last-of-type { margin-bottom: 24px; }
+
+    .btn-dark {
+      position: relative;
+      display: inline-flex; align-items: center; gap: 8px;
+      align-self: flex-start;
+      height: 44px; padding: 0 20px;
+      border: none; border-radius: 999px;
+      background: #1c1917; color: #fff;
+      font: inherit; font-size: 14px; font-weight: 560;
+      cursor: pointer; overflow: hidden;
+      transition: transform 0.2s var(--ease-spring), box-shadow 0.2s;
+    }
+    .btn-dark:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(28, 25, 23, 0.2);
+    }
+    .btn-dark::after {
+      content: "";
+      position: absolute; inset: 0;
+      background: linear-gradient(105deg, transparent 30%, rgba(255,255,255,0.18) 50%, transparent 70%);
+      animation: shimmer 3.5s ease-in-out infinite;
+    }
+
+    .hero-score-zone {
+      position: relative;
+      padding: 36px 40px;
+      border-left: 1px solid var(--border);
+      background-color: var(--dot-bg);
+      background-image: radial-gradient(circle, rgba(28,25,23,0.07) 1px, transparent 1px);
+      background-size: 14px 14px;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+    }
+
+    .score-pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 5px 12px; margin-bottom: 20px;
+      border-radius: 999px;
+      background: var(--green-soft);
+      color: var(--green);
+      font-size: 12px; font-weight: 600;
+    }
+    .score-pill.terra {
+      background: var(--terra-soft);
+      color: var(--terra-deep);
+    }
+
+    .score-card {
+      width: min(100%, 300px);
+      padding: 32px 28px 24px;
+      border-radius: 18px;
+      background: var(--surface);
+      box-shadow: 0 12px 36px rgba(28, 25, 23, 0.08);
+      text-align: center;
+      transition: transform 0.35s var(--ease-spring);
+    }
+    .score-card:hover { transform: translateY(-4px) rotate(-0.5deg); }
+
+    .score-ring-wrap {
+      position: relative;
+      width: 120px; height: 120px;
+      margin: 0 auto 16px;
+    }
+    .score-ring {
+      width: 100%; height: 100%;
+      border-radius: 50%;
+      display: grid; place-items: center;
+      font-size: 36px; font-weight: 700;
+      color: #fff;
+      background:
+        radial-gradient(circle at center, var(--surface) 0 54%, transparent 55%),
+        conic-gradient(var(--green) var(--score, 0deg), #e8e6e1 0);
+      transition: background 1.2s var(--ease-spring);
+      box-shadow: inset 0 0 0 6px rgba(255,255,255,0.15);
+    }
+    .score-ring.terra-ring {
+      background:
+        radial-gradient(circle at center, var(--surface) 0 54%, transparent 55%),
+        conic-gradient(var(--terra) var(--score, 0deg), #ece9e3 0);
+      color: var(--text);
+      font-size: 32px;
+    }
+    .score-ring-label {
+      position: absolute; top: 8px; right: 8px;
+      font-size: 10px; font-weight: 700;
+      color: var(--faint);
+      background: var(--surface-muted);
+      padding: 2px 6px; border-radius: 6px;
+    }
+
+    .score-card h3 { font-size: 18px; font-weight: 650; margin-bottom: 6px; }
+    .score-card p { font-size: 13px; color: var(--muted); line-height: 1.45; margin-bottom: 14px; }
+    .score-legend {
+      display: flex; justify-content: center; gap: 14px;
+      font-size: 11px; color: var(--faint);
+    }
+    .score-legend span { display: inline-flex; align-items: center; gap: 5px; }
+    .score-legend i {
+      width: 8px; height: 8px; border-radius: 50%;
+    }
+
+    /* ══════════════════════════════════════
+       SECTION 2 — Conversions (img 2)
+    ══════════════════════════════════════ */
+    .conv-grid {
+      display: grid;
+      grid-template-columns: 1.15fr 1fr;
+      gap: 48px;
+      align-items: center;
+      margin-bottom: 56px;
+    }
+
+    .conv-demo {
+      padding: 28px;
+      border-radius: 20px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      box-shadow: 0 16px 40px rgba(28, 25, 23, 0.06);
+    }
+
+    .conv-kpis {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .conv-kpi {
+      padding: 18px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: var(--surface-muted);
+      cursor: pointer;
+      transition: transform 0.3s var(--ease-spring), background 0.2s, border-color 0.2s;
+    }
+    .conv-kpi:hover { transform: scale(1.02); }
+    .conv-kpi.selected {
+      border-color: rgba(45, 138, 94, 0.3);
+      background: var(--green-soft);
+    }
+    .conv-kpi span { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+    .conv-kpi strong { font-size: 30px; font-weight: 700; letter-spacing: -0.03em; }
+    .conv-kpi em {
+      display: inline-block; margin-top: 6px;
+      padding: 2px 8px; border-radius: 999px;
+      font-size: 11px; font-style: normal; font-weight: 600;
+      background: var(--green-soft); color: var(--green);
+    }
+
+    .conv-feed { position: relative; padding-top: 8px; }
+    .conv-feed::before {
+      content: "";
+      position: absolute; left: 24px; top: 0; bottom: 20px;
+      width: 2px; background: linear-gradient(180deg, var(--terra), transparent);
+      opacity: 0.35;
+    }
+
+    .session-card {
+      position: relative;
+      margin-left: 12px;
+      margin-bottom: 12px;
+      padding: 14px 16px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      box-shadow: 0 4px 14px rgba(28, 25, 23, 0.04);
+      transition: transform 0.35s var(--ease-spring), margin-left 0.35s var(--ease-spring), border-color 0.2s;
+    }
+    .session-card::before {
+      content: "";
+      position: absolute; left: -20px; top: 20px;
+      width: 10px; height: 10px; border-radius: 50%;
+      background: var(--surface);
+      border: 2px solid var(--terra);
+    }
+    .session-card.highlight {
+      border-color: rgba(45, 138, 94, 0.45);
+      margin-left: 0;
+      transform: translateX(4px);
+      box-shadow: 0 8px 24px rgba(45, 138, 94, 0.12);
+    }
+    .session-card.dim { opacity: 0.55; transform: scale(0.98); }
+
+    .session-head {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 10px;
+      font-size: 12px; color: var(--muted);
+    }
+    .session-head strong { color: var(--text); font-weight: 600; }
+    .session-row {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 13px; font-weight: 500;
+    }
+    .session-row .check { color: var(--green); margin-left: auto; }
+
+    .conv-copy h2 {
+      font-size: clamp(24px, 2.6vw, 34px);
+      font-weight: 650;
+      line-height: 1.12;
+      letter-spacing: -0.02em;
+      margin-bottom: 16px;
+    }
+    .conv-copy p { color: var(--muted); margin-bottom: 12px; font-size: 15px; }
+
+    /* Slide panel for conv section */
+    .slide-viewport {
+      position: relative;
+      overflow: hidden;
+      min-height: 200px;
+    }
+    .slide-track {
+      display: flex;
+      transition: transform 0.55s var(--ease-spring);
+    }
+    .slide-panel {
+      flex: 0 0 100%;
+      padding-right: 8px;
+    }
+
+    .conv-tabs {
+      display: flex; gap: 6px; margin-bottom: 16px;
+    }
+    .conv-tabs button {
+      padding: 8px 14px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--surface-muted);
+      font: inherit; font-size: 12px; font-weight: 560;
+      color: var(--muted);
+      cursor: pointer;
+      transition: all 0.25s var(--ease-spring);
+    }
+    .conv-tabs button.active {
+      background: #1c1917; color: #fff;
+      border-color: #1c1917;
+      transform: scale(1.04);
+    }
+
+    /* ══════════════════════════════════════
+       SECTION 3 — Funnel (img 3)
+    ══════════════════════════════════════ */
+    .funnel-wrap {
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      box-shadow: 0 20px 50px rgba(28, 25, 23, 0.07);
+      overflow: hidden;
+      margin-bottom: 40px;
+    }
+
+    .funnel-head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 20px 24px;
+      border-bottom: 1px solid var(--border);
+    }
+    .funnel-head h3 { font-size: 18px; font-weight: 650; }
+    .funnel-head span { font-size: 13px; color: var(--muted); }
+
+    .funnel-body {
+      display: grid;
+      grid-template-columns: 1fr 1.4fr;
+      min-height: 340px;
+    }
+
+    .funnel-list {
+      padding: 16px 20px;
+      border-right: 1px solid var(--border);
+      background: var(--surface-muted);
+    }
+    .funnel-list-item {
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      gap: 12px; align-items: center;
+      padding: 10px 12px;
+      border-radius: 10px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.25s var(--ease-spring);
+    }
+    .funnel-list-item:hover { background: rgba(255,255,255,0.7); transform: translateX(4px); }
+    .funnel-list-item.active { background: var(--surface); box-shadow: 0 4px 12px rgba(28,25,23,0.06); }
+    .funnel-list-item span { color: var(--muted); font-variant-numeric: tabular-nums; }
+    .funnel-list-item strong:last-child { color: var(--terra-deep); font-weight: 600; }
+
+    .funnel-viz {
+      position: relative;
+      padding: 24px;
+      background:
+        radial-gradient(circle, rgba(28,25,23,0.05) 1px, transparent 1px);
+      background-size: 12px 12px;
+      overflow: hidden;
+    }
+
+    .funnel-shape {
+      position: absolute;
+      left: 24px; top: 50%;
+      transform: translateY(-50%);
+      width: 42%;
+      height: 72%;
+      background: linear-gradient(135deg, rgba(212,113,74,0.25) 0%, rgba(212,113,74,0.55) 50%, rgba(184,90,56,0.7) 100%);
+      clip-path: polygon(0% 8%, 100% 0%, 100% 100%, 0% 92%);
+      border-radius: 8px;
+      animation: flow-pulse 3s ease-in-out infinite;
+      transition: clip-path 0.6s var(--ease-spring);
+    }
+
+    .funnel-stages {
+      position: relative; z-index: 1;
+      display: flex; align-items: stretch;
+      height: 100%; min-height: 280px;
+      padding-left: 38%;
+    }
+
+    .funnel-stage {
+      flex: 1;
+      display: flex; flex-direction: column; justify-content: flex-end;
+      padding: 0 6px 16px;
+      border-left: 1px dashed rgba(28,25,23,0.1);
+      cursor: pointer;
+      transition: background 0.25s;
+    }
+    .funnel-stage:hover { background: rgba(212,113,74,0.04); }
+    .funnel-stage.active { background: rgba(212,113,74,0.08); }
+
+    .funnel-drop {
+      align-self: center;
+      margin-bottom: auto;
+      margin-top: 40%;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: var(--terra-soft);
+      color: var(--terra-deep);
+      font-size: 11px; font-weight: 600;
+      opacity: 0;
+      transform: translateY(8px);
+      transition: opacity 0.3s, transform 0.35s var(--ease-spring);
+    }
+    .funnel-stage:hover .funnel-drop,
+    .funnel-stage.active .funnel-drop {
+      opacity: 1; transform: translateY(0);
+    }
+
+    .funnel-stage-label {
+      font-size: 11px; font-weight: 600;
+      color: var(--muted);
+      text-align: center;
+    }
+    .funnel-stage-count {
+      font-size: 10px; color: var(--faint);
+      text-align: center; margin-top: 2px;
+    }
+
+    .funnel-tooltip {
+      position: absolute;
+      z-index: 10;
+      width: 220px;
+      padding: 14px;
+      border-radius: 14px;
+      background: #1c1917;
+      color: #fafaf9;
+      font-size: 12px;
+      box-shadow: 0 16px 40px rgba(0,0,0,0.25);
+      pointer-events: none;
+      opacity: 0;
+      transform: translateX(20px) scale(0.95);
+      transition: opacity 0.25s, transform 0.35s var(--ease-spring);
+    }
+    .funnel-tooltip.visible {
+      opacity: 1;
+      transform: translateX(0) scale(1);
+    }
+    .funnel-tooltip strong { display: block; font-size: 13px; margin-bottom: 8px; }
+    .funnel-tooltip dl {
+      display: grid; grid-template-columns: 1fr auto; gap: 4px 12px;
+      color: #d6d3d1;
+    }
+    .funnel-tooltip dt { color: #a8a29e; }
+    .funnel-tooltip dd { font-weight: 600; color: #fff; text-align: right; }
+
+    .funnel-footer {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 14px 24px;
+      border-top: 1px solid var(--border);
+      background: var(--surface-muted);
+    }
+    .funnel-footer button {
+      padding: 8px 14px;
+      border: 1px dashed var(--border);
+      border-radius: 10px;
+      background: transparent;
+      font: inherit; font-size: 12px; font-weight: 560;
+      color: var(--muted);
+      cursor: pointer;
+      transition: border-color 0.2s, color 0.2s;
+    }
+    .funnel-footer button:hover { border-color: var(--terra); color: var(--terra-deep); }
+
+    @media (max-width: 960px) {
+      .hero-grid { grid-template-columns: 1fr; }
+      .hero-score-zone { border-left: 0; border-top: 1px solid var(--border); }
+      .conv-grid { grid-template-columns: 1fr; }
+      .funnel-body { grid-template-columns: 1fr; }
+      .funnel-list { border-right: 0; border-bottom: 1px solid var(--border); }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="banner">
+    <div><strong>Jarvis</strong> <span>· preview motion (inspiré taap.it Radar)</span></div>
+    <div class="banner-hint">
+      Clique / slide pour voir les animations
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+    </div>
+  </div>
+
+  <div class="page">
+
+    <!-- ─── SECTION 1 ─── -->
+    <div class="section-label enter"><span class="dot"></span> Score pipeline</div>
+    <div class="hero-grid enter d1">
+      <div class="hero-copy">
+        <h2>Quelle priorité vos deals ont-ils vraiment ?</h2>
+        <p>Jarvis analyse l'urgence réelle de chaque prospect — pas seulement le stage HubSpot.</p>
+        <p>Identifiez les deals qui nécessitent une action aujourd'hui, ceux en dérive, et ceux prêts à closer.</p>
+        <button class="btn-dark" type="button">Synchroniser HubSpot <span>→</span></button>
+      </div>
+
+      <div class="hero-score-zone">
+        <div class="score-pill terra">Score priorité pipeline</div>
+        <div class="score-card">
+          <div class="score-ring-wrap">
+            <div class="score-ring terra-ring" id="main-ring" style="--target: 320deg; --score: 0deg">87</div>
+            <span class="score-ring-label">IA</span>
+          </div>
+          <h3>Très bon</h3>
+          <p>Votre queue est bien priorisée. 8 prospects demandent une action immédiate.</p>
+          <div class="score-legend">
+            <span><i style="background:var(--red)"></i>0–49</span>
+            <span><i style="background:var(--amber)"></i>50–79</span>
+            <span><i style="background:var(--terra)"></i>80+</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── SECTION 2 ─── -->
+    <div class="section-label enter d2"><span class="dot"></span> Suivi des conversions</div>
+    <div class="conv-grid">
+      <div class="conv-demo enter d2">
+        <div class="conv-tabs" id="conv-tabs">
+          <button class="active" data-slide="0" type="button">Ventes</button>
+          <button data-slide="1" type="button">Revenus</button>
+          <button data-slide="2" type="button">Activité</button>
+        </div>
+
+        <div class="conv-kpis">
+          <div class="conv-kpi selected" data-kpi="sales">
+            <span>Ventes</span>
+            <strong data-count="227">0</strong>
+            <em>+10,4%</em>
+          </div>
+          <div class="conv-kpi" data-kpi="revenue">
+            <span>Revenus</span>
+            <strong data-count="18041" data-prefix="€">€0</strong>
+            <em>+10,4%</em>
+          </div>
+        </div>
+
+        <div class="slide-viewport">
+          <div class="slide-track" id="slide-track">
+            <div class="slide-panel">
+              <div class="conv-feed" id="feed-sales">
+                <div class="session-card highlight">
+                  <div class="session-head"><strong>Deal signé</strong><span>8:46</span></div>
+                  <div class="session-row">✓ Acme Corp — Renouvellement Q3 <span class="check">✓</span></div>
+                </div>
+                <div class="session-card">
+                  <div class="session-head"><strong>Call terminé</strong><span>8:32</span></div>
+                  <div class="session-row">📞 Globex — Discovery 45min</div>
+                </div>
+                <div class="session-card dim">
+                  <div class="session-head"><strong>Email envoyé</strong><span>8:15</span></div>
+                  <div class="session-row">✉️ Initech — Proposition pricing</div>
+                </div>
+              </div>
+            </div>
+            <div class="slide-panel">
+              <div class="conv-feed">
+                <div class="session-card highlight">
+                  <div class="session-head"><strong>€84k ajoutés</strong><span>Aujourd'hui</span></div>
+                  <div class="session-row">Pipeline +12% vs hier</div>
+                </div>
+                <div class="session-card">
+                  <div class="session-head"><strong>Forecast</strong><span>M-1</span></div>
+                  <div class="session-row">€1,2M commit · 68% précision</div>
+                </div>
+              </div>
+            </div>
+            <div class="slide-panel">
+              <div class="conv-feed">
+                <div class="session-card highlight">
+                  <div class="session-head"><strong>12 appels</strong><span>Cette semaine</span></div>
+                  <div class="session-row">Moyenne 38min · 4 analyses IA</div>
+                </div>
+                <div class="session-card">
+                  <div class="session-head"><strong>Coaching</strong><span>IA</span></div>
+                  <div class="session-row">2 axes d'amélioration détectés</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="conv-copy enter d3">
+        <h2>Qu'est-ce qui pousse les gens à signer ?</h2>
+        <p>Voyez quels prospects, quels appels et quelles actions mènent vraiment à la conversion — avec une attribution claire de la première interaction au deal signé.</p>
+        <p>Ainsi vous améliorez ce qui convertit, pas seulement ce qui remplit le pipeline.</p>
+      </div>
+    </div>
+
+    <!-- ─── SECTION 3 ─── -->
+    <div class="section-label enter d3"><span class="dot"></span> Pipeline funnel</div>
+    <div class="funnel-wrap enter d4">
+      <div class="funnel-head">
+        <h3>Pipeline · Funnel</h3>
+        <span id="funnel-rate">0,4% taux de closing · 7 derniers jours</span>
+      </div>
+      <div class="funnel-body">
+        <div class="funnel-list" id="funnel-list">
+          <div class="funnel-list-item active" data-stage="0" data-rate="27.3%">
+            <strong>Qualified</strong><span>108K</span><strong>27,3%</strong>
+          </div>
+          <div class="funnel-list-item" data-stage="1" data-rate="18.1%">
+            <strong>Discovery</strong><span>42K</span><strong>18,1%</strong>
+          </div>
+          <div class="funnel-list-item" data-stage="2" data-rate="12.4%">
+            <strong>Proposal</strong><span>18K</span><strong>12,4%</strong>
+          </div>
+          <div class="funnel-list-item" data-stage="3" data-rate="4.2%">
+            <strong>Negotiation</strong><span>4,2K</span><strong>4,2%</strong>
+          </div>
+          <div class="funnel-list-item" data-stage="4" data-rate="0.4%">
+            <strong>Closed won</strong><span>227</span><strong>0,4%</strong>
+          </div>
+        </div>
+        <div class="funnel-viz" id="funnel-viz">
+          <div class="funnel-shape" id="funnel-shape"></div>
+          <div class="funnel-stages" id="funnel-stages">
+            <div class="funnel-stage active" data-stage="0">
+              <span class="funnel-drop">−10,8%</span>
+              <span class="funnel-stage-label">Qualified</span>
+              <span class="funnel-stage-count">108K</span>
+            </div>
+            <div class="funnel-stage" data-stage="1">
+              <span class="funnel-drop">−22,4%</span>
+              <span class="funnel-stage-label">Discovery</span>
+              <span class="funnel-stage-count">42K</span>
+            </div>
+            <div class="funnel-stage" data-stage="2">
+              <span class="funnel-drop">−31,1%</span>
+              <span class="funnel-stage-label">Proposal</span>
+              <span class="funnel-stage-count">18K</span>
+            </div>
+            <div class="funnel-stage" data-stage="3">
+              <span class="funnel-drop">−48,6%</span>
+              <span class="funnel-stage-label">Negotiation</span>
+              <span class="funnel-stage-count">4,2K</span>
+            </div>
+            <div class="funnel-stage" data-stage="4">
+              <span class="funnel-drop">−94,6%</span>
+              <span class="funnel-stage-label">Closed won</span>
+              <span class="funnel-stage-count">227</span>
+            </div>
+          </div>
+          <div class="funnel-tooltip" id="funnel-tooltip">
+            <strong id="tt-title">Qualified</strong>
+            <dl>
+              <dt>Visiteurs</dt><dd id="tt-visitors">108K</dd>
+              <dt>Conversion</dt><dd id="tt-conv">27,3%</dd>
+              <dt>Depuis début</dt><dd id="tt-from">100%</dd>
+            </dl>
+          </div>
+        </div>
+      </div>
+      <div class="funnel-footer">
+        <span style="font-size:12px;color:var(--muted)">5 stages · données HubSpot live</span>
+        <button type="button">+ Ajouter un stage</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /* ── Entrance animations (taap.it animate-enter pattern) ── */
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(e => {
+        if (e.isIntersecting) {
+          e.target.classList.add('visible');
+          observer.unobserve(e.target);
+        }
+      });
+    }, { threshold: 0.15 });
+    document.querySelectorAll('.enter').forEach(el => observer.observe(el));
+
+    /* ── Score ring fill on load ── */
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        document.getElementById('main-ring').style.setProperty('--score', '320deg');
+      }, 400);
+    });
+
+    /* ── Count-up numbers ── */
+    function countUp(el, duration = 900) {
+      const target = parseFloat(el.dataset.count);
+      const suffix = el.dataset.suffix || '';
+      const prefix = el.dataset.prefix || '';
+      const isFloat = String(el.dataset.count).includes('.');
+      const start = performance.now();
+      function tick(now) {
+        const p = Math.min((now - start) / duration, 1);
+        const eased = 1 - Math.pow(1 - p, 3);
+        const val = target * eased;
+        if (prefix === '€') {
+          el.textContent = '€' + Math.round(val).toLocaleString('fr-FR');
+        } else if (isFloat) {
+          el.textContent = val.toFixed(1) + suffix;
+        } else {
+          el.textContent = Math.round(val) + suffix;
+        }
+        if (p < 1) requestAnimationFrame(tick);
+      }
+      requestAnimationFrame(tick);
+    }
+
+    /* ── Conv tabs: horizontal slide (taap.it fade-left/right feel) ── */
+    const slideTrack = document.getElementById('slide-track');
+    const convTabs = document.querySelectorAll('#conv-tabs button');
+    let currentSlide = 0;
+
+    convTabs.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const next = parseInt(btn.dataset.slide, 10);
+        if (next === currentSlide) return;
+        const dir = next > currentSlide ? 1 : -1;
+
+        slideTrack.style.transition = 'none';
+        slideTrack.style.transform = `translateX(${-currentSlide * 100 + dir * -8}%)`;
+        void slideTrack.offsetWidth;
+
+        slideTrack.style.transition = 'transform 0.55s cubic-bezier(0.2, 1.18, 0.47, 1)';
+        slideTrack.style.transform = `translateX(${-next * 100}%)`;
+
+        convTabs.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentSlide = next;
+
+        /* animate session cards in new panel */
+        const panel = slideTrack.children[next];
+        panel.querySelectorAll('.session-card').forEach((card, i) => {
+          card.style.opacity = '0';
+          card.style.transform = `translateX(${dir * 30}px)`;
+          setTimeout(() => {
+            card.style.transition = 'opacity 0.4s ease, transform 0.45s cubic-bezier(0.2,1.18,0.47,1)';
+            card.style.opacity = '1';
+            card.style.transform = 'translateX(0)';
+          }, 80 + i * 80);
+        });
+      });
+    });
+
+    /* ── KPI cards select ── */
+    document.querySelectorAll('.conv-kpi').forEach(kpi => {
+      kpi.addEventListener('click', () => {
+        document.querySelectorAll('.conv-kpi').forEach(k => k.classList.remove('selected'));
+        kpi.classList.add('selected');
+      });
+    });
+
+    /* Count up KPIs when conv section visible */
+    const convObs = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting) {
+        document.querySelectorAll('.conv-kpi [data-count]').forEach(countUp);
+        convObs.disconnect();
+      }
+    }, { threshold: 0.3 });
+    convObs.observe(document.querySelector('.conv-demo'));
+
+    /* ── Funnel: click stage → shape morphs + tooltip slides in ── */
+    const funnelShape = document.getElementById('funnel-shape');
+    const funnelTooltip = document.getElementById('funnel-tooltip');
+    const clipPaths = [
+      'polygon(0% 8%, 100% 0%, 100% 100%, 0% 92%)',
+      'polygon(0% 12%, 85% 4%, 85% 96%, 0% 88%)',
+      'polygon(0% 16%, 68% 8%, 68% 92%, 0% 84%)',
+      'polygon(0% 20%, 52% 12%, 52% 88%, 0% 80%)',
+      'polygon(0% 24%, 36% 18%, 36% 82%, 0% 76%)',
+    ];
+    const stageData = [
+      { title: 'Qualified', visitors: '108K', conv: '27,3%', from: '100%' },
+      { title: 'Discovery', visitors: '42K', conv: '18,1%', from: '38,9%' },
+      { title: 'Proposal', visitors: '18K', conv: '12,4%', from: '16,7%' },
+      { title: 'Negotiation', visitors: '4,2K', conv: '4,2%', from: '3,9%' },
+      { title: 'Closed won', visitors: '227', conv: '0,4%', from: '0,2%' },
+    ];
+
+    function activateStage(idx, x, y) {
+      document.querySelectorAll('.funnel-list-item, .funnel-stage').forEach(el => {
+        el.classList.toggle('active', parseInt(el.dataset.stage, 10) === idx);
+      });
+      funnelShape.style.clipPath = clipPaths[idx];
+      document.getElementById('funnel-rate').textContent = stageData[idx].conv + ' conversion · stage actif';
+
+      const d = stageData[idx];
+      document.getElementById('tt-title').textContent = d.title;
+      document.getElementById('tt-visitors').textContent = d.visitors;
+      document.getElementById('tt-conv').textContent = d.conv;
+      document.getElementById('tt-from').textContent = d.from;
+
+      if (x != null) {
+        funnelTooltip.style.left = Math.min(x + 12, 280) + 'px';
+        funnelTooltip.style.top = Math.max(y - 40, 20) + 'px';
+      }
+      funnelTooltip.classList.add('visible');
+    }
+
+    document.querySelectorAll('.funnel-list-item, .funnel-stage').forEach(el => {
+      el.addEventListener('click', (e) => {
+        const idx = parseInt(el.dataset.stage, 10);
+        const rect = el.getBoundingClientRect();
+        const parent = document.getElementById('funnel-viz').getBoundingClientRect();
+        activateStage(idx, rect.left - parent.left + rect.width / 2, rect.top - parent.top);
+      });
+      el.addEventListener('mouseenter', (e) => {
+        const idx = parseInt(el.dataset.stage, 10);
+        const rect = el.getBoundingClientRect();
+        const parent = document.getElementById('funnel-viz').getBoundingClientRect();
+        activateStage(idx, rect.left - parent.left + rect.width / 2, rect.top - parent.top);
+      });
+    });
+
+    document.getElementById('funnel-viz').addEventListener('mouseleave', () => {
+      funnelTooltip.classList.remove('visible');
+    });
+
+    /* Session cards stagger on load */
+    setTimeout(() => {
+      document.querySelectorAll('#feed-sales .session-card').forEach((card, i) => {
+        card.style.opacity = '0';
+        card.style.transform = 'translateY(16px)';
+        setTimeout(() => {
+          card.style.transition = 'opacity 0.5s ease, transform 0.55s cubic-bezier(0.2,1.18,0.47,1)';
+          card.style.opacity = '1';
+          card.style.transform = 'translateY(0)';
+        }, 600 + i * 120);
+      });
+    }, 300);
+  </script>
+</body>
+</html>

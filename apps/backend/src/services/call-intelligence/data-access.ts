@@ -54,6 +54,13 @@ const asCallAnalysis = (value: Json): CallAiAnalysis => value as unknown as Call
 // Duree minimale (secondes) pour considerer un appel comme reellement connecte.
 const CONNECTED_MIN_DURATION_SECONDS = 45;
 
+// En dessous de ce seuil (tentatives, messages vocaux), l'appel n'apparait ni
+// dans la liste, ni dans les insights, ni dans le backfill d'analyses.
+const MIN_DISPLAY_DURATION_SECONDS = 30;
+
+const keepDisplayableGroups = (groups: CallGroup[]): CallGroup[] =>
+  groups.filter((group) => (group.durationSeconds ?? 0) >= MIN_DISPLAY_DURATION_SECONDS);
+
 const PERIOD_DAYS: Record<Exclude<CallPeriod, "all">, number> = {
   "7d": 7,
   "30d": 30,
@@ -136,9 +143,82 @@ type CallNameContext = {
   ownerName: string | null;
 };
 
+const GENERIC_CALL_TITLE_PATTERN = /^appel\s+(sortant|entrant)/i;
+
+const extractContactNameFromCallActivity = (title: string | null, body: string | null): string | null => {
+  const plainBody = stripMarkup(body) ?? "";
+  const plainTitle = stripMarkup(title) ?? "";
+
+  const recipientMatch = plainBody.match(/destinataire de l'appel:\s*([^(\n]+)/i);
+  if (recipientMatch?.[1]?.trim()) {
+    return recipientMatch[1].trim();
+  }
+
+  const titledMatch = plainTitle.match(/^appel avec\s+(.+)$/i);
+  if (titledMatch?.[1]?.trim()) {
+    return titledMatch[1].trim();
+  }
+
+  if (plainTitle && !GENERIC_CALL_TITLE_PATTERN.test(plainTitle)) {
+    return plainTitle;
+  }
+
+  return null;
+};
+
+const loadCallActivityLabels = async (
+  orgId: string,
+  calls: Array<Pick<CallRow, "id" | "external_call_id">>,
+): Promise<Map<string, { title: string | null; body: string | null }>> => {
+  const hubspotActivityIdByCallId = new Map(
+    calls
+      .filter(
+        (call): call is Pick<CallRow, "id" | "external_call_id"> & { external_call_id: string } =>
+          Boolean(call.external_call_id?.startsWith("hubspot:")),
+      )
+      .map((call) => [call.id, call.external_call_id.slice("hubspot:".length)]),
+  );
+  const activityIds = Array.from(new Set(hubspotActivityIdByCallId.values())).filter(Boolean);
+
+  if (activityIds.length === 0) {
+    return new Map();
+  }
+
+  const labelsByCallId = new Map<string, { title: string | null; body: string | null }>();
+
+  for (const chunk of chunkValues(activityIds, 100)) {
+    const { data, error } = await getSupabaseAdmin()
+      .from("hubspot_activities")
+      .select("hubspot_activity_id, title, body")
+      .eq("org_id", orgId)
+      .eq("activity_type", "call")
+      .in("hubspot_activity_id", chunk);
+
+    if (error) {
+      throw new Error(`Impossible de charger les libelles d'activite call: ${error.message}`);
+    }
+
+    const labelByActivityId = new Map(
+      ((data ?? []) as Array<{ hubspot_activity_id: string; title: string | null; body: string | null }>).map(
+        (row) => [row.hubspot_activity_id, { title: row.title, body: row.body }],
+      ),
+    );
+
+    for (const [callId, activityId] of hubspotActivityIdByCallId.entries()) {
+      const label = labelByActivityId.get(activityId);
+
+      if (label) {
+        labelsByCallId.set(callId, label);
+      }
+    }
+  }
+
+  return labelsByCallId;
+};
+
 const loadCallNameContexts = async (
   orgId: string,
-  calls: Array<Pick<CallRow, "id" | "prospect_id" | "user_id">>,
+  calls: Array<Pick<CallRow, "id" | "prospect_id" | "user_id" | "external_call_id">>,
 ): Promise<Map<string, CallNameContext>> => {
   const supabase = getSupabaseAdmin();
   const prospectIds = Array.from(
@@ -148,13 +228,14 @@ const loadCallNameContexts = async (
     new Set(calls.map((call) => call.user_id).filter((value): value is string => Boolean(value))),
   );
 
-  const [prospectsResult, usersResult] = await Promise.all([
+  const [prospectsResult, usersResult, activityLabels] = await Promise.all([
     prospectIds.length > 0
       ? supabase.from("prospects").select("id, name, company").eq("org_id", orgId).in("id", prospectIds)
       : Promise.resolve({ data: [], error: null }),
     userIds.length > 0
       ? supabase.from("users").select("id, name").eq("org_id", orgId).in("id", userIds)
       : Promise.resolve({ data: [], error: null }),
+    loadCallActivityLabels(orgId, calls),
   ]);
 
   const prospectById = new Map(
@@ -169,17 +250,257 @@ const loadCallNameContexts = async (
   return new Map(
     calls.map((call) => {
       const prospect = call.prospect_id ? prospectById.get(call.prospect_id) : null;
+      const activityLabel = activityLabels.get(call.id);
+      const activityContactName = activityLabel
+        ? extractContactNameFromCallActivity(activityLabel.title, activityLabel.body)
+        : null;
 
       return [
         call.id,
         {
-          contactName: prospect?.name?.trim() || null,
+          contactName: prospect?.name?.trim() || activityContactName,
           companyName: prospect?.company?.trim() || null,
           ownerName: (call.user_id ? userNameById.get(call.user_id) : null)?.trim() || null,
         },
       ];
     }),
   );
+};
+
+const loadHubSpotOwnerIdByCallId = async (
+  orgId: string,
+  calls: Array<Pick<CallRow, "id" | "external_call_id">>,
+): Promise<Map<string, string>> => {
+  const hubspotActivityIdByCallId = new Map(
+    calls
+      .filter(
+        (call): call is Pick<CallRow, "id" | "external_call_id"> & { external_call_id: string } =>
+          Boolean(call.external_call_id?.startsWith("hubspot:")),
+      )
+      .map((call) => [call.id, call.external_call_id.slice("hubspot:".length)]),
+  );
+  const activityIds = Array.from(new Set(hubspotActivityIdByCallId.values())).filter(Boolean);
+
+  if (activityIds.length === 0) {
+    return new Map();
+  }
+
+  const { data, error } = await getSupabaseAdmin()
+    .from("hubspot_activities")
+    .select("hubspot_activity_id, hubspot_owner_id")
+    .eq("org_id", orgId)
+    .eq("activity_type", "call")
+    .in("hubspot_activity_id", activityIds);
+
+  if (error) {
+    throw new Error(`Impossible de charger les owners HubSpot des calls: ${error.message}`);
+  }
+
+  const ownerIdByActivityId = new Map(
+    ((data ?? []) as Array<{ hubspot_activity_id: string; hubspot_owner_id: string | null }>)
+      .filter((row) => row.hubspot_owner_id)
+      .map((row) => [row.hubspot_activity_id, row.hubspot_owner_id as string]),
+  );
+
+  return new Map(
+    [...hubspotActivityIdByCallId.entries()]
+      .map(([callId, activityId]) => {
+        const hubspotOwnerId = ownerIdByActivityId.get(activityId);
+
+        return hubspotOwnerId ? ([callId, hubspotOwnerId] as const) : null;
+      })
+      .filter((entry): entry is readonly [string, string] => entry !== null),
+  );
+};
+
+const loadUserIdByHubSpotOwnerId = async (orgId: string, hubspotOwnerIds: string[]): Promise<Map<string, string>> => {
+  const uniqueOwnerIds = Array.from(new Set(hubspotOwnerIds.filter(Boolean)));
+
+  if (uniqueOwnerIds.length === 0) {
+    return new Map();
+  }
+
+  const { data, error } = await getSupabaseAdmin()
+    .from("users")
+    .select("id, hubspot_owner_id")
+    .eq("org_id", orgId)
+    .in("hubspot_owner_id", uniqueOwnerIds);
+
+  if (error) {
+    throw new Error(`Impossible de charger les users lies aux owners HubSpot: ${error.message}`);
+  }
+
+  return new Map(
+    ((data ?? []) as Array<{ id: string; hubspot_owner_id: string | null }>)
+      .filter((user) => user.hubspot_owner_id)
+      .map((user) => [user.hubspot_owner_id as string, user.id]),
+  );
+};
+
+// Les calls historiques n'ont souvent pas user_id: on le derive de l'owner HubSpot
+// de l'activite call avant filtrage manager et affichage du commercial.
+const enrichCallsWithResolvedUserIds = async (orgId: string, calls: CallRow[]): Promise<CallRow[]> => {
+  const callsMissingUserId = calls.filter((call) => !call.user_id);
+
+  if (callsMissingUserId.length === 0) {
+    return calls;
+  }
+
+  const hubspotOwnerIdByCallId = await loadHubSpotOwnerIdByCallId(orgId, callsMissingUserId);
+  const userIdByHubSpotOwnerId = await loadUserIdByHubSpotOwnerId(
+    orgId,
+    Array.from(new Set(hubspotOwnerIdByCallId.values())),
+  );
+
+  return calls.map((call) => {
+    if (call.user_id) {
+      return call;
+    }
+
+    const hubspotOwnerId = hubspotOwnerIdByCallId.get(call.id);
+    const resolvedUserId = hubspotOwnerId ? userIdByHubSpotOwnerId.get(hubspotOwnerId) ?? null : null;
+
+    return resolvedUserId ? { ...call, user_id: resolvedUserId } : call;
+  });
+};
+
+const filterCallsByUserId = (calls: CallRow[], userId: string): CallRow[] =>
+  calls.filter((call) => call.user_id === userId);
+
+const CALL_LIST_SELECT =
+  "id, org_id, user_id, prospect_id, external_call_id, direction, status, duration_seconds, started_at, transcript, ai_summary, created_at";
+
+const SCOPED_CALL_FETCH_LIMIT = 1000;
+
+const chunkValues = <T>(values: T[], size: number): T[][] => {
+  const chunks: T[][] = [];
+
+  for (let index = 0; index < values.length; index += size) {
+    chunks.push(values.slice(index, index + size));
+  }
+
+  return chunks;
+};
+
+const sortCallsByStartedAtDesc = (calls: CallRow[]): CallRow[] =>
+  [...calls].sort(
+    (left, right) => new Date(right.started_at ?? 0).getTime() - new Date(left.started_at ?? 0).getTime(),
+  );
+
+const loadHubSpotOwnerIdForUser = async (orgId: string, userId: string): Promise<string | null> => {
+  const { data, error } = await getSupabaseAdmin()
+    .from("users")
+    .select("hubspot_owner_id")
+    .eq("org_id", orgId)
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Impossible de charger l'owner HubSpot du commercial: ${error.message}`);
+  }
+
+  return (data as { hubspot_owner_id: string | null } | null)?.hubspot_owner_id ?? null;
+};
+
+// Charge tous les calls d'un commercial sur la periode, y compris ceux dont user_id
+// est encore null en base mais rattaches a son hubspot_owner_id.
+const loadCallsForScopedUser = async (
+  orgId: string,
+  userId: string,
+  options: {
+    dateFrom: string | null;
+    direction?: CallDirection | "all";
+    maxRows?: number;
+  },
+): Promise<CallRow[]> => {
+  const supabase = getSupabaseAdmin();
+  const maxRows = options.maxRows ?? SCOPED_CALL_FETCH_LIMIT;
+  const callsById = new Map<string, CallRow>();
+
+  const appendCalls = (rows: CallRow[]): void => {
+    for (const row of rows) {
+      callsById.set(row.id, row);
+    }
+  };
+
+  let directQuery = supabase
+    .from("calls")
+    .select(CALL_LIST_SELECT)
+    .eq("org_id", orgId)
+    .eq("user_id", userId)
+    .order("started_at", { ascending: false, nullsFirst: false })
+    .limit(maxRows);
+
+  if (options.dateFrom) {
+    directQuery = directQuery.gte("started_at", options.dateFrom);
+  }
+
+  if (options.direction && options.direction !== "all") {
+    directQuery = directQuery.eq("direction", options.direction);
+  }
+
+  const { data: directCalls, error: directError } = await directQuery;
+
+  if (directError) {
+    throw new Error(`Impossible de charger les calls du commercial: ${directError.message}`);
+  }
+
+  appendCalls((directCalls ?? []) as CallRow[]);
+
+  const hubspotOwnerId = await loadHubSpotOwnerIdForUser(orgId, userId);
+
+  if (!hubspotOwnerId) {
+    return sortCallsByStartedAtDesc([...callsById.values()]);
+  }
+
+  let activityQuery = supabase
+    .from("hubspot_activities")
+    .select("hubspot_activity_id")
+    .eq("org_id", orgId)
+    .eq("activity_type", "call")
+    .eq("hubspot_owner_id", hubspotOwnerId)
+    .order("occurred_at", { ascending: false })
+    .limit(maxRows);
+
+  if (options.dateFrom) {
+    activityQuery = activityQuery.gte("occurred_at", options.dateFrom);
+  }
+
+  const { data: activities, error: activityError } = await activityQuery;
+
+  if (activityError) {
+    throw new Error(`Impossible de charger les activites call du commercial: ${activityError.message}`);
+  }
+
+  const externalCallIds = Array.from(
+    new Set(
+      ((activities ?? []) as Array<{ hubspot_activity_id: string }>).map(
+        (activity) => `hubspot:${activity.hubspot_activity_id}`,
+      ),
+    ),
+  );
+
+  for (const chunk of chunkValues(externalCallIds, 100)) {
+    let callQuery = supabase.from("calls").select(CALL_LIST_SELECT).eq("org_id", orgId).in("external_call_id", chunk);
+
+    if (options.dateFrom) {
+      callQuery = callQuery.gte("started_at", options.dateFrom);
+    }
+
+    if (options.direction && options.direction !== "all") {
+      callQuery = callQuery.eq("direction", options.direction);
+    }
+
+    const { data: linkedCalls, error: linkedError } = await callQuery;
+
+    if (linkedError) {
+      throw new Error(`Impossible de charger les calls lies au commercial: ${linkedError.message}`);
+    }
+
+    appendCalls((linkedCalls ?? []) as CallRow[]);
+  }
+
+  return sortCallsByStartedAtDesc([...callsById.values()]);
 };
 
 const ensureOrgScope = (auth: AuthContext, orgId: string): void => {
@@ -539,54 +860,65 @@ export const listCallAnalyses = async (
   ensureOrgScope(auth, orgId);
 
   const limit = query.limit ?? 50;
-  // On surcharge la fenetre de lecture: chaque appel reel peut avoir 2 entrees (Onoff + Modjo).
-  let callQuery = getSupabaseAdmin()
-    .from("calls")
-    .select(
-      "id, org_id, user_id, prospect_id, external_call_id, direction, status, duration_seconds, started_at, transcript, ai_summary, created_at",
-    )
-    .eq("org_id", orgId)
-    .order("started_at", { ascending: false, nullsFirst: false })
-    .limit(Math.min(400, limit * 2));
-
   const dateFrom = periodToDateFrom(query.period);
+  const scopedUserId =
+    auth.role === "sales" && auth.appUserId ? auth.appUserId : query.userId?.trim() || null;
 
-  if (dateFrom) {
-    callQuery = callQuery.gte("started_at", dateFrom);
+  let calls: CallRow[];
+
+  if (scopedUserId) {
+    calls = await loadCallsForScopedUser(orgId, scopedUserId, {
+      dateFrom,
+      direction: query.direction,
+      maxRows: SCOPED_CALL_FETCH_LIMIT,
+    });
+    calls = await enrichCallsWithResolvedUserIds(orgId, calls);
+    calls = filterCallsByUserId(calls, scopedUserId);
+  } else {
+    // Vue equipe: on aligne la fenetre de lecture sur les insights (1000 lignes max).
+    let callQuery = getSupabaseAdmin()
+      .from("calls")
+      .select(CALL_LIST_SELECT)
+      .eq("org_id", orgId)
+      .order("started_at", { ascending: false, nullsFirst: false })
+      .limit(SCOPED_CALL_FETCH_LIMIT);
+
+    if (dateFrom) {
+      callQuery = callQuery.gte("started_at", dateFrom);
+    }
+
+    if (query.direction && query.direction !== "all") {
+      callQuery = callQuery.eq("direction", query.direction);
+    }
+
+    const { data: callsData, error: callsError } = await callQuery;
+
+    if (callsError) {
+      throw new Error(`Impossible de lister les calls: ${callsError.message}`);
+    }
+
+    calls = await enrichCallsWithResolvedUserIds(orgId, (callsData ?? []) as CallRow[]);
   }
-
-  if (query.direction && query.direction !== "all") {
-    callQuery = callQuery.eq("direction", query.direction);
-  }
-
-  if (auth.role === "sales" && auth.appUserId) {
-    callQuery = callQuery.eq("user_id", auth.appUserId);
-  } else if (query.userId) {
-    callQuery = callQuery.eq("user_id", query.userId);
-  }
-
-  const { data: callsData, error: callsError } = await callQuery;
-
-  if (callsError) {
-    throw new Error(`Impossible de lister les calls: ${callsError.message}`);
-  }
-
-  const calls = (callsData ?? []) as CallRow[];
 
   if (calls.length === 0) {
     return [];
   }
 
   const callById = new Map(calls.map((call) => [call.id, call]));
-  const groups = (await loadDedupedCallGroups(orgId, calls)).slice(0, limit);
+  const groups = keepDisplayableGroups(await loadDedupedCallGroups(orgId, calls)).slice(0, limit);
+  const allMemberRows = groups.flatMap((group) =>
+    group.memberIds.map((id) => callById.get(id)).filter((row): row is CallRow => Boolean(row)),
+  );
   // Le contexte de noms se calcule sur le membre le mieux renseigne du groupe.
   const nameLookupRows = groups.map((group) => {
     const members = group.memberIds.map((id) => callById.get(id)).filter((row): row is CallRow => Boolean(row));
+    const canonical = callById.get(group.canonicalId) ?? members[0] ?? null;
 
     return {
       id: group.canonicalId,
       prospect_id: members.find((member) => member.prospect_id)?.prospect_id ?? null,
       user_id: members.find((member) => member.user_id)?.user_id ?? null,
+      external_call_id: canonical?.external_call_id ?? null,
     };
   });
   const allMemberIds = groups.flatMap((group) => group.memberIds);
@@ -594,14 +926,40 @@ export const listCallAnalyses = async (
     groups.flatMap((group) => group.memberIds.map((memberId) => [memberId, group.canonicalId] as const)),
   );
 
-  const [nameContexts, analysisResult] = await Promise.all([
+  const [nameContexts, activityLabels, analysisResult] = await Promise.all([
     loadCallNameContexts(orgId, nameLookupRows),
+    loadCallActivityLabels(orgId, allMemberRows),
     getSupabaseAdmin()
       .from("call_ai_analyses")
       .select("*")
       .in("call_id", allMemberIds)
       .order("generated_at", { ascending: false }),
   ]);
+
+  const resolvedNameContexts = new Map(
+    groups.map((group) => {
+      const base = nameContexts.get(group.canonicalId) ?? {
+        contactName: null,
+        companyName: null,
+        ownerName: null,
+      };
+
+      if (base.contactName) {
+        return [group.canonicalId, base] as const;
+      }
+
+      for (const memberId of group.memberIds) {
+        const label = activityLabels.get(memberId);
+        const contactName = label ? extractContactNameFromCallActivity(label.title, label.body) : null;
+
+        if (contactName) {
+          return [group.canonicalId, { ...base, contactName }] as const;
+        }
+      }
+
+      return [group.canonicalId, base] as const;
+    }),
+  );
 
   if (analysisResult.error) {
     throw new Error(`Impossible de lister les analyses calls: ${analysisResult.error.message}`);
@@ -629,7 +987,7 @@ export const listCallAnalyses = async (
       return mapListItem(
         canonical,
         latestByCanonicalId.get(group.canonicalId) ?? null,
-        nameContexts.get(group.canonicalId) ?? null,
+        resolvedNameContexts.get(group.canonicalId) ?? null,
         group,
       );
     })
@@ -660,6 +1018,7 @@ export const getCallInsights = async (
   auth: AuthContext,
   orgIdInput?: string | null,
   period?: CallPeriod,
+  userId?: string | null,
 ): Promise<CallInsightSummary> => {
   const orgId = orgIdInput ?? auth.orgId;
 
@@ -669,36 +1028,40 @@ export const getCallInsights = async (
 
   ensureOrgScope(auth, orgId);
 
-  // Volumes d'appels sur la periode, independants des analyses (la table calls fait foi).
-  let callsQuery = getSupabaseAdmin()
-    .from("calls")
-    .select(
-      "id, org_id, user_id, prospect_id, external_call_id, direction, status, duration_seconds, started_at, transcript, ai_summary, created_at",
-    )
-    .eq("org_id", orgId)
-    .order("started_at", { ascending: false, nullsFirst: false })
-    .limit(1000);
-
   const dateFrom = periodToDateFrom(period);
+  const scopedUserId = auth.role === "sales" && auth.appUserId ? auth.appUserId : userId?.trim() || null;
+  let callRows: CallRow[];
 
-  if (dateFrom) {
-    callsQuery = callsQuery.gte("started_at", dateFrom);
+  if (scopedUserId) {
+    callRows = await loadCallsForScopedUser(orgId, scopedUserId, {
+      dateFrom,
+      maxRows: SCOPED_CALL_FETCH_LIMIT,
+    });
+    callRows = await enrichCallsWithResolvedUserIds(orgId, callRows);
+    callRows = filterCallsByUserId(callRows, scopedUserId);
+  } else {
+    let callsQuery = getSupabaseAdmin()
+      .from("calls")
+      .select(CALL_LIST_SELECT)
+      .eq("org_id", orgId)
+      .order("started_at", { ascending: false, nullsFirst: false })
+      .limit(SCOPED_CALL_FETCH_LIMIT);
+
+    if (dateFrom) {
+      callsQuery = callsQuery.gte("started_at", dateFrom);
+    }
+
+    const { data: callsData, error: callsError } = await callsQuery;
+
+    if (callsError) {
+      throw new Error(`Impossible de charger les volumes calls: ${callsError.message}`);
+    }
+
+    callRows = await enrichCallsWithResolvedUserIds(orgId, (callsData ?? []) as CallRow[]);
   }
-
-  if (auth.role === "sales" && auth.appUserId) {
-    callsQuery = callsQuery.eq("user_id", auth.appUserId);
-  }
-
-  const { data: callsData, error: callsError } = await callsQuery;
-
-  if (callsError) {
-    throw new Error(`Impossible de charger les volumes calls: ${callsError.message}`);
-  }
-
-  const callRows = (callsData ?? []) as CallRow[];
   // Comptage par appel reel: les doublons Onoff/Modjo comptent pour un seul appel.
   // Le canonique n'importe pas ici, donc richesse 0 (pas de chargement des bodies).
-  const groups = groupDuplicateCalls(callRows.map((row) => toDedupeCall(row, 0)));
+  const groups = keepDisplayableGroups(groupDuplicateCalls(callRows.map((row) => toDedupeCall(row, 0))));
   const canonicalIdByMemberId = new Map(
     groups.flatMap((group) => group.memberIds.map((memberId) => [memberId, group.canonicalId] as const)),
   );
@@ -716,6 +1079,8 @@ export const getCallInsights = async (
 
   if (auth.role === "sales" && auth.appUserId) {
     query = query.eq("user_id", auth.appUserId);
+  } else if (userId) {
+    query = query.eq("user_id", userId);
   }
 
   const { data, error } = await query;
@@ -834,27 +1199,65 @@ export const listBackfillCallIds = async (auth: AuthContext, orgId: string, limi
     .order("started_at", { ascending: false, nullsFirst: false })
     .limit(Math.min(1000, limit * 2));
 
-  if (auth.role === "sales" && auth.appUserId) {
-    query = query.eq("user_id", auth.appUserId);
-  }
-
   const { data, error } = await query;
 
   if (error) {
     throw new Error(`Impossible de charger les calls a analyser: ${error.message}`);
   }
 
-  const groups = await loadDedupedCallGroups(orgId, (data ?? []) as CallRow[]);
+  let calls = await enrichCallsWithResolvedUserIds(orgId, (data ?? []) as CallRow[]);
+
+  if (auth.role === "sales" && auth.appUserId) {
+    calls = filterCallsByUserId(calls, auth.appUserId);
+  }
+
+  const groups = keepDisplayableGroups(await loadDedupedCallGroups(orgId, calls));
 
   return groups.slice(0, limit).map((group) => group.canonicalId);
 };
 
 const loadSourceNameContext = async (source: CallSource): Promise<CallNameContext> => {
-  const contexts = await loadCallNameContexts(source.orgId, [
-    { id: source.callId, prospect_id: source.prospectId, user_id: source.userId },
+  const { data, error } = await getSupabaseAdmin()
+    .from("calls")
+    .select("id, external_call_id")
+    .in("id", source.memberCallIds);
+
+  if (error) {
+    throw new Error(`Impossible de charger les metadonnees du call: ${error.message}`);
+  }
+
+  const memberRows = (data ?? []) as Array<Pick<CallRow, "id" | "external_call_id">>;
+  const [contexts, activityLabels] = await Promise.all([
+    loadCallNameContexts(source.orgId, [
+      {
+        id: source.callId,
+        prospect_id: source.prospectId,
+        user_id: source.userId,
+        external_call_id:
+          memberRows.find((row) => row.id === source.callId)?.external_call_id ??
+          memberRows.find((row) => row.external_call_id)?.external_call_id ??
+          null,
+      },
+    ]),
+    loadCallActivityLabels(source.orgId, memberRows),
   ]);
 
-  return contexts.get(source.callId) ?? { contactName: null, companyName: null, ownerName: null };
+  const base = contexts.get(source.callId) ?? { contactName: null, companyName: null, ownerName: null };
+
+  if (base.contactName) {
+    return base;
+  }
+
+  for (const member of memberRows) {
+    const label = activityLabels.get(member.id);
+    const contactName = label ? extractContactNameFromCallActivity(label.title, label.body) : null;
+
+    if (contactName) {
+      return { ...base, contactName };
+    }
+  }
+
+  return base;
 };
 
 const mapAnalysisDetail = (

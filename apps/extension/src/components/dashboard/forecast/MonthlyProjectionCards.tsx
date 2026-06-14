@@ -6,29 +6,31 @@ type MonthlyProjectionCardsProps = {
 };
 
 export const MonthlyProjectionCards = ({ months }: MonthlyProjectionCardsProps) => (
-  <section className="ae-forecast-months" aria-label="Detail par mois">
+  <section aria-label="Détail par mois" className="jv-month-grid">
     {months.map((month) => {
       const toFill = month.objectiveAmount === null ? null : Math.max(0, month.objectiveAmount - month.landingAmount);
 
       return (
-        <article className="ae-forecast-month-card" key={month.month}>
+        <article className="jv-month-card" key={month.month}>
           <header>
             <strong>{month.label}</strong>
             <span>{month.dealCount} deal(s)</span>
           </header>
           <dl>
             <div>
-              <dt>Deja signe</dt>
+              <dt>Déjà signé</dt>
               <dd>
                 {formatAmount(month.signedAmount)}
-                <small>{month.signedDealCount} deal(s) a 100%</small>
+                <small>{month.signedDealCount} deal(s) à 100%</small>
               </dd>
             </div>
             <div>
-              <dt>Reste a closer (pondere)</dt>
+              <dt>Reste à closer (pondéré)</dt>
               <dd>
                 {formatAmount(month.openForecastAmount)}
-                <small>{month.openDealCount} ouvert(s) | {formatAmount(month.openPipelineAmount)} brut</small>
+                <small>
+                  {month.openDealCount} ouvert(s) · {formatAmount(month.openPipelineAmount)} brut
+                </small>
               </dd>
             </div>
             <div className="highlight">
@@ -37,13 +39,13 @@ export const MonthlyProjectionCards = ({ months }: MonthlyProjectionCardsProps) 
             </div>
             <div>
               <dt>Objectif</dt>
-              <dd>{month.objectiveAmount === null ? "--" : formatAmount(month.objectiveAmount)}</dd>
+              <dd>{month.objectiveAmount === null ? "—" : formatAmount(month.objectiveAmount)}</dd>
             </div>
             <div className={toFill === null ? "" : toFill > 0 ? "negative" : "positive"}>
               <dt>Gap objectif</dt>
               <dd>
-                {toFill === null ? "--" : toFill > 0 ? formatAmount(toFill) : "Couvert"}
-                {toFill !== null ? <small>{toFill > 0 ? "a combler" : "objectif atteint"}</small> : null}
+                {toFill === null ? "—" : toFill > 0 ? formatAmount(toFill) : "Couvert"}
+                {toFill !== null ? <small>{toFill > 0 ? "à combler" : "objectif atteint"}</small> : null}
               </dd>
             </div>
           </dl>

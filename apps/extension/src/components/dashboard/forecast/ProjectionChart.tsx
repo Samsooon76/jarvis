@@ -143,16 +143,22 @@ export const ProjectionChart = ({
   }, [points]);
 
   return (
-    <div className="ae-forecast-chart-card">
-      <div className="ae-forecast-chart-legend" aria-label="Legende">
-        <span><i className="commit" /> Commit</span>
-        <span><i className="forecast" /> Atterrissage</span>
-        <span><i className="objective" /> Objectif</span>
+    <div className="jv-chart-card">
+      <div aria-label="Légende" className="jv-chart-legend">
+        <span>
+          <i className="commit" /> Commit
+        </span>
+        <span>
+          <i className="forecast" /> Atterrissage
+        </span>
+        <span>
+          <i className="objective" /> Objectif
+        </span>
       </div>
       <div
-        className="ae-forecast-canvas-stage"
-        role="img"
         aria-label={`Projection d'atterrissage. Objectif ${objectiveLabel}.`}
+        className="jv-chart-stage"
+        role="img"
       >
         <canvas ref={canvasRef} />
       </div>

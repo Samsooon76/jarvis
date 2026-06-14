@@ -117,11 +117,6 @@ const getCloseLostDefaultDateRange = (): { dateFrom: string; dateTo: string } =>
 };
 
 const workspaceCopy = {
-  closeLostAnalysis: {
-    eyebrow: "Revenue workspace",
-    title: "Close Lost Analysis",
-    subtitle: "Comprendre pourquoi les deals sont perdus et prioriser les leviers d'amelioration.",
-  },
   calls: {
     eyebrow: "Call intelligence",
     title: "Appels",
@@ -131,11 +126,6 @@ const workspaceCopy = {
     eyebrow: "Deal workspace",
     title: "Deal analysis",
     subtitle: "Analyse approfondie d'un deal, separee de la queue operationnelle.",
-  },
-  winAnalysis: {
-    eyebrow: "Revenue workspace",
-    title: "Win Analysis",
-    subtitle: "Comprendre pourquoi les deals sont gagnes et repliquer les patterns de victoire.",
   },
   coaching: {
     eyebrow: "Manager workspace",
@@ -147,35 +137,15 @@ const workspaceCopy = {
     title: "Digest",
     subtitle: "Ce qui a bouge sur votre perimetre: mouvements cles, deals a risque et coups de main a donner.",
   },
-  forecast: {
-    eyebrow: "Revenue workspace",
-    title: "Forecast IA",
-    subtitle: "Analyser les deals ouverts HubSpot et anticiper l'atterrissage de fin de periode.",
-  },
-  leads: {
-    eyebrow: "AE workspace",
-    title: "Leads",
-    subtitle: "Liste des leads ouverts pour l'AE selectionne.",
-  },
   overview: {
     eyebrow: "AE workspace",
     title: "Pipeline inbox",
     subtitle: "La queue priorisee pour savoir qui relancer, pourquoi, et avec quel angle.",
   },
-  playbook: {
-    eyebrow: "Revenue workspace",
-    title: "Playbook",
-    subtitle: "Le referentiel des plays de vente de l'equipe: declencheurs, reponses recommandees et preuves.",
-  },
   settings: {
     eyebrow: "Admin workspace",
     title: "Parametres",
     subtitle: "Configuration locale du copilot et des providers d'analyse.",
-  },
-  stats: {
-    eyebrow: "Manager workspace",
-    title: "Statistiques",
-    subtitle: "Lecture pipeline, forecast et repartition par stage.",
   },
   tasks: {
     eyebrow: "AE workspace",
@@ -283,7 +253,10 @@ export const QueueView = ({
     orgId,
     prospects,
   });
-  const pageCopy = workspaceCopy[dashboard.activeView];
+  const pageCopy =
+    dashboard.activeView in workspaceCopy
+      ? workspaceCopy[dashboard.activeView as keyof typeof workspaceCopy]
+      : undefined;
   const plannedTasksByProspectId = useMemo(
     () => buildPlannedTasksByProspectId(prospects, hubspotTasks),
     [hubspotTasks, prospects],
@@ -398,26 +371,38 @@ export const QueueView = ({
         activeView={dashboard.activeView}
         onSignOut={onSignOut}
         onViewChange={dashboard.setActiveView}
+        pulseSlot={canViewTeamForecast ? <PulseNotificationCenter /> : undefined}
         showDigest={canViewTeamForecast}
       />
       <section className="ae-main-panel">
-        {dashboard.activeView !== "tasks" ? (
-          <>
-            <HubSpotHeader
-              eyebrow={pageCopy.eyebrow}
-              generatedAt={generatedAt}
-              hubspotPortalId={hubspotPortalId}
-              integrationStatusClassName={dashboard.integrationStatusClassName}
-              integrationStatusLabel={dashboard.integrationStatusLabel}
-              isConnected={isConnected}
-              isRefreshing={isRefreshing}
-              pulseSlot={canViewTeamForecast ? <PulseNotificationCenter /> : undefined}
-              subtitle={pageCopy.subtitle}
-              title={pageCopy.title}
-            />
+        {dashboard.activeView !== "tasks" &&
+        dashboard.activeView !== "calls" &&
+        dashboard.activeView !== "overview" &&
+        dashboard.activeView !== "digest" &&
+        dashboard.activeView !== "coaching" &&
+        dashboard.activeView !== "leads" &&
+        dashboard.activeView !== "closeLostAnalysis" &&
+        dashboard.activeView !== "winAnalysis" &&
+        dashboard.activeView !== "forecast" &&
+        dashboard.activeView !== "playbook" &&
+        dashboard.activeView !== "settings" &&
+        dashboard.activeView !== "stats" &&
+        pageCopy ? (
+          <HubSpotHeader
+            eyebrow={pageCopy.eyebrow}
+            generatedAt={generatedAt}
+            hubspotPortalId={hubspotPortalId}
+            integrationStatusClassName={dashboard.integrationStatusClassName}
+            integrationStatusLabel={dashboard.integrationStatusLabel}
+            isConnected={isConnected}
+            isRefreshing={isRefreshing}
+            subtitle={pageCopy.subtitle}
+            title={pageCopy.title}
+          />
+        ) : null}
 
-            <AdminFeedback error={dashboard.adminError} message={dashboard.adminMessage} />
-          </>
+        {dashboard.activeView !== "tasks" ? (
+          <AdminFeedback error={dashboard.adminError} message={dashboard.adminMessage} />
         ) : null}
 
         <Suspense fallback={<WorkspaceFallback />}>
@@ -501,6 +486,7 @@ export const QueueView = ({
             <CallsView
               canViewTeamInsights={canViewTeamForecast}
               orgId={orgId}
+              owners={owners}
               role={canViewTeamForecast ? "manager" : "sales"}
             />
           ) : null}
@@ -570,12 +556,12 @@ export const QueueView = ({
           <OverviewView
             activeBucket={dashboard.activeBucket}
             activeProspect={dashboard.activeProspect}
-            averageProbability={dashboard.averageProbability}
+            baseFilteredProspects={dashboard.baseFilteredProspects}
             bucketCounts={dashboard.bucketCounts}
             filteredProspects={dashboard.filteredProspects}
             filters={dashboard.filters}
             hubspotDealCount={hubspotDealCount}
-            orgId={orgId}
+            isConnected={isConnected}
             isLoadingLiveDeals={dashboard.isLoadingLiveDeals}
             lastUpdates={lastUpdates}
             onActiveBucketChange={dashboard.setActiveBucket}
@@ -592,9 +578,11 @@ export const QueueView = ({
             onSearchTermChange={dashboard.setSearchTerm}
             onStageFilterChange={dashboard.setStageFilter}
             onStatusFilterChange={dashboard.setStatusFilter}
+            onSyncHubSpot={dashboard.handleSyncHubSpot}
+            orgId={orgId}
             plannedTasksByProspectId={plannedTasksByProspectId}
             prospects={prospects}
-            totalPipeline={dashboard.totalPipeline}
+            syncLoading={dashboard.syncLoading}
           />
         ) : null}
       </section>

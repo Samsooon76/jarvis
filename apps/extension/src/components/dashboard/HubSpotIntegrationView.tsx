@@ -1,3 +1,4 @@
+import { Plug, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import type { HubSpotOwnerOption, HubSpotSyncJobStatus } from "../../services/api";
 import { formatDateTime } from "../../utils/dashboard/formatters";
@@ -23,6 +24,13 @@ type HubSpotIntegrationViewProps = {
   variant?: "page" | "embedded";
 };
 
+const SectionLabel = ({ children }: { children: string }) => (
+  <span className="jv-section-label">
+    <Plug aria-hidden="true" className="jv-section-icon" size={13} strokeWidth={1.5} />
+    {children}
+  </span>
+);
+
 export const HubSpotIntegrationView = ({
   disconnectLoading,
   generatedAt,
@@ -47,7 +55,10 @@ export const HubSpotIntegrationView = ({
   const visibleLogs = syncJob?.logs.slice(-8) ?? [];
 
   return (
-    <section className={variant === "embedded" ? "ae-hubspot-settings" : "ae-view-panel"} aria-label="Integration HubSpot">
+    <section
+      className={variant === "embedded" ? "jv-settings-content" : "ae-view-panel"}
+      aria-label="Integration HubSpot"
+    >
       {variant === "page" ? (
         <div className="ae-view-title">
           <p className="ae-eyebrow">Integrations</p>
@@ -55,40 +66,57 @@ export const HubSpotIntegrationView = ({
         </div>
       ) : null}
 
-      <div className="ae-integration-grid">
-        <article className="ae-admin-panel ae-integration-card">
-          <span>Connexion Jarvis / HubSpot</span>
-          <strong className={`ae-integration-status ${integrationStatusClassName}`}>
+      <div className="jv-hubspot-grid">
+        <article className="jv-theme-block jv-hubspot-connect">
+          <SectionLabel>Connexion Jarvis / HubSpot</SectionLabel>
+          <strong className={`jv-integration-status ${integrationStatusClassName}`}>
             <span aria-hidden="true" />
             {integrationStatusLabel}
           </strong>
-          <div className="ae-admin-actions">
-            <button disabled={!onConnectHubSpot} onClick={onConnectHubSpot} type="button">
+          <div className="jv-settings-actions">
+            <button className="jv-btn-primary" disabled={!onConnectHubSpot} onClick={onConnectHubSpot} type="button">
               {isConnected ? "Reconnecter" : "Connecter"}
             </button>
-            <button disabled={!isConnected || !onSyncHubSpot || syncLoading || isRefreshing} onClick={onSyncHubSpot} type="button">
-              {syncLoading ? "Sync..." : "Sync Supabase"}
+            <button
+              className="jv-btn-ghost"
+              disabled={!isConnected || !onSyncHubSpot || syncLoading || isRefreshing}
+              onClick={onSyncHubSpot}
+              type="button"
+            >
+              {syncLoading ? (
+                <>
+                  <RefreshCw aria-hidden="true" className="jv-spin" size={14} strokeWidth={1.5} />
+                  Sync...
+                </>
+              ) : (
+                "Sync Supabase"
+              )}
             </button>
-            <button disabled={!isConnected || disconnectLoading} onClick={onDisconnectHubSpot} type="button">
+            <button
+              className="jv-btn-ghost is-danger"
+              disabled={!isConnected || disconnectLoading}
+              onClick={onDisconnectHubSpot}
+              type="button"
+            >
               {disconnectLoading ? "Deconnexion..." : "Deconnecter"}
             </button>
           </div>
           {syncJob ? (
-            <div className="ae-sync-progress" aria-live="polite">
-              <div className="ae-sync-progress-head">
+            <div className="jv-sync-progress" aria-live="polite">
+              <div className="jv-sync-progress-head">
                 <span>{syncJob.currentStep}</span>
                 <strong>{syncJob.progress}%</strong>
               </div>
-              <div className="ae-sync-progress-track">
+              <div className="jv-sync-progress-track">
                 <div style={{ width: `${syncJob.progress}%` }} />
               </div>
-              <button className="ae-sync-log-toggle" onClick={() => setLogsOpen((current) => !current)} type="button">
+              <button className="jv-sync-log-toggle" onClick={() => setLogsOpen((current) => !current)} type="button">
                 {logsOpen ? "Masquer les logs" : "Voir les logs"}
               </button>
               {logsOpen ? (
-                <ol className="ae-sync-logs">
+                <ol className="jv-sync-logs">
                   {visibleLogs.map((log) => (
-                    <li className={`ae-sync-log ${log.level}`} key={`${log.at}-${log.message}`}>
+                    <li className={`jv-sync-log ${log.level}`} key={`${log.at}-${log.message}`}>
                       <time>{formatDateTime(log.at)}</time>
                       <span>{log.message}</span>
                     </li>
@@ -99,9 +127,10 @@ export const HubSpotIntegrationView = ({
           ) : null}
         </article>
 
-        <article className="ae-sync">
-          <label htmlFor="hubspot-owner">HubSpot owner</label>
+        <article className="jv-settings-stat">
+          <span>HubSpot owner</span>
           <select
+            className="jv-select"
             disabled={owners.length === 0}
             id="hubspot-owner"
             onChange={(event) => onOwnerChange?.(event.target.value)}
@@ -116,17 +145,17 @@ export const HubSpotIntegrationView = ({
           </select>
         </article>
 
-        <article className="ae-sync">
+        <article className="jv-settings-stat">
           <span>Portal</span>
-          <strong>{hubspotPortalId ?? "--"}</strong>
+          <strong>{hubspotPortalId ?? "—"}</strong>
         </article>
-        <article className="ae-sync">
+        <article className="jv-settings-stat">
           <span>Prospects / deals</span>
-          <strong>{hubspotDealCount ?? "--"}</strong>
+          <strong>{hubspotDealCount ?? "—"}</strong>
         </article>
-        <article className="ae-sync">
-          <span>{isRefreshing ? "Loading owner" : "Last sync"}</span>
-          <strong>{generatedAt ? formatDateTime(generatedAt) : "Pending"}</strong>
+        <article className="jv-settings-stat">
+          <span>{isRefreshing ? "Chargement owner" : "Derniere sync"}</span>
+          <strong>{generatedAt ? formatDateTime(generatedAt) : "En attente"}</strong>
         </article>
       </div>
     </section>

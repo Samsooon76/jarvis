@@ -61,11 +61,12 @@ export const useQueue = (
   hubspotOwnerId: string | null = DEFAULT_HUBSPOT_OWNER_ID,
   refreshKey = 0,
 ): UseQueueState => {
-  const [data, setData] = useState<HubSpotQueueData | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const initialCachedQueue = orgId.trim() ? readCachedQueue(orgId, hubspotOwnerId) : null;
+  const [data, setData] = useState<HubSpotQueueData | null>(initialCachedQueue);
+  const [isLoading, setIsLoading] = useState(initialCachedQueue === null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const hasLoadedOnceRef = useRef(false);
+  const hasLoadedOnceRef = useRef(initialCachedQueue !== null);
 
   useEffect(() => {
     let isCancelled = false;
@@ -82,13 +83,6 @@ export const useQueue = (
       }
 
       try {
-        const cachedQueue = readCachedQueue(orgId, hubspotOwnerId);
-        if (cachedQueue && !hasLoadedOnceRef.current) {
-          setData(cachedQueue);
-          setIsLoading(false);
-          setIsRefreshing(true);
-          hasLoadedOnceRef.current = true;
-        }
         const isInitialLoad = !hasLoadedOnceRef.current;
 
         setIsLoading(isInitialLoad);

@@ -1,11 +1,22 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { QueueProspect } from "@jarvis/shared";
 import {
+  AlertTriangle,
+  HandHelping,
+  History,
+  Newspaper,
+  RefreshCw,
+  Sparkles,
+  Star,
+  type LucideIcon,
+} from "lucide-react";
+import {
   fetchManagerDigest,
   type ManagerDigest,
   type ManagerDigestPeriod,
 } from "../../services/api";
 import { LoadingState } from "./LoadingState";
+import "../styles/digest.css";
 
 type DigestViewProps = {
   prospects: QueueProspect[];
@@ -34,6 +45,12 @@ const CONFIDENCE_LABELS: Record<string, string> = {
   high: "Haute",
   medium: "Moyenne",
   low: "Faible",
+};
+
+const CONFIDENCE_SCORES: Record<string, number> = {
+  high: 85,
+  medium: 55,
+  low: 25,
 };
 
 const formatDate = (value: string): string =>
@@ -67,6 +84,13 @@ const toDigestMovementViewModel = (movement: string): DigestMovementViewModel =>
     detail: formatDigestMovementDetail(detailPart || movement),
   };
 };
+
+const SectionLabel = ({ children, icon: Icon }: { children: string; icon: LucideIcon }) => (
+  <span className="jv-section-label">
+    <Icon aria-hidden="true" className="jv-section-icon" size={13} strokeWidth={1.5} />
+    {children}
+  </span>
+);
 
 export const DigestView = ({ prospects, onOpenDealAnalysis }: DigestViewProps) => {
   const [period, setPeriod] = useState<ManagerDigestPeriod>("daily");
@@ -129,7 +153,7 @@ export const DigestView = ({ prospects, onOpenDealAnalysis }: DigestViewProps) =
     }
   };
 
-  const renderDealButton = (dealId: string | null, dealName: string) => {
+  const renderDealTitle = (dealId: string | null, dealName: string) => {
     const prospectId = dealId ? prospectIdByDealId.get(dealId) : undefined;
 
     if (!prospectId) {
@@ -137,7 +161,7 @@ export const DigestView = ({ prospects, onOpenDealAnalysis }: DigestViewProps) =
     }
 
     return (
-      <button className="ae-forecast-link" onClick={() => openDeal(dealId)} type="button">
+      <button className="jv-deal-link" onClick={() => openDeal(dealId)} type="button">
         <strong>{dealName}</strong>
       </button>
     );
@@ -145,18 +169,43 @@ export const DigestView = ({ prospects, onOpenDealAnalysis }: DigestViewProps) =
 
   const riskDealCount = digest?.digest.atRiskDeals.length ?? 0;
   const assistDealCount = digest?.digest.assistDeals.length ?? 0;
-  const actionDealCount = riskDealCount + assistDealCount;
+  const confidenceScore = CONFIDENCE_SCORES[digest?.digest.confidence ?? "medium"] ?? 55;
+
+  const stats = [
+    {
+      caption: "sur la periode",
+      label: "Mouvements CRM",
+      value: String(digest?.movementCount ?? 0),
+    },
+    {
+      caption: "a surveiller",
+      label: "Deals a risque",
+      value: String(riskDealCount),
+    },
+    {
+      caption: "interventions utiles",
+      label: "Coups de main",
+      value: String(assistDealCount),
+    },
+  ] as const;
+
+  const periodCaption = digest
+    ? `Digest du ${formatDate(digest.dateFrom)}${digest.dateFrom === digest.dateTo ? "" : ` au ${formatDate(digest.dateTo)}`} · genere le ${formatDateTime(digest.generatedAt)}`
+    : null;
 
   return (
-    <section className="ae-view-panel ae-digest-page" aria-label="Digest manager">
-      <div className="ae-forecast-header">
-        <span className="ae-forecast-last-update">
-          {digest
-            ? `Digest du ${formatDate(digest.dateFrom)}${digest.dateFrom === digest.dateTo ? "" : ` au ${formatDate(digest.dateTo)}`} - genere le ${formatDateTime(digest.generatedAt)}`
-            : "Digest manager"}
-        </span>
-        <div className="ae-forecast-header-meta">
-          <span className="ae-forecast-period-toggle">
+    <div className="jv-digest-page" aria-label="Digest manager">
+      <header className="jv-page-header">
+        <Newspaper aria-hidden="true" className="jv-page-icon" size={18} strokeWidth={1.5} />
+        <h1>
+          Digest
+          <span className="jv-page-kicker">manager</span>
+        </h1>
+      </header>
+
+      <div className="jv-toolbar">
+        <div className="jv-toolbar-filters">
+          <div className="jv-filter-pills" role="group" aria-label="Periode digest">
             {PERIOD_OPTIONS.map((option) => (
               <button
                 className={period === option.id ? "active" : ""}
@@ -167,14 +216,23 @@ export const DigestView = ({ prospects, onOpenDealAnalysis }: DigestViewProps) =
                 {option.label}
               </button>
             ))}
-          </span>
-          <button className="ae-forecast-link" onClick={() => loadDigest(period, true)} type="button">
+          </div>
+        </div>
+        <div className="jv-toolbar-actions">
+          {periodCaption ? <span className="jv-toolbar-meta">{periodCaption}</span> : null}
+          <button
+            className="jv-btn-ghost"
+            disabled={isLoading}
+            onClick={() => loadDigest(period, true)}
+            type="button"
+          >
+            <RefreshCw aria-hidden="true" className={isLoading ? "jv-spin" : undefined} size={15} strokeWidth={1.5} />
             Actualiser
           </button>
         </div>
       </div>
 
-      {error ? <p className="ae-admin-feedback error">{error}</p> : null}
+      {error ? <p className="jv-banner jv-banner-error">{error}</p> : null}
 
       {isLoading && !digest ? (
         <LoadingState detail="On agrege les mouvements, risques et coups de main." label="Generation du digest" />
@@ -182,105 +240,97 @@ export const DigestView = ({ prospects, onOpenDealAnalysis }: DigestViewProps) =
 
       {digest ? (
         <>
-          <article className="ae-digest-hero">
-            <div className="ae-digest-hero-label">
-              <span>Brief manager</span>
-              <strong>{period === "daily" ? "Aujourd'hui" : "7 derniers jours"}</strong>
+          <section className="jv-score-banner" aria-label="Brief manager">
+            <div
+              className="jv-score-ring"
+              style={{ background: `conic-gradient(#d4714a ${confidenceScore * 3.6}deg, #ece9e3 0)` }}
+            >
+              <span>{confidenceScore}</span>
             </div>
-            <div className="ae-digest-hero-copy">
-              <h3>{digest.digest.headline}</h3>
+            <div className="jv-score-copy">
+              <strong>{digest.digest.headline}</strong>
               <p>{digest.digest.teamPulse}</p>
               <small>
                 Confiance {CONFIDENCE_LABELS[digest.digest.confidence] ?? digest.digest.confidence}
-                {digest.stale ? " - base sur la derniere synthese forecast connue" : ""}
+                {digest.stale ? " · base sur la derniere synthese forecast connue" : ""}
               </small>
             </div>
-          </article>
-
-          <section className="ae-digest-metrics" aria-label="Synthese digest">
-            <div>
-              <span>Mouvements CRM</span>
-              <strong>{digest.movementCount}</strong>
-              <small>sur la periode</small>
-            </div>
-            <div>
-              <span>Deals a risque</span>
-              <strong>{riskDealCount}</strong>
-              <small>a surveiller</small>
-            </div>
-            <div>
-              <span>Coups de main</span>
-              <strong>{assistDealCount}</strong>
-              <small>interventions utiles</small>
-            </div>
+            <span className="jv-score-badge">
+              <Sparkles size={11} strokeWidth={1.5} />
+              IA
+            </span>
           </section>
 
-          <section className="ae-digest-action-grid">
-            <article className="ae-forecast-panel ae-digest-action-panel risk">
-              <div className="ae-panel-heading">
-                <div>
-                  <span className="ae-digest-chip">Risque</span>
-                  <h4>Deals a risque</h4>
-                </div>
-                <small>Top {riskDealCount} de la periode</small>
+          <section className="jv-stat-strip cols-3" aria-label="Synthese digest">
+            {stats.map((stat, index) => (
+              <div className="jv-stat" key={stat.label} style={{ animationDelay: `${index * 60}ms` }}>
+                <span className="jv-stat-label">{stat.label}</span>
+                <span className="jv-stat-value">{stat.value}</span>
+                {stat.caption ? <small className="jv-stat-caption">{stat.caption}</small> : null}
               </div>
-              <div className="ae-digest-card-list">
+            ))}
+          </section>
+
+          <section className="jv-themes-row" aria-label="Actions manager">
+            <div className="jv-theme-block risk">
+              <header className="jv-theme-head">
+                <SectionLabel icon={AlertTriangle}>Deals a risque</SectionLabel>
+                <small>Top {riskDealCount}</small>
+              </header>
+              <div className="jv-digest-deals">
                 {digest.digest.atRiskDeals.length === 0 ? (
-                  <p className="ae-empty">Aucun deal a risque identifie.</p>
+                  <p className="jv-theme-empty">Aucun deal a risque identifie.</p>
                 ) : (
                   digest.digest.atRiskDeals.map((deal) => (
-                    <div className="ae-digest-deal-card" key={deal.dealId}>
-                      {renderDealButton(deal.dealId, deal.dealName)}
+                    <div className="jv-digest-deal-card" key={deal.dealId}>
+                      {renderDealTitle(deal.dealId, deal.dealName)}
                       <p>{deal.reason}</p>
-                      <small>Action suggeree: {deal.suggestedAction}</small>
+                      <small>Action suggeree : {deal.suggestedAction}</small>
                     </div>
                   ))
                 )}
               </div>
-            </article>
+            </div>
 
-            <article className="ae-forecast-panel ae-digest-action-panel assist">
-              <div className="ae-panel-heading">
-                <div>
-                  <span className="ae-digest-chip">Aide</span>
-                  <h4>Coup de main</h4>
-                </div>
+            <div className="jv-theme-block assist">
+              <header className="jv-theme-head">
+                <SectionLabel icon={HandHelping}>Coup de main</SectionLabel>
                 <small>Deals ou intervenir aide le plus</small>
-              </div>
-              <div className="ae-digest-card-list">
+              </header>
+              <div className="jv-digest-deals">
                 {digest.digest.assistDeals.length === 0 ? (
-                  <p className="ae-empty">Aucun deal a pousser identifie.</p>
+                  <p className="jv-theme-empty">Aucun deal a pousser identifie.</p>
                 ) : (
                   digest.digest.assistDeals.map((deal) => (
-                    <div className="ae-digest-deal-card" key={deal.dealId}>
-                      {renderDealButton(deal.dealId, deal.dealName)}
+                    <div className="jv-digest-deal-card" key={deal.dealId}>
+                      {renderDealTitle(deal.dealId, deal.dealName)}
                       <p>{deal.whyHelp}</p>
-                      <small>Coaching: {deal.coachingHint}</small>
+                      <small>Coaching : {deal.coachingHint}</small>
                     </div>
                   ))
                 )}
               </div>
-            </article>
+            </div>
           </section>
 
           {digest.digest.highlights.length > 0 ? (
-            <article className="ae-forecast-panel ae-digest-highlights">
-              <div className="ae-panel-heading">
-                <div>
-                  <h4>Faits marquants</h4>
-                  <small>{digest.digest.highlights.length} signal{digest.digest.highlights.length > 1 ? "s" : ""} a lire</small>
-                </div>
-              </div>
-              <div className="ae-digest-highlight-grid">
+            <section className="jv-theme-block" aria-label="Faits marquants">
+              <header className="jv-theme-head">
+                <SectionLabel icon={Star}>Faits marquants</SectionLabel>
+                <small>
+                  {digest.digest.highlights.length} signal{digest.digest.highlights.length > 1 ? "s" : ""} a lire
+                </small>
+              </header>
+              <div className="jv-highlight-grid">
                 {digest.digest.highlights.map((highlight, index) => (
-                  <div className={`ae-digest-highlight ${highlight.type}`} key={`${highlight.type}-${index}`}>
+                  <div className={`jv-highlight-item ${highlight.type}`} key={`${highlight.type}-${index}`}>
                     <span>{HIGHLIGHT_LABELS[highlight.type] ?? highlight.type}</span>
                     <p>
                       {highlight.text}
                       {highlight.dealId && prospectIdByDealId.has(highlight.dealId) ? (
                         <>
                           {" "}
-                          <button className="ae-forecast-link" onClick={() => openDeal(highlight.dealId)} type="button">
+                          <button className="jv-text-link" onClick={() => openDeal(highlight.dealId)} type="button">
                             Voir le deal
                           </button>
                         </>
@@ -289,53 +339,58 @@ export const DigestView = ({ prospects, onOpenDealAnalysis }: DigestViewProps) =
                   </div>
                 ))}
               </div>
-            </article>
+            </section>
           ) : null}
 
-          <article className="ae-forecast-panel ae-digest-movements">
-            <div className="ae-panel-heading">
-              <div>
-                <h4>Mouvements CRM</h4>
-                <small>Changements HubSpot detectes sur la periode</small>
+          <section className="jv-list-shell" aria-label="Mouvements CRM">
+            <header className="jv-list-head">
+              <SectionLabel icon={History}>Mouvements CRM</SectionLabel>
+              <div className="jv-list-head-actions">
+                <span className="jv-list-count">
+                  {digest.movements.length} mouvement{digest.movements.length > 1 ? "s" : ""}
+                </span>
+                <button
+                  className="jv-btn-ghost compact"
+                  onClick={() => setMovementsOpen((isOpen) => !isOpen)}
+                  type="button"
+                >
+                  {movementsOpen ? "Masquer" : "Voir les details"}
+                </button>
               </div>
-              <span className="ae-digest-action-count">{actionDealCount} action{actionDealCount > 1 ? "s" : ""}</span>
-              <button className="ae-forecast-link" onClick={() => setMovementsOpen((isOpen) => !isOpen)} type="button">
-                {movementsOpen ? "Masquer" : `Voir les details (${digest.movements.length})`}
-              </button>
-            </div>
-            {movementsOpen ? (
-              digest.movements.length === 0 ? (
-                <p className="ae-empty">Aucun mouvement sur la periode.</p>
-              ) : (
-                <ul className="ae-digest-movement-list">
-                  {digest.movements.map((movement) => {
+            </header>
+            <div className="jv-list-body">
+              {movementsOpen ? (
+                digest.movements.length === 0 ? (
+                  <p className="jv-list-empty">Aucun mouvement sur la periode.</p>
+                ) : (
+                  digest.movements.map((movement) => {
                     const parsedMovement = toDigestMovementViewModel(movement);
 
                     return (
-                      <li className="ae-digest-movement-item" key={movement}>
+                      <div className="jv-movement-item" key={movement}>
                         <div>
                           <strong>{parsedMovement.title}</strong>
                           {parsedMovement.changeCount ? <span>{parsedMovement.changeCount}</span> : null}
                         </div>
                         <p>{parsedMovement.detail}</p>
                         {parsedMovement.id ? <small>HubSpot deal #{parsedMovement.id}</small> : null}
-                      </li>
+                      </div>
                     );
-                  })}
-                </ul>
-              )
-            ) : (
-              <p className="ae-digest-movement-preview">
-                {digest.movements.length === 0
-                  ? "Aucun mouvement CRM sur la periode."
-                  : `${digest.movements.length} mouvement${digest.movements.length > 1 ? "s" : ""} CRM detecte${
-                      digest.movements.length > 1 ? "s" : ""
-                    }. Ouvrez les details pour voir les deals concernes.`}
-              </p>
-            )}
-          </article>
+                  })
+                )
+              ) : (
+                <p className="jv-movement-preview">
+                  {digest.movements.length === 0
+                    ? "Aucun mouvement CRM sur la periode."
+                    : `${digest.movements.length} mouvement${digest.movements.length > 1 ? "s" : ""} CRM detecte${
+                        digest.movements.length > 1 ? "s" : ""
+                      }. Ouvrez les details pour voir les deals concernes.`}
+                </p>
+              )}
+            </div>
+          </section>
         </>
       ) : null}
-    </section>
+    </div>
   );
 };

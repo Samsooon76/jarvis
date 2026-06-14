@@ -2,7 +2,6 @@ import { closeDatePresets, dealStatusFilters, stageFilters } from "../config";
 import type { CloseDatePreset, DashboardFilters, DealStatusFilter, StageFilter } from "../types";
 
 type QueueFiltersProps = {
-  filteredCount: number;
   filters: DashboardFilters;
   onCloseDateFromChange: (closeDateFrom: string) => void;
   onCloseDatePresetChange: (closeDatePreset: CloseDatePreset) => void;
@@ -13,7 +12,6 @@ type QueueFiltersProps = {
 };
 
 export const QueueFilters = ({
-  filteredCount,
   filters,
   onCloseDateFromChange,
   onCloseDatePresetChange,
@@ -22,28 +20,8 @@ export const QueueFilters = ({
   onStageFilterChange,
   onStatusFilterChange,
 }: QueueFiltersProps) => (
-  <section className="ae-toolbar" aria-label="Business filters">
-    <label>
-      Statut
-      <select onChange={(event) => onStatusFilterChange(event.target.value as DealStatusFilter)} value={filters.statusFilter}>
-        {dealStatusFilters.map((filter) => (
-          <option key={filter.id} value={filter.id}>
-            {filter.label}
-          </option>
-        ))}
-      </select>
-    </label>
-    <label>
-      Stage
-      <select onChange={(event) => onStageFilterChange(event.target.value as StageFilter)} value={filters.stageFilter}>
-        {stageFilters.map((filter) => (
-          <option key={filter.id} value={filter.id}>
-            {filter.label}
-          </option>
-        ))}
-      </select>
-    </label>
-    <label className="ae-search-filter">
+  <section className="jv-filter-bar" aria-label="Filtres pipeline">
+    <label className="jv-filter-field">
       <span>Recherche</span>
       <input
         aria-label="Rechercher un compte ou deal"
@@ -53,8 +31,28 @@ export const QueueFilters = ({
         value={filters.searchTerm}
       />
     </label>
-    <label>
-      Fermeture
+    <label className="jv-filter-field">
+      <span>Statut</span>
+      <select onChange={(event) => onStatusFilterChange(event.target.value as DealStatusFilter)} value={filters.statusFilter}>
+        {dealStatusFilters.map((filter) => (
+          <option key={filter.id} value={filter.id}>
+            {filter.label}
+          </option>
+        ))}
+      </select>
+    </label>
+    <label className="jv-filter-field">
+      <span>Stage</span>
+      <select onChange={(event) => onStageFilterChange(event.target.value as StageFilter)} value={filters.stageFilter}>
+        {stageFilters.map((filter) => (
+          <option key={filter.id} value={filter.id}>
+            {filter.label}
+          </option>
+        ))}
+      </select>
+    </label>
+    <label className="jv-filter-field">
+      <span>Fermeture</span>
       <select
         onChange={(event) => onCloseDatePresetChange(event.target.value as CloseDatePreset)}
         value={filters.closeDatePreset}
@@ -66,14 +64,13 @@ export const QueueFilters = ({
         ))}
       </select>
     </label>
-    <label>
-      Du
+    <label className="jv-filter-field">
+      <span>Du</span>
       <input onChange={(event) => onCloseDateFromChange(event.target.value)} type="date" value={filters.closeDateFrom} />
     </label>
-    <label>
-      Au
+    <label className="jv-filter-field">
+      <span>Au</span>
       <input onChange={(event) => onCloseDateToChange(event.target.value)} type="date" value={filters.closeDateTo} />
     </label>
-    <span>{filteredCount} items</span>
   </section>
 );

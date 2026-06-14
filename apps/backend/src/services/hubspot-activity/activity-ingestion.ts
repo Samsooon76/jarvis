@@ -218,6 +218,28 @@ const loadProspectForActivity = async (
   return data as ProspectLookupRow | null;
 };
 
+const resolveJarvisUserIdFromHubSpotOwner = async (
+  orgId: string,
+  hubspotOwnerId: string | null,
+): Promise<string | null> => {
+  if (!hubspotOwnerId) {
+    return null;
+  }
+
+  const { data, error } = await getSupabaseAdmin()
+    .from("users")
+    .select("id")
+    .eq("org_id", orgId)
+    .eq("hubspot_owner_id", hubspotOwnerId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Impossible de resoudre l'owner HubSpot du call: ${error.message}`);
+  }
+
+  return (data as { id: string } | null)?.id ?? null;
+};
+
 const buildCallSummaryFromActivity = (activity: HubSpotActivitySnapshot): string | null => {
   const parts = [
     activity.body?.trim() || null,
@@ -239,10 +261,13 @@ const upsertCallFromActivity = async (
 
   const supabase = getSupabaseAdmin();
   const prospect = await loadProspectForActivity(orgId, activity, impactedDealIds);
+  const hubspotOwnerId = readActivityMetadata(activity, "ownerId");
+  const userId =
+    (await resolveJarvisUserIdFromHubSpotOwner(orgId, hubspotOwnerId)) ?? prospect?.owner_user_id ?? null;
   const { error } = await supabase.from("calls").upsert(
     {
       org_id: orgId,
-      user_id: prospect?.owner_user_id ?? null,
+      user_id: userId,
       prospect_id: prospect?.id ?? null,
       external_call_id: `hubspot:${activity.id}`,
       direction: normalizeCallDirection(activity.properties.hs_call_direction ?? null),

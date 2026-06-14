@@ -6,7 +6,7 @@ import type {
   CallSentiment as BackendCallSentiment,
 } from "@jarvis/shared";
 import { apiPath, getJson, postJson, type ApiRequestOptions } from "./client";
-import { POLL_TIMEOUT_MS, pollDelayMs, wait } from "./cache";
+import { ANALYTICS_DETAIL_CACHE_TTL_MS, ANALYTICS_OVERVIEW_CACHE_TTL_MS, getCachedJson, POLL_TIMEOUT_MS, pollDelayMs, wait } from "./cache";
 
 export type CallDirection = "inbound" | "outbound";
 export type CallAnalysisStatus = "analyzed" | "pending" | "failed" | "not_analyzed";
@@ -21,6 +21,7 @@ export type CallPriority = "low" | "medium" | "high";
 export type CallListItem = {
   id: string;
   orgId: string;
+  userId: string | null;
   hubspotCallId: string | null;
   hubspotDealId: string | null;
   prospectId: string | null;
@@ -122,16 +123,46 @@ const stripHtml = (value: string): string =>
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 
+// Lignes de plomberie Onoff/Modjo/HubSpot qui peuvent rester dans les analyses
+// cachees avant le filtrage backend: on les ecarte aussi a l'affichage.
+const BOILERPLATE_PATTERNS: RegExp[] = [
+  /^appel (sortant|entrant)/i,
+  /^destinataire de l'appel/i,
+  /^date\s*:/i,
+  /^dur[eé]e\s*:?/i,
+  /^duration\s*:/i,
+  /^titre\s*:/i,
+  /^disposition\s*:/i,
+  /^contexte\s*:/i,
+  /^resume ia\s*:/i,
+  /^resume prospect\s*:/i,
+  /^prochaine action\s*:/i,
+  /^notes\s*:/i,
+  /^\(ajoutez vos notes ici\)/i,
+  /^would like to go deeper/i,
+  /^this call on modjo/i,
+  /^tags on this call/i,
+  /^statut (hubspot )?/i,
+];
+
+const isBoilerplate = (line: string): boolean =>
+  BOILERPLATE_PATTERNS.some((pattern) => pattern.test(line.trim()));
+
 const cleanText = (value: string | null): string | null => {
   if (!value) {
     return value;
   }
 
-  return stripHtml(value) || null;
+  const stripped = stripHtml(value)
+    .split("\n")
+    .filter((line) => line.trim() && !isBoilerplate(line))
+    .join("\n");
+
+  return stripped || null;
 };
 
 const cleanList = (values: string[] | undefined): string[] =>
-  (values ?? []).map((value) => stripHtml(value)).filter(Boolean);
+  (values ?? []).map((value) => stripHtml(value)).filter((value) => value && !isBoilerplate(value));
 
 const toStartedAt = (value: string | null): string => value ?? new Date(0).toISOString();
 
@@ -155,6 +186,7 @@ const toPriority = (riskLevel: CallRiskLevel | null): CallPriority | null => ris
 const mapCallListItem = (call: CallAnalysisListItem): CallListItem => ({
   id: call.callId,
   orgId: call.orgId,
+  userId: call.userId,
   hubspotCallId: null,
   hubspotDealId: null,
   prospectId: call.prospectId,
@@ -229,26 +261,48 @@ const mapInsights = (orgId: string, period: CallPeriodFilter, insights: CallInsi
   };
 };
 
-export const fetchCalls = (
+export const fetchCalls = async (
   orgId: string,
   period: CallPeriodFilter,
   type: CallTypeFilter,
+  userId: string | null = null,
   options: ApiRequestOptions = {},
-): Promise<CallsListResult> =>
-  getJson<CallAnalysisListItem[]>(apiPath("/api/calls", { orgId, period, type }), options).then((calls) => ({
+  forceRefresh = false,
+): Promise<CallsListResult> => {
+  const path = apiPath("/api/calls", { orgId, period, type, userId });
+  const calls = await getCachedJson<CallAnalysisListItem[]>(
+    `calls:list:${path}`,
+    path,
+    ANALYTICS_OVERVIEW_CACHE_TTL_MS,
+    forceRefresh,
+    options,
+  );
+
+  return {
     orgId,
     period,
     type,
     generatedAt: new Date().toISOString(),
     calls: calls.map(mapCallListItem).filter((call) => type === "all" || call.direction === type),
-  }));
+  };
+};
 
 export const fetchCallDetail = (
   orgId: string,
   callId: string,
   options: ApiRequestOptions = {},
-): Promise<CallDetail> =>
-  getJson<CallAnalysisDetail>(apiPath(`/api/calls/${encodeURIComponent(callId)}`, { orgId }), options).then(mapCallDetail);
+  forceRefresh = false,
+): Promise<CallDetail> => {
+  const path = apiPath(`/api/calls/${encodeURIComponent(callId)}`, { orgId });
+
+  return getCachedJson<CallAnalysisDetail>(
+    `calls:detail:${path}`,
+    path,
+    ANALYTICS_DETAIL_CACHE_TTL_MS,
+    forceRefresh,
+    options,
+  ).then(mapCallDetail);
+};
 
 export const analyzeSingleCall = (
   orgId: string,
@@ -260,11 +314,20 @@ export const analyzeSingleCall = (
 export const fetchCallInsights = (
   orgId: string,
   period: CallPeriodFilter,
+  userId: string | null = null,
   options: ApiRequestOptions = {},
-): Promise<CallInsights> =>
-  getJson<CallInsightSummary>(apiPath("/api/calls/insights", { orgId, period }), options).then((insights) =>
-    mapInsights(orgId, period, insights),
-  );
+  forceRefresh = false,
+): Promise<CallInsights> => {
+  const path = apiPath("/api/calls/insights", { orgId, period, userId });
+
+  return getCachedJson<CallInsightSummary>(
+    `calls:insights:${path}`,
+    path,
+    ANALYTICS_OVERVIEW_CACHE_TTL_MS,
+    forceRefresh,
+    options,
+  ).then((insights) => mapInsights(orgId, period, insights));
+};
 
 // Lance le backfill puis poll le job jusqu'a sa fin: la route repond 202 avec un
 // job "queued", le resultat n'existe qu'une fois le job complete.
