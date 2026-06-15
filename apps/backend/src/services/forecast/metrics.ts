@@ -19,6 +19,49 @@ import type {
 import { clamp, getMonthEnd, getMonthKey, getMonthLabel, getMonthsBetween, normalizeText, parseNumber } from "./shared.js";
 import { getForecastDealStatus, isSignedDealStatus } from "./deal-status.js";
 
+const buildForecastDealSummary = (analysis: DealIntelligenceAnalysis | null): string | null => {
+  if (!analysis) {
+    return null;
+  }
+
+  const parts = [
+    analysis.executiveSummary,
+    ...analysis.detailedAnalysis,
+  ]
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  return parts.length > 0 ? parts.join("\n\n") : null;
+};
+
+const buildForecastSuggestedMove = (analysis: DealIntelligenceAnalysis | null): string | null => {
+  if (!analysis) {
+    return null;
+  }
+
+  const parts: string[] = [];
+  const suggestedMove = analysis.suggestedMove.trim();
+
+  if (suggestedMove) {
+    parts.push(suggestedMove);
+  }
+
+  const primaryStep = analysis.nextSteps[0];
+  const stepRationale = primaryStep?.rationale.trim() ?? "";
+  const genericRationale = "Action recommandee depuis l'analyse du deal.";
+
+  if (
+    stepRationale &&
+    stepRationale !== genericRationale &&
+    stepRationale !== suggestedMove &&
+    !parts.some((part) => part.includes(stepRationale))
+  ) {
+    parts.push(stepRationale);
+  }
+
+  return parts.length > 0 ? parts.join("\n\n") : null;
+};
+
 const getAnalysisStatus = (deal: HubSpotDealRow, analysis: DealAiAnalysisRow | null): ForecastAnalysisStatus => {
   if (!analysis) {
     return "missing";
@@ -73,8 +116,8 @@ export const buildForecastDeal = (context: ForecastDealContext, analysisRow: Dea
     analyzedAt: analysisRow?.generated_at ?? null,
     confidence: analysis?.confidence ?? null,
     dealHealth: analysis?.dealHealth ?? null,
-    summary: analysis?.executiveSummary ?? null,
-    suggestedMove: analysis?.suggestedMove ?? null,
+    summary: buildForecastDealSummary(analysis),
+    suggestedMove: buildForecastSuggestedMove(analysis),
     risks: analysis?.risks ?? [],
     positiveSignals: analysis?.positiveSignals ?? [],
   };

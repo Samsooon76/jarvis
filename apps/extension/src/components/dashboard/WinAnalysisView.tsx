@@ -538,7 +538,7 @@ export const WinAnalysisView = ({ orgId }: WinAnalysisViewProps) => {
         <span className="jv-toolbar-period">{periodLabel}</span>
         <div className="jv-toolbar-actions">
           <button className="jv-btn-ghost" disabled={isLoading} onClick={() => loadOverview(true)} type="button">
-            <RefreshCw aria-hidden="true" size={14} strokeWidth={1.5} />
+            <RefreshCw aria-hidden="true" className={isLoading ? "jv-spin" : undefined} size={14} strokeWidth={1.5} />
             Actualiser
           </button>
           <button className="jv-btn-primary" disabled={isRunInProgress} onClick={handleStartRun} type="button">

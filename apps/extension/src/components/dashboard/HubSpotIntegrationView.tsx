@@ -8,6 +8,7 @@ type HubSpotIntegrationViewProps = {
   generatedAt?: string;
   hubspotDealCount?: number | null;
   hubspotPortalId?: string | null;
+  orgId: string;
   integrationStatusClassName: string;
   integrationStatusLabel: string;
   isConnected: boolean;
@@ -36,6 +37,7 @@ export const HubSpotIntegrationView = ({
   generatedAt,
   hubspotDealCount,
   hubspotPortalId,
+  orgId,
   integrationStatusClassName,
   integrationStatusLabel,
   isConnected,
@@ -145,6 +147,10 @@ export const HubSpotIntegrationView = ({
           </select>
         </article>
 
+        <article className="jv-settings-stat">
+          <span>Org UID</span>
+          <strong className="jv-settings-uid">{orgId}</strong>
+        </article>
         <article className="jv-settings-stat">
           <span>Portal</span>
           <strong>{hubspotPortalId ?? "—"}</strong>

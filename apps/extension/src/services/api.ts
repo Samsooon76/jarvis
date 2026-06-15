@@ -54,3 +54,4 @@ export * from "./api/manager";
 export * from "./api/pulse";
 export * from "./api/playbook";
 export * from "./api/calls";
+export * from "./api/mcp";

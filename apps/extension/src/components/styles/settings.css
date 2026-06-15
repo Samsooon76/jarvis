@@ -302,6 +302,113 @@
 
 /* ── Callout ── */
 
+.jv-settings-page .jv-mcp-meta-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.jv-settings-page .jv-mcp-meta-grid small {
+  color: var(--jv-muted);
+  display: block;
+  font-size: 11px;
+  margin-bottom: 4px;
+}
+
+.jv-settings-page .jv-mcp-meta-grid strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  word-break: break-all;
+}
+
+.jv-settings-page .jv-mcp-create-row {
+  align-items: end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.jv-settings-page .jv-mcp-create-row .jv-settings-field {
+  flex: 1 1 240px;
+}
+
+.jv-settings-page .jv-mcp-reveal {
+  background: var(--jv-surface-muted);
+  border: 1px solid var(--jv-border);
+  border-radius: 16px;
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+}
+
+.jv-settings-page .jv-mcp-token {
+  background: #fff;
+  border: 1px solid var(--jv-border-strong);
+  border-radius: 12px;
+  display: block;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  padding: 12px;
+}
+
+.jv-settings-page .jv-mcp-config-preview {
+  background: #fff;
+  border: 1px solid var(--jv-border);
+  border-radius: 12px;
+  font-size: 11px;
+  margin: 0;
+  max-height: 220px;
+  overflow: auto;
+  padding: 12px;
+  white-space: pre-wrap;
+}
+
+.jv-settings-page .jv-mcp-key-list {
+  display: grid;
+  gap: 10px;
+}
+
+.jv-settings-page .jv-mcp-key-card {
+  align-items: center;
+  background: var(--jv-surface);
+  border: 1px solid var(--jv-border);
+  border-radius: 14px;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 14px 16px;
+}
+
+.jv-settings-page .jv-mcp-key-card.is-revoked {
+  opacity: 0.65;
+}
+
+.jv-settings-page .jv-mcp-key-card small {
+  color: var(--jv-muted);
+  display: block;
+  margin-top: 4px;
+}
+
+.jv-settings-page .jv-mcp-key-actions {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.jv-settings-page .jv-mcp-pill {
+  background: rgba(28, 25, 23, 0.06);
+  border-radius: 999px;
+  color: var(--jv-muted);
+  font-size: 11px;
+  padding: 4px 10px;
+}
+
+.jv-settings-page .jv-mcp-pill.is-active {
+  background: rgba(45, 138, 94, 0.12);
+  color: var(--jv-success);
+}
+
 .jv-settings-page .jv-callout {
   align-items: flex-start;
   border: 1px dashed rgba(212, 113, 74, 0.28);
@@ -389,6 +496,15 @@
   color: var(--jv-text);
   font-size: 14px;
   font-weight: 500;
+}
+
+.jv-settings-page .jv-settings-stat .jv-settings-uid {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  word-break: break-all;
 }
 
 .jv-settings-page .jv-settings-stat .jv-select {

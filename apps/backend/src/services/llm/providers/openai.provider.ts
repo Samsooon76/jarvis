@@ -154,14 +154,27 @@ const parseStringList = (value: unknown, maxItems: number, maxLength: number): s
 
 const clampInteger = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
 
+const normalizeText = (value: string): string => value.replace(/\s+/g, " ").trim();
+
 const compactText = (value: string, maxLength: number): string => {
-  const compacted = value.replace(/\s+/g, " ").trim();
+  const compacted = normalizeText(value);
 
   if (compacted.length <= maxLength) {
     return compacted;
   }
 
   return `${compacted.slice(0, maxLength - 1).trim()}…`;
+};
+
+const parseNarrativeList = (value: unknown, maxItems: number): string[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter((item): item is string => typeof item === "string" && Boolean(item.trim()))
+    .map((item) => normalizeText(item))
+    .slice(0, maxItems);
 };
 
 const normalizeJsonResponse = (value: string): string => {
@@ -272,10 +285,10 @@ Regles:
 - Si le deal est en phase de signature, POC valide, devis/proposition acceptee, validation finale ou next step daté tres proche, le score doit rester eleve sauf blocage explicite plus recent.
 - Un risque RGPD, legal, technique ou integration baisse le score seulement s'il bloque explicitement la signature; sinon traite-le comme risque a suivre.
 - Si des signaux se contredisent, explique l'arbitrage dans evidence et whyNow en citant les faits les plus recents.
-- executiveSummary: 1 phrase, 220 caracteres maximum.
-- detailedAnalysis: 2 bullets maximum, 140 caracteres maximum par bullet, sans repeter executiveSummary.
-- whyNow: 1 phrase, 180 caracteres maximum.
-- suggestedMove: 1 phrase imperative, 140 caracteres maximum.
+- executiveSummary: 2-4 phrases completes, sans troncature.
+- detailedAnalysis: 2 bullets maximum, phrases completes, sans repeter executiveSummary.
+- whyNow: 1-2 phrases completes.
+- suggestedMove: 1-3 phrases imperatives completes, actionnable et sans troncature.
 - nextSteps: 1 a 3 actions maximum, dueInDays entre 0 et 30.
 - evidence: 2 a 4 faits observes, 120 caracteres maximum chacun.
 - Ne confonds pas probabilite HubSpot, montant, date technique et signal commercial; la probabilite HubSpot est un input, pas une verite absolue.
@@ -527,8 +540,8 @@ const parseNextSteps = (value: unknown): DealIntelligenceNextStep[] => {
     }
 
     return {
-      title: compactText(step.title, 90),
-      rationale: compactText(step.rationale, 120),
+      title: compactText(step.title, 120),
+      rationale: normalizeText(step.rationale),
       dueInDays: clampInteger(step.dueInDays, 0, 30),
       priority: step.priority,
       createHubSpotTask: step.createHubSpotTask,
@@ -554,19 +567,19 @@ const parseDealIntelligence = (value: string): DealIntelligenceAnalysis => {
     throw new Error("OpenAI a renvoye un JSON invalide pour l'intelligence deal.");
   }
 
-  const executiveSummary = compactText(parsed.executiveSummary, 220);
-  const whyNow = compactText(parsed.whyNow, 180);
+  const executiveSummary = normalizeText(parsed.executiveSummary);
+  const whyNow = normalizeText(parsed.whyNow);
   const nextSteps = parseNextSteps(parsed.nextSteps);
 
   return {
     closeWonProbability: clampInteger(Math.round(parsed.closeWonProbability), 0, 100),
     dealHealth: parsed.dealHealth,
     executiveSummary,
-    detailedAnalysis: parseStringList(parsed.detailedAnalysis, 2, 140)
+    detailedAnalysis: parseNarrativeList(parsed.detailedAnalysis, 2)
       .filter((item) => item !== executiveSummary && item !== whyNow)
       .slice(0, 2),
     whyNow,
-    suggestedMove: compactText(parsed.suggestedMove, 140),
+    suggestedMove: normalizeText(parsed.suggestedMove),
     nextSteps: nextSteps.length > 0
       ? nextSteps
       : [

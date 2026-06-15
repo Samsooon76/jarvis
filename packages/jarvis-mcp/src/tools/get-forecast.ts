@@ -16,11 +16,7 @@ export const getForecastTool: JarvisToolDefinition = {
   inputSchema,
   handler: async (rawInput, { client }) => {
     const input = inputSchema.parse(rawInput);
-    const orgId = input.orgId ?? client.defaultOrgId;
-
-    if (!orgId) {
-      throw new Error("orgId est obligatoire. Passe-le dans l'appel ou configure JARVIS_ORG_ID.");
-    }
+    const orgId = client.resolveOrgId(input.orgId);
 
     if (input.scope === "owner" && !input.hubspotOwnerId?.trim()) {
       throw new Error("hubspotOwnerId est obligatoire quand scope=owner.");

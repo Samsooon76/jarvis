@@ -3,6 +3,7 @@ import type { JarvisToolDefinition } from "./types.js";
 
 const inputSchema = z.object({
   prospectId: z.string().uuid().describe("UUID du prospect Jarvis."),
+  orgId: z.string().uuid().optional().describe("UUID organisation Jarvis. Utilise JARVIS_ORG_ID par defaut."),
 });
 
 export const getProspectTool: JarvisToolDefinition = {
@@ -11,7 +12,7 @@ export const getProspectTool: JarvisToolDefinition = {
   inputSchema,
   handler: async (rawInput, { client }) => {
     const input = inputSchema.parse(rawInput);
-    const prospect = await client.getProspect(input.prospectId);
+    const prospect = await client.getProspect(input.prospectId, input.orgId);
 
     return {
       content: [

@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { JarvisToolDefinition } from "./types.js";
 
 const inputSchema = z.object({
+  orgId: z.string().uuid().optional().describe("UUID organisation Jarvis. Utilise JARVIS_ORG_ID par defaut."),
   userId: z.string().uuid().optional().describe("UUID commercial Jarvis. Utilise JARVIS_USER_ID par defaut."),
 });
 
@@ -17,7 +18,7 @@ export const getQueueTool: JarvisToolDefinition = {
       throw new Error("userId est obligatoire. Passe-le dans l'appel ou configure JARVIS_USER_ID.");
     }
 
-    const queue = await client.getQueue(userId);
+    const queue = await client.getQueue(userId, input.orgId);
 
     return {
       content: [

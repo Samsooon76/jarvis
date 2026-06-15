@@ -111,6 +111,19 @@ export class JarvisApiClient {
     return this.config.defaultUserId;
   }
 
+  resolveOrgId(orgId?: string | null): string {
+    const resolved = orgId?.trim() || this.config.defaultOrgId?.trim();
+
+    if (!resolved) {
+      throw new JarvisApiError(
+        "orgId est obligatoire. Passe-le dans l'appel du tool ou configure JARVIS_ORG_ID.",
+        400,
+      );
+    }
+
+    return resolved;
+  }
+
   private async request<T>(path: string, options: RequestOptions = {}): Promise<T> {
     const url = new URL(`${this.config.apiUrl}${path}`);
 
@@ -165,12 +178,20 @@ export class JarvisApiClient {
     });
   }
 
-  async getProspect(prospectId: string): Promise<ProspectDetail> {
-    return this.request<ProspectDetail>(`/api/prospects/${encodeURIComponent(prospectId)}`);
+  async getProspect(prospectId: string, orgId?: string | null): Promise<ProspectDetail> {
+    return this.request<ProspectDetail>(`/api/prospects/${encodeURIComponent(prospectId)}`, {
+      query: {
+        orgId: this.resolveOrgId(orgId),
+      },
+    });
   }
 
-  async getQueue(userId: string): Promise<QueueData> {
-    return this.request<QueueData>(`/api/queue/${encodeURIComponent(userId)}`);
+  async getQueue(userId: string, orgId?: string | null): Promise<QueueData> {
+    return this.request<QueueData>(`/api/queue/${encodeURIComponent(userId)}`, {
+      query: {
+        orgId: this.resolveOrgId(orgId),
+      },
+    });
   }
 
   async analyzeDealIntelligence(input: {
@@ -204,9 +225,10 @@ export class JarvisApiClient {
     });
   }
 
-  async getManagerDigest(period: ManagerDigestPeriod = "daily"): Promise<ManagerDigest> {
+  async getManagerDigest(period: ManagerDigestPeriod = "daily", orgId?: string | null): Promise<ManagerDigest> {
     return this.request<ManagerDigest>("/api/digest", {
       query: {
+        orgId: this.resolveOrgId(orgId),
         period,
       },
     });

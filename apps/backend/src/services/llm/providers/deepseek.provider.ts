@@ -139,8 +139,10 @@ const parseJsonObject = <T>(value: string, label: string): T => {
 
 const clampInteger = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
 
+const normalizeText = (value: string): string => value.replace(/\s+/g, " ").trim();
+
 const compactText = (value: string, maxLength: number): string => {
-  const compacted = value.replace(/\s+/g, " ").trim();
+  const compacted = normalizeText(value);
 
   if (compacted.length <= maxLength) {
     return compacted;
@@ -232,12 +234,12 @@ Regles d'analyse:
 - Un risque RGPD, legal, technique ou integration baisse le score seulement s'il bloque explicitement la signature; sinon traite-le comme risque a suivre.
 - Si des signaux se contredisent, explique l'arbitrage dans evidence et whyNow en citant les faits les plus recents.
 - Ne confonds pas probabilite HubSpot, montant, date technique et signal commercial; la probabilite HubSpot est un input, pas une verite absolue.
-- executiveSummary: 1 phrase, 220 caracteres maximum.
-- detailedAnalysis: 2 bullets maximum, 140 caracteres maximum par bullet, sans repeter executiveSummary.
-- whyNow: 1 phrase, 180 caracteres maximum, raison concrete d'agir maintenant.
-- suggestedMove: 1 phrase imperative, 140 caracteres maximum.
+- executiveSummary: 2-4 phrases completes, sans troncature.
+- detailedAnalysis: 2 bullets maximum, phrases completes, sans repeter executiveSummary.
+- whyNow: 1-2 phrases completes, raison concrete d'agir maintenant.
+- suggestedMove: 1-3 phrases imperatives completes, actionnable et sans troncature.
 - nextSteps contient 1 a 3 actions maximum, avec dueInDays entre 0 et 30.
-- Chaque nextStep.title fait 90 caracteres maximum; rationale fait 120 caracteres maximum.
+- Chaque nextStep.title reste court; rationale doit etre une phrase complete sans troncature.
 - createHubSpotTask vaut true seulement pour une action claire qu'un sales peut executer.
 - evidence cite 2 a 4 faits observes, 120 caracteres maximum chacun, sans inventer de verbatim.
 - missingData liste 3 informations maximum qui empechent une meilleure decision.
@@ -361,8 +363,8 @@ const parseNextSteps = (value: unknown): DealIntelligenceNextStep[] => {
     }
 
     return {
-      title: compactText(step.title, 90),
-      rationale: compactText(step.rationale, 120),
+      title: compactText(step.title, 120),
+      rationale: normalizeText(step.rationale),
       dueInDays: clampInteger(step.dueInDays, 0, 30),
       priority: step.priority,
       createHubSpotTask: step.createHubSpotTask,
@@ -393,10 +395,10 @@ const parseDealIntelligence = (value: string): DealIntelligenceAnalysis => {
     throw new Error("DeepSeek a renvoye un JSON invalide pour l'intelligence deal.");
   }
 
-  const executiveSummary = compactText(parsed.executiveSummary, 220);
-  const whyNow = compactText(parsed.whyNow, 180);
+  const executiveSummary = normalizeText(parsed.executiveSummary);
+  const whyNow = normalizeText(parsed.whyNow);
   const detailedAnalysis = parsed.detailedAnalysis
-    .map((item) => compactText(item, 140))
+    .map((item) => normalizeText(item))
     .filter((item) => item !== executiveSummary && item !== whyNow)
     .slice(0, 2);
 
@@ -406,7 +408,7 @@ const parseDealIntelligence = (value: string): DealIntelligenceAnalysis => {
     executiveSummary,
     detailedAnalysis,
     whyNow,
-    suggestedMove: compactText(parsed.suggestedMove, 140),
+    suggestedMove: normalizeText(parsed.suggestedMove),
     nextSteps: parseNextSteps(parsed.nextSteps),
     risks: parsed.risks.map((item) => compactText(item, 120)).slice(0, 3),
     positiveSignals: parsed.positiveSignals.map((item) => compactText(item, 120)).slice(0, 3),

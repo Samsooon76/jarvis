@@ -5,6 +5,7 @@ import { getErrorMessage, getErrorStatusCode } from "./lib/errors.js";
 import { registerSentryErrorHandler, setRequestSentryUser } from "./lib/sentry.js";
 import { registerRoutes } from "./routes/index.js";
 import { loadAuthContext } from "./services/app-auth.service.js";
+import { isJarvisMcpToken, resolveOrganizationMcpKey, touchOrganizationMcpKey } from "./services/mcp-key.service.js";
 
 const asRecord = (value: unknown): Record<string, unknown> =>
   value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -82,20 +83,54 @@ const registerAuthHook = (app: FastifyInstance): void => {
       });
     }
 
+    if (isJarvisMcpToken(token)) {
+      const resolvedKey = await resolveOrganizationMcpKey(token);
+
+      if (!resolvedKey) {
+        request.log.warn({ path: request.url }, "Cle MCP Jarvis invalide ou revoquee.");
+        return reply.code(401).send({
+          success: false,
+          error: "Cle MCP Jarvis invalide ou revoquee.",
+        });
+      }
+
+      void touchOrganizationMcpKey(resolvedKey.keyId).catch((error: unknown) => {
+        request.log.warn({ error, keyId: resolvedKey.keyId }, "Mise a jour last_used_at cle MCP ignoree.");
+      });
+
+      request.auth = {
+        authUserId: `mcp-key:${resolvedKey.keyId}`,
+        appUserId: resolvedKey.createdByUserId,
+        orgId: resolvedKey.orgId,
+        role: "admin",
+        hubspotOwnerId: null,
+        email: "mcp@jarvis.local",
+      };
+
+      setRequestSentryUser({
+        id: request.auth.authUserId,
+        orgId: resolvedKey.orgId,
+        role: "admin",
+      });
+
+      return;
+    }
+
     if (env.mcpServiceToken && token === env.mcpServiceToken) {
-      const requestedOrgId = extractRequestedOrgId(request);
+      const requestedOrgId = extractRequestedOrgId(request) ?? (env.mcpServiceOrgId.trim() || null);
 
       if (!requestedOrgId) {
         request.log.warn({ path: request.url }, "Token MCP service refuse sans orgId.");
         return reply.code(400).send({
           success: false,
-          error: "orgId est obligatoire avec le token MCP service.",
+          error:
+            "orgId est obligatoire avec le token MCP service. Passe orgId dans la requete ou configure JARVIS_MCP_SERVICE_ORG_ID.",
         });
       }
 
       request.auth = {
         authUserId: "jarvis-mcp-service",
-        appUserId: null,
+        appUserId: env.mcpServiceUserId.trim() || null,
         orgId: requestedOrgId,
         role: "admin",
         hubspotOwnerId: null,

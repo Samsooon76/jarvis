@@ -12,6 +12,8 @@ import { registerHealthRoute } from "./health.js";
 import { registerLeadRoutes } from "./leads.js";
 import { registerLlmRoutes } from "./llm.js";
 import { registerManagerDigestRoutes } from "./manager-digest.js";
+import { registerMcpKeyRoutes } from "./mcp-keys.js";
+import { registerMcpRoutes } from "./mcp.js";
 import { registerPlaybookRoutes } from "./playbook.js";
 import { registerProbabilityRoutes } from "./probability.js";
 import { registerProspectRoutes } from "./prospects.js";
@@ -38,6 +40,8 @@ export const registerRoutes = async (app: FastifyInstance): Promise<void> => {
   await registerLeadRoutes(app);
   await registerLlmRoutes(app);
   await registerManagerDigestRoutes(app);
+  await registerMcpKeyRoutes(app);
+  await registerMcpRoutes(app);
   await registerPlaybookRoutes(app);
   await registerProbabilityRoutes(app);
   await registerProspectRoutes(app);

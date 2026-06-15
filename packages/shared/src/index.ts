@@ -745,3 +745,26 @@ export type AskJarvisResult = {
   model: string;
   generatedAt: string;
 };
+
+export type OrganizationMcpKeyStatus = "active" | "revoked";
+
+export type OrganizationMcpKey = {
+  id: string;
+  label: string;
+  tokenPrefix: string;
+  createdByUserId: string | null;
+  lastUsedAt: string | null;
+  revokedAt: string | null;
+  createdAt: string;
+  status: OrganizationMcpKeyStatus;
+};
+
+export type CreateOrganizationMcpKeyResult = {
+  key: OrganizationMcpKey;
+  token: string;
+};
+
+export type McpSetupInfo = {
+  mcpHttpUrl: string;
+  orgId: string;
+};

@@ -17,9 +17,10 @@ import {
 import { formatAmount } from "../../utils/dashboard/formatters";
 import "../styles/settings.css";
 import { HubSpotIntegrationView } from "./HubSpotIntegrationView";
+import { McpSettingsView } from "./McpSettingsView";
 import { PulseSettingsView } from "./PulseSettingsView";
 
-type SettingsTab = "hubspot" | "ai" | "targets" | "pulse" | "team";
+type SettingsTab = "hubspot" | "ai" | "mcp" | "targets" | "pulse" | "team";
 
 type HubSpotSettingsProps = {
   disconnectLoading: boolean;
@@ -62,6 +63,7 @@ const getTargetKey = (hubspotOwnerId: string, targetMonth: string): string => `$
 const settingsTabs: Array<{ id: SettingsTab; label: string; requiresPulse?: boolean }> = [
   { id: "hubspot", label: "HubSpot" },
   { id: "ai", label: "IA" },
+  { id: "mcp", label: "MCP", requiresPulse: true },
   { id: "targets", label: "Objectifs" },
   { id: "pulse", label: "Pulse", requiresPulse: true },
   { id: "team", label: "Equipe", requiresPulse: true },
@@ -277,6 +279,7 @@ export const SettingsView = ({
           generatedAt={hubSpot.generatedAt}
           hubspotDealCount={hubSpot.hubspotDealCount}
           hubspotPortalId={hubSpot.hubspotPortalId}
+          orgId={orgId}
           integrationStatusClassName={hubSpot.integrationStatusClassName}
           integrationStatusLabel={hubSpot.integrationStatusLabel}
           isConnected={hubSpot.isConnected}
@@ -344,6 +347,8 @@ export const SettingsView = ({
           </section>
         </div>
       ) : null}
+
+      {activeSettingsTab === "mcp" && canManagePulse ? <McpSettingsView orgId={orgId} /> : null}
 
       {activeSettingsTab === "targets" ? (
         <section className="jv-theme-block" aria-label="Objectifs forecast mensuels">

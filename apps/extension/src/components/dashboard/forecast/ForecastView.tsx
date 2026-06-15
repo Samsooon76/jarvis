@@ -325,7 +325,8 @@ export const ForecastView = ({
             onClick={() => void handleAnalyze(true)}
             type="button"
           >
-            Recalculer
+            <RefreshCw aria-hidden="true" className={isAnalyzing ? "jv-spin" : undefined} size={14} strokeWidth={1.5} />
+            {isAnalyzing ? "Recalcul…" : "Recalculer"}
           </button>
           <button
             className="jv-btn-primary"
@@ -517,6 +518,11 @@ export const ForecastView = ({
               onClick={() => void handleGenerateSynthesis()}
               type="button"
             >
+              {isGeneratingSynthesis ? (
+                <RefreshCw aria-hidden="true" className="jv-spin" size={14} strokeWidth={1.5} />
+              ) : (
+                <Sparkles aria-hidden="true" size={14} strokeWidth={1.5} />
+              )}
               {isGeneratingSynthesis ? "Synthèse…" : synthesis ? "Régénérer la synthèse" : "Générer la synthèse IA"}
             </button>
           </section>
@@ -551,7 +557,12 @@ export const ForecastView = ({
               ) : null}
             </div>
             <button className="jv-btn-primary" disabled={isAnalyzing} onClick={() => void handleAnalyze(true)} type="button">
-              Recalculer les deals ouverts
+              {isAnalyzing ? (
+                <RefreshCw aria-hidden="true" className="jv-spin" size={14} strokeWidth={1.5} />
+              ) : (
+                <Sparkles aria-hidden="true" size={14} strokeWidth={1.5} />
+              )}
+              {isAnalyzing ? "Analyse…" : "Recalculer les deals ouverts"}
             </button>
           </section>
 

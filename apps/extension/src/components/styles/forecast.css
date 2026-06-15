@@ -288,14 +288,14 @@
 }
 
 .ae-inbox .jv-forecast-page .jv-theme-list li {
-  align-items: center;
+  align-items: start;
   border-bottom: 1px solid rgba(28, 25, 23, 0.05);
   display: grid;
   font-size: 13px;
   font-weight: 400;
   gap: 12px;
   grid-template-columns: minmax(0, 1fr) auto;
-  padding: 8px 0;
+  padding: 10px 0;
 }
 
 .jv-forecast-page .jv-theme-list li:last-child {
@@ -305,9 +305,9 @@
 .ae-inbox .jv-forecast-page .jv-theme-list span {
   color: var(--jv-text-soft);
   font-weight: 400;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.45;
+  overflow-wrap: break-word;
+  white-space: normal;
 }
 
 .ae-inbox .jv-forecast-page .jv-theme-list em {
@@ -316,6 +316,8 @@
   font-style: normal;
   font-variant-numeric: tabular-nums;
   font-weight: 500;
+  padding-top: 1px;
+  white-space: nowrap;
 }
 
 .ae-inbox .jv-forecast-page .jv-theme-empty {
@@ -565,7 +567,7 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
-  max-height: 480px;
+  min-height: 480px;
   min-width: 0;
   overflow-y: auto;
   padding: 16px 18px;
@@ -667,6 +669,13 @@
   font-weight: 400;
   line-height: 1.55;
   margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.jv-forecast-page .jv-detail-section .jv-prose {
+  white-space: pre-wrap;
 }
 
 .ae-inbox .jv-forecast-page .jv-bullet-list {

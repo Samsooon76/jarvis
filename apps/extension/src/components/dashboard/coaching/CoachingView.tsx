@@ -756,7 +756,11 @@ export const CoachingView = () => {
             Actualiser
           </button>
           <button className="jv-btn-primary" disabled={isRunInProgress} onClick={handleRunTeam} type="button">
-            <Sparkles aria-hidden="true" size={15} strokeWidth={1.5} />
+            {isRunInProgress ? (
+              <RefreshCw aria-hidden="true" className="jv-spin" size={15} strokeWidth={1.5} />
+            ) : (
+              <Sparkles aria-hidden="true" size={15} strokeWidth={1.5} />
+            )}
             {isRunInProgress ? "Analyse en cours…" : "Analyser l'equipe"}
           </button>
         </div>

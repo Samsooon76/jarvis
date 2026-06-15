@@ -43,6 +43,9 @@ export const env = {
       (process.env.NODE_ENV === "development" || process.env.NODE_ENV === "test" ? "false" : "true")) === "true",
   apiAuthToken: process.env.API_AUTH_TOKEN ?? "",
   mcpServiceToken: process.env.JARVIS_MCP_SERVICE_TOKEN ?? "",
+  mcpServiceOrgId: process.env.JARVIS_MCP_SERVICE_ORG_ID ?? "",
+  mcpServiceUserId: process.env.JARVIS_MCP_SERVICE_USER_ID ?? "",
+  mcpHttpEnabled: (process.env.JARVIS_MCP_HTTP_ENABLED ?? "true") === "true",
   apiPublicUrl,
   enableDebugRoutes: process.env.ENABLE_DEBUG_ROUTES === "true",
   oauthStateSecret:

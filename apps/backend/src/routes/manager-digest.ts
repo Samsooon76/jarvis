@@ -40,7 +40,7 @@ const parsePositiveInteger = (value: string | undefined): number | undefined => 
 const resolveDigestRecipientFromServiceAuth = (request: FastifyRequest): ManagerDigestRecipient | null => {
   const auth = requireAuth(request);
 
-  if (auth.authUserId !== "jarvis-mcp-service" || !auth.orgId) {
+  if ((!auth.authUserId.startsWith("mcp-key:") && auth.authUserId !== "jarvis-mcp-service") || !auth.orgId) {
     return null;
   }
 

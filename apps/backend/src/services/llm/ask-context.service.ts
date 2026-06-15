@@ -2,6 +2,7 @@ import type { AskJarvisRequest } from "@jarvis/shared";
 import { getHubSpotAccessToken } from "../hubspot-auth.service.js";
 import { buildHistoryText } from "../deal-intelligence/shared.js";
 import { loadDealHistoryForAnalysis, resolveDealTarget } from "../deal-intelligence/data-access.js";
+import { getForecastOverview } from "../forecast.service.js";
 import { getUserQueue } from "../prospects/queue.service.js";
 import type { DealIntelligenceContext } from "../deal-intelligence/types.js";
 
@@ -59,6 +60,56 @@ const buildDealContext = async (
   };
 };
 
+const buildForecastContext = async (orgId: string): Promise<{ block: string; sources: string[]; summary: string }> => {
+  const overview = await getForecastOverview({
+    orgId,
+    scope: "all",
+  });
+
+  const topDeals = overview.deals
+    .filter((deal) => deal.forecastBucket === "openForecast")
+    .slice(0, 8)
+    .map(
+      (deal, index) =>
+        [
+          `${index + 1}. ${deal.dealName ?? "Deal"} (${deal.companyName})`,
+          `   Montant: ${formatCurrency(deal.amount)} | Stage: ${deal.stage}`,
+          `   Prob IA: ${deal.aiProbability ?? "n/a"}% | Sante: ${deal.dealHealth ?? "inconnue"}`,
+          deal.suggestedMove ? `   Action: ${deal.suggestedMove}` : null,
+        ]
+          .filter((line): line is string => Boolean(line))
+          .join("\n"),
+    );
+
+  const topRisks = overview.risks
+    .slice(0, 5)
+    .map((risk) => `- ${risk.title} (${risk.severity}, ${risk.dealCount} deals, ${formatCurrency(risk.amount)})`);
+
+  const block = [
+    "=== Forecast pipeline ===",
+    `Periode: ${overview.dateFrom} -> ${overview.dateTo}`,
+    `Deals ouverts: ${overview.openDealCount} | Analyses IA: ${overview.analyzedDealCount}`,
+    `Landing: ${formatCurrency(overview.landingAmount)} | Forecast: ${formatCurrency(overview.forecastAmount)}`,
+    `Objectif: ${overview.objectiveAmount === null ? "non defini" : formatCurrency(overview.objectiveAmount)}`,
+    `Ecart objectif: ${overview.gapToObjective === null ? "n/a" : formatCurrency(overview.gapToObjective)}`,
+    overview.synthesis?.headline ? `Synthese IA: ${overview.synthesis.headline}` : null,
+    "",
+    "Top deals ouverts:",
+    topDeals.length > 0 ? topDeals.join("\n") : "Aucun deal ouvert dans le perimetre.",
+    "",
+    "Risques pipeline:",
+    topRisks.length > 0 ? topRisks.join("\n") : "Aucun risque majeur detecte.",
+  ]
+    .filter((line): line is string => Boolean(line))
+    .join("\n");
+
+  return {
+    block,
+    sources: ["forecast_overview"],
+    summary: `Forecast ${overview.openDealCount} deals ouverts`,
+  };
+};
+
 const buildQueueContext = async (userId: string): Promise<{ block: string; sources: string[]; summary: string }> => {
   const { payload } = await getUserQueue(userId);
   const topProspects = payload.prospects.slice(0, 8);
@@ -113,9 +164,16 @@ export const buildAskJarvisContext = async (request: AskJarvisRequest): Promise<
   }
 
   if (!hasDealScope && !(request.includeQueue && request.userId?.trim())) {
-    blocks.push("Aucun contexte deal ou queue fourni. Reponds prudemment et demande les identifiants manquants si necessaire.");
-    sources.add("generic");
-    summaries.push("Contexte minimal");
+    try {
+      const forecastContext = await buildForecastContext(request.orgId);
+      blocks.push(forecastContext.block);
+      forecastContext.sources.forEach((source) => sources.add(source));
+      summaries.push(forecastContext.summary);
+    } catch {
+      blocks.push("Forecast indisponible (HubSpot non connecte ou perimetre vide).");
+      sources.add("generic");
+      summaries.push("Contexte minimal");
+    }
   }
 
   return {

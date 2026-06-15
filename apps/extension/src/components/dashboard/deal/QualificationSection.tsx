@@ -1,3 +1,4 @@
+import { RefreshCw, Sparkles } from "lucide-react";
 import type {
   BuyingCommitteeMember,
   DealQualificationResult,
@@ -211,7 +212,12 @@ const QualificationAiAside = ({
       <QualificationInsightList items={items} />
     </div>
     <button className="jv-btn-ghost" disabled={isLoading} onClick={onRefresh} type="button">
-      {isLoading ? "Analyse..." : "Relancer l'analyse IA"}
+      {isLoading ? (
+        <RefreshCw aria-hidden="true" className="jv-spin" size={14} strokeWidth={1.5} />
+      ) : (
+        <Sparkles aria-hidden="true" size={14} strokeWidth={1.5} />
+      )}
+      {isLoading ? "Analyse…" : "Relancer l'analyse IA"}
     </button>
   </aside>
 );

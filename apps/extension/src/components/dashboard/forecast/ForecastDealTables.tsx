@@ -1,4 +1,4 @@
-import { ChevronRight, History, Sparkles, type LucideIcon } from "lucide-react";
+import { ChevronRight, History, RefreshCw, Sparkles, type LucideIcon } from "lucide-react";
 import type { ForecastDeal } from "../../../services/api";
 import { formatAmount, formatDate, formatDateTime } from "../../../utils/dashboard/formatters";
 import {
@@ -226,6 +226,11 @@ export const ForecastDealDetail = ({
           onClick={() => onAnalyzeDeal(deal)}
           type="button"
         >
+          {analyzingDealId === deal.hubspotDealId ? (
+            <RefreshCw aria-hidden="true" className="jv-spin" size={14} strokeWidth={1.5} />
+          ) : (
+            <Sparkles aria-hidden="true" size={14} strokeWidth={1.5} />
+          )}
           {analyzingDealId === deal.hubspotDealId ? "Analyse…" : deal.aiProbability === null ? "Analyser" : "Recalculer"}
         </button>
       </header>

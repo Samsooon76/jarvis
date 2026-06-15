@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "jarvis": {
+      "url": "https://YOUR-API.up.railway.app/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_MCP_TOKEN"
+      }
+    }
+  }
+}
