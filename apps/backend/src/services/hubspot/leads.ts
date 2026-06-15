@@ -140,6 +140,39 @@ export const fetchLeadRecordsByOwners = async (
   }
 };
 
+export const fetchLeadById = async (accessToken: string, leadId: string): Promise<HubSpotLeadRecord | null> => {
+  try {
+    const lead = await hubSpotFetch<HubSpotLead>(
+      `/crm/v3/objects/${HUBSPOT_LEAD_OBJECT_TYPE}/${leadId}?properties=${HUBSPOT_LEAD_PROPERTIES.join(",")}`,
+      {
+        accessToken,
+        maxRetries: HUBSPOT_DEFAULT_MAX_RETRIES,
+      },
+    );
+    const [stageById, contactIds, companyIds] = await Promise.all([
+      fetchPipelineStageLookup(accessToken, HUBSPOT_LEAD_OBJECT_TYPE),
+      fetchAssociatedIdMapForMany(accessToken, HUBSPOT_LEAD_OBJECT_TYPE, [lead.id], "contacts"),
+      fetchAssociatedIdMapForMany(accessToken, HUBSPOT_LEAD_OBJECT_TYPE, [lead.id], "companies").catch(
+        (error: unknown) => {
+          if (isHubSpotCompanyScopeError(error)) {
+            return new Map<string, string[]>();
+          }
+
+          throw error;
+        },
+      ),
+    ]);
+
+    return mapLeadRecord(lead, stageById, contactIds.get(lead.id), companyIds.get(lead.id));
+  } catch (error) {
+    if (isHubSpotLeadScopeError(error)) {
+      return null;
+    }
+
+    throw error;
+  }
+};
+
 export const fetchLeadsByOwner = async (
   accessToken: string,
   hubspotOwnerId: string,

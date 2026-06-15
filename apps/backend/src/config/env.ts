@@ -42,6 +42,7 @@ export const env = {
     (process.env.REQUIRE_API_AUTH ??
       (process.env.NODE_ENV === "development" || process.env.NODE_ENV === "test" ? "false" : "true")) === "true",
   apiAuthToken: process.env.API_AUTH_TOKEN ?? "",
+  mcpServiceToken: process.env.JARVIS_MCP_SERVICE_TOKEN ?? "",
   apiPublicUrl,
   enableDebugRoutes: process.env.ENABLE_DEBUG_ROUTES === "true",
   oauthStateSecret:

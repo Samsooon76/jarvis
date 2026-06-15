@@ -6,8 +6,6 @@ type WinGapsCardProps = {
   hubspotDealId: string;
 };
 
-// Encart "vs deals gagnes": diff numerique deal ouvert vs benchmark des wins.
-// 100% deterministe (0 LLM); masque quand le benchmark n'est pas significatif.
 export const WinGapsCard = ({ orgId, hubspotDealId }: WinGapsCardProps) => {
   const [comparison, setComparison] = useState<WinBenchmarkComparison | null>(null);
 
@@ -27,23 +25,23 @@ export const WinGapsCard = ({ orgId, hubspotDealId }: WinGapsCardProps) => {
   }
 
   return (
-    <article className="ae-forecast-panel ae-win-gaps-card">
-      <div className="ae-panel-heading">
-        <h4>Vs deals gagnes</h4>
+    <section aria-label="Benchmark deals gagnés" className="jv-win-gaps">
+      <div className="jv-win-gaps-head">
+        <strong>Vs deals gagnés</strong>
         <small>Benchmark sur {comparison.sampleSize} wins</small>
       </div>
-      <div className="ae-forecast-list">
+      <ul className="jv-win-gaps-list">
         {comparison.gaps.map((gap) => (
-          <div key={gap.metric}>
+          <li key={gap.metric}>
             <strong>{gap.label}</strong>
             <p>
               {gap.metric === "cycleDays"
-                ? `Ce deal est dans le cycle depuis ${gap.actual} jours; les deals gagnes closent en ~${gap.benchmark} jours.`
-                : `Les deals gagnes ont ~${gap.benchmark} ${gap.label.toLowerCase()}, celui-ci en a ${gap.actual}.`}
+                ? `Ce deal est dans le cycle depuis ${gap.actual} jours ; les deals gagnés closent en ~${gap.benchmark} jours.`
+                : `Les deals gagnés ont ~${gap.benchmark} ${gap.label.toLowerCase()}, celui-ci en a ${gap.actual}.`}
             </p>
-          </div>
+          </li>
         ))}
-      </div>
-    </article>
+      </ul>
+    </section>
   );
 };

@@ -3,7 +3,7 @@ import { getJson, type ApiRequestOptions } from "./client";
 export const ANALYTICS_OVERVIEW_CACHE_TTL_MS = 300_000;
 export const ANALYTICS_DETAIL_CACHE_TTL_MS = 300_000;
 export const HUBSPOT_TASKS_CACHE_TTL_MS = 20_000;
-export const HUBSPOT_LEADS_CACHE_TTL_MS = 300_000;
+export const HUBSPOT_LEADS_CACHE_TTL_MS = 60_000;
 
 export const HUBSPOT_TASKS_CACHE_PREFIX = "hubspot-tasks:";
 export const HUBSPOT_LEADS_CACHE_PREFIX = "hubspot-leads:";

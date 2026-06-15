@@ -1,4 +1,6 @@
+import { getSupabaseAdmin } from "../../db/client.js";
 import { captureServerError } from "../../lib/sentry.js";
+import { invalidateQueueCache } from "../prospects/queue.service.js";
 import type { HubSpotActivityType } from "../hubspot.service.js";
 import type { HubSpotRealtimeJob } from "../hubspot-realtime-queue.service.js";
 import {
@@ -8,6 +10,7 @@ import {
 } from "../pulse.service.js";
 import { filterEligibleRealtimeDealIds, hydrateActivity } from "./activity-ingestion.js";
 import { applyDealPropertyChangeFromWebhook, runClosedDealAutomation } from "./deal-property-sync.js";
+import { processLeadWebhookEvent } from "./lead-sync.js";
 import { acceptNormalizedDealWebhookEvent } from "./normalized-events.js";
 import { purgePrivacyDeletedContact } from "./privacy-purge.js";
 import { runHubSpotDealReanalysis, scheduleDealReanalysis } from "./reanalysis.js";
@@ -15,11 +18,44 @@ import {
   DEAL_OBJECT_TYPE_IDS,
   asRecord,
   isInterestingDealProperty,
+  isLeadWebhookEvent,
+  isTaskWebhookEvent,
   resolveActivityTarget,
   resolveAssociationActivityTarget,
   resolveAssociationDealId,
+  resolveAssociationLeadId,
+  resolveAssociationTaskId,
+  resolveLeadId,
+  resolveTaskId,
 } from "./shared.js";
+import { processTaskWebhookEvent } from "./task-sync.js";
 import { loadWebhookEvent, updateWebhookEventStatus } from "./webhook-events.js";
+
+const invalidateQueueCacheForDealOwner = async (orgId: string, hubspotDealId: string): Promise<void> => {
+  const { data: dealData, error: dealError } = await getSupabaseAdmin()
+    .from("hubspot_deals")
+    .select("hubspot_owner_id")
+    .eq("org_id", orgId)
+    .eq("hubspot_deal_id", hubspotDealId)
+    .maybeSingle();
+
+  if (dealError || !dealData?.hubspot_owner_id) {
+    return;
+  }
+
+  const { data: userData, error: userError } = await getSupabaseAdmin()
+    .from("users")
+    .select("id")
+    .eq("org_id", orgId)
+    .eq("hubspot_owner_id", dealData.hubspot_owner_id)
+    .maybeSingle();
+
+  if (userError || !userData?.id) {
+    return;
+  }
+
+  invalidateQueueCache(userData.id);
+};
 
 const processHubSpotWebhookEvent = async (eventId: string): Promise<void> => {
   const event = await loadWebhookEvent(eventId);
@@ -148,6 +184,32 @@ const processHubSpotWebhookEvent = async (eventId: string): Promise<void> => {
       if (appliedChange.lifecycleStatus !== "won" && appliedChange.lifecycleStatus !== "lost") {
         await scheduleDealReanalysis(event.org_id, eligibleDealId, event.id, "Changement HubSpot sur le deal");
       }
+
+      await invalidateQueueCacheForDealOwner(event.org_id, eligibleDealId);
+      await updateWebhookEventStatus(event.id, "completed");
+      return;
+    }
+
+    const associationTaskId =
+      event.subscription_type === "object.associationChange" ? resolveAssociationTaskId(payload) : null;
+    const legacyTaskId = event.subscription_type.startsWith("task.") ? event.object_id : null;
+    const taskId =
+      resolveTaskId(event.object_type_id, event.object_id, event.subscription_type) ?? associationTaskId ?? legacyTaskId;
+
+    if (taskId && isTaskWebhookEvent(event.subscription_type, event.object_type_id, event.property_name)) {
+      await processTaskWebhookEvent(event.org_id, taskId, event);
+      await updateWebhookEventStatus(event.id, "completed");
+      return;
+    }
+
+    const associationLeadId =
+      event.subscription_type === "object.associationChange" ? resolveAssociationLeadId(payload) : null;
+    const legacyLeadId = event.subscription_type.startsWith("lead.") ? event.object_id : null;
+    const leadId =
+      resolveLeadId(event.object_type_id, event.object_id, event.subscription_type) ?? associationLeadId ?? legacyLeadId;
+
+    if (leadId && isLeadWebhookEvent(event.subscription_type, event.object_type_id, event.property_name)) {
+      await processLeadWebhookEvent(event.org_id, leadId, event);
       await updateWebhookEventStatus(event.id, "completed");
       return;
     }

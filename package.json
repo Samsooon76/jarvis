@@ -9,7 +9,8 @@
   ],
   "scripts": {
     "dev": "./scripts/dev-all.sh",
-    "build": "npm run build -w @jarvis/shared && npm run build -w @jarvis/api && npm run build -w @jarvis/extension",
+    "build": "npm run build -w @jarvis/shared && npm run build -w @jarvis/api && npm run build -w @jarvis/mcp && npm run build -w @jarvis/extension",
+    "dev:mcp": "npm run dev -w @jarvis/mcp",
     "dev:api": "npm run dev -w @jarvis/api",
     "dev:extension": "npm run dev -w @jarvis/extension",
     "lint": "npm run lint --workspaces"

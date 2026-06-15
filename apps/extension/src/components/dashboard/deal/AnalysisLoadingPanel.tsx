@@ -39,10 +39,10 @@ export const AnalysisLoadingPanel = ({
 
   if (!isLoading) {
     return (
-      <article className="ae-deal-panel ae-analysis-loading idle">
-        <h3>{title}</h3>
-        {error ? <p className="ae-detail-error">{error}</p> : null}
-        <p>{idleText}</p>
+      <article className="jv-theme-block jv-loading-panel">
+        <span className="jv-section-label">{title}</span>
+        {error ? <p className="jv-banner jv-banner-error">{error}</p> : null}
+        <p className="jv-theme-empty">{idleText}</p>
       </article>
     );
   }
@@ -50,19 +50,21 @@ export const AnalysisLoadingPanel = ({
   const activeStep = steps[activeStepIndex] ?? steps[0];
 
   return (
-    <article className={`ae-deal-panel ae-analysis-loading${compact ? " compact" : ""}`} aria-live="polite">
-      <div className="ae-loading-head">
-        <div className="ae-loading-orbit" aria-hidden="true">
+    <article
+      className={`jv-theme-block jv-loading-panel${compact ? " compact" : ""}`}
+      aria-live="polite"
+    >
+      <div className="jv-loading-head">
+        <div aria-hidden="true" className="jv-loading-orbit">
           <span />
-          <i />
         </div>
         <div>
-          <h3>{title}</h3>
-          <p>{activeStep.detail}</p>
+          <span className="jv-section-label">{title}</span>
+          <p className="jv-prose">{activeStep.detail}</p>
         </div>
       </div>
-      {error ? <p className="ae-detail-error">{error}</p> : null}
-      <ol className="ae-loading-steps">
+      {error ? <p className="jv-banner jv-banner-error">{error}</p> : null}
+      <ol className="jv-loading-steps">
         {steps.map((step, index) => {
           const stateClass = index < activeStepIndex ? "done" : index === activeStepIndex ? "current" : "waiting";
 
@@ -77,7 +79,7 @@ export const AnalysisLoadingPanel = ({
           );
         })}
       </ol>
-      <div className="ae-loading-progress" aria-hidden="true">
+      <div aria-hidden="true" className="jv-loading-progress">
         <span style={{ width: `${((activeStepIndex + 1) / steps.length) * 100}%` }} />
       </div>
     </article>

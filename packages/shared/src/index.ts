@@ -724,3 +724,24 @@ export type WinAnalysisOverview = {
   portfolio: CloseWonPortfolioAnalysis | null;
   benchmarks: WinBenchmark[];
 };
+
+export type AskJarvisRequest = {
+  question: string;
+  orgId: string;
+  prospectId?: string | null;
+  hubspotDealId?: string | null;
+  userId?: string | null;
+  includeQueue?: boolean;
+  llmProvider?: string | null;
+  llmModel?: string | null;
+};
+
+export type AskJarvisResult = {
+  answer: string;
+  confidence: "low" | "medium" | "high";
+  sources: string[];
+  contextSummary: string;
+  provider: string;
+  model: string;
+  generatedAt: string;
+};

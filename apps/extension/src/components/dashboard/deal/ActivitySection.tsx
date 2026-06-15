@@ -24,23 +24,23 @@ type ActivityTimelineFilter = "all" | "call" | "email" | "meeting";
 const activityLoadingSteps: LoadingStep[] = [
   {
     label: "Connexion HubSpot",
-    detail: "Resolution du deal et verification de l'acces CRM.",
+    detail: "Résolution du deal et vérification de l'accès CRM.",
   },
   {
-    label: "Collecte des activites",
-    detail: "Lecture des notes, calls, meetings, emails et SMS associes.",
+    label: "Collecte des activités",
+    detail: "Lecture des notes, calls, meetings, emails et SMS associés.",
   },
   {
     label: "Consolidation timeline",
-    detail: "Tri chronologique avec dates completes et engagement par canal.",
+    detail: "Tri chronologique avec dates complètes et engagement par canal.",
   },
   {
     label: "Analyse IA",
-    detail: "Generation du plan d'action, des echeances et des insights.",
+    detail: "Génération du plan d'action, des échéances et des insights.",
   },
   {
-    label: "Controle chronologique",
-    detail: "Filtrage des echeances passees avant affichage.",
+    label: "Contrôle chronologique",
+    detail: "Filtrage des échéances passées avant affichage.",
   },
 ];
 
@@ -106,28 +106,30 @@ const ActivityTimelinePanel = ({
     { id: "all", label: "Tout" },
     { id: "call", label: "Appels" },
     { id: "email", label: "Emails" },
-    { id: "meeting", label: "Reunions" },
+    { id: "meeting", label: "Réunions" },
   ];
 
   return (
-    <article className="ae-deal-panel ae-activity-timeline-panel">
-    <div className="ae-deal-panel-heading">
+    <article className="jv-theme-block">
+      <div className="jv-theme-block-head">
         <div>
-          <h3>Timeline du deal</h3>
-          <span>{nextSteps.length} next step{nextSteps.length > 1 ? "s" : ""} integre{nextSteps.length > 1 ? "s" : ""}</span>
+          <span className="jv-section-label">Timeline du deal</span>
+          <span className="jv-chart-legend">
+            {nextSteps.length} next step{nextSteps.length > 1 ? "s" : ""} intégré{nextSteps.length > 1 ? "s" : ""}
+          </span>
         </div>
-      {crmDealUrl ? (
-        <a href={crmDealUrl} rel="noreferrer" target="_blank">
+        {crmDealUrl ? (
+          <a className="jv-btn-ghost" href={crmDealUrl} rel="noreferrer" target="_blank">
             Ouvrir HubSpot
-        </a>
-      ) : (
-        <button disabled type="button">
+          </a>
+        ) : (
+          <button className="jv-btn-ghost" disabled type="button">
             Ouvrir HubSpot
-        </button>
-      )}
-    </div>
+          </button>
+        )}
+      </div>
 
-      <div className="ae-timeline-filters" aria-label="Filtres timeline">
+      <div aria-label="Filtres timeline" className="jv-timeline-filters" role="group">
         {filters.map((filter) => (
           <button
             aria-pressed={activeFilter === filter.id}
@@ -141,36 +143,38 @@ const ActivityTimelinePanel = ({
         ))}
       </div>
 
-      <div className="ae-activity-timeline">
+      <div className="jv-activity-timeline">
         {visibleNextSteps.length > 0 ? (
-          <div className="ae-timeline-section-label">
+          <div className="jv-timeline-label">
             <span>Next steps</span>
           </div>
         ) : null}
         {visibleNextSteps.map((step) => (
-          <div className={`ae-activity-event next-step ${step.source}`} key={step.id}>
+          <div className={`jv-activity-event next-step ${step.source}`} key={step.id}>
             <ActivityChannelIcon channel={step.source} />
             <time>{step.dateLabel}</time>
             <div>
               <strong>{step.title}</strong>
-              {step.ownerName ? <small>{step.ownerName}</small> : null}
-              <p>{compactText(step.detail, 180)}</p>
-              <div className="ae-timeline-badges">
-                {step.priority ? <span>{activityPriorityLabels[step.priority]}</span> : null}
-                {step.status ? <span>{activityStatusLabels[step.status]}</span> : null}
-                <span>{step.source === "recommendation" ? "IA" : step.source === "deadline" ? "Echeance" : "Action"}</span>
+              {step.ownerName ? <small> · {step.ownerName}</small> : null}
+              <p className="jv-prose">{compactText(step.detail, 180)}</p>
+              <div className="jv-item-meta">
+                {step.priority ? <span className="jv-meta-pending">{activityPriorityLabels[step.priority]}</span> : null}
+                {step.status ? <span className="jv-meta-ok">{activityStatusLabels[step.status]}</span> : null}
+                <span>
+                  {step.source === "recommendation" ? "IA" : step.source === "deadline" ? "Échéance" : "Action"}
+                </span>
               </div>
             </div>
           </div>
         ))}
 
         {activities.length > 0 ? (
-          <div className="ae-timeline-section-label">
+          <div className="jv-timeline-label">
             <span>Historique CRM</span>
           </div>
         ) : null}
         {activities.map((item) => (
-          <div className={`ae-activity-event ${item.channel}`} key={item.id}>
+          <div className={`jv-activity-event ${item.channel}`} key={item.id}>
             <ActivityChannelIcon channel={item.channel} />
             <time>
               {formatOptionalDate(item.occurredAt)}
@@ -178,50 +182,47 @@ const ActivityTimelinePanel = ({
             </time>
             <div>
               <strong>{item.title}</strong>
-              {item.actorName ? <small>{item.actorName}</small> : null}
-              {item.body ? <p>{compactText(item.body, 130)}</p> : null}
+              {item.actorName ? <small> · {item.actorName}</small> : null}
+              {item.body ? <p className="jv-prose">{compactText(item.body, 130)}</p> : null}
             </div>
           </div>
         ))}
         {activities.length === 0 && nextSteps.length === 0 ? (
-          <p className="ae-empty compact">Aucune activite HubSpot exploitable.</p>
+          <p className="jv-theme-empty">Aucune activité HubSpot exploitable.</p>
         ) : null}
         {activities.length === 0 && visibleNextSteps.length === 0 && activeFilter !== "all" ? (
-          <p className="ae-empty compact">Aucune activite pour ce filtre.</p>
+          <p className="jv-theme-empty">Aucune activité pour ce filtre.</p>
         ) : null}
       </div>
-  </article>
+    </article>
   );
 };
 
 const ChannelEngagementPanel = ({ channels }: { channels: DealChannelEngagement[] }) => (
-  <article className="ae-deal-panel ae-channel-panel">
-    <div className="ae-deal-panel-heading">
-      <h3>Engagement par canal</h3>
-      <button type="button">Historique CRM</button>
-    </div>
-    <div className="ae-channel-grid">
+  <article className="jv-theme-block">
+    <span className="jv-section-label">Engagement par canal</span>
+    <div className="jv-channel-grid">
       {channels.map((channel) => (
-        <div className="ae-channel-card" key={channel.channel}>
+        <div className="jv-channel-card" key={channel.channel}>
           <span>{channel.label}</span>
           <strong>{channel.count}</strong>
-          <small>{channel.responseRate === null ? channel.caption : `${channel.responseRate} % de reponse`}</small>
+          <small>
+            {channel.responseRate === null ? channel.caption : `${channel.responseRate} % de réponse`}
+          </small>
         </div>
       ))}
     </div>
-    <p className="ae-channel-summary">
-      Volumes calcules depuis les activites HubSpot associees a ce deal.
-    </p>
+    <p className="jv-theme-empty">Volumes calculés depuis les activités HubSpot associées à ce deal.</p>
   </article>
 );
 
 const NotesInsightsPanel = ({ insights }: { insights: ActivityPlanInsight[] }) => (
-  <article className="ae-deal-panel ae-activity-notes">
-    <h3>Notes & insights</h3>
+  <article className="jv-theme-block">
+    <span className="jv-section-label">Notes & insights</span>
     {insights.length > 0 ? (
-      <div className="ae-activity-note-list">
+      <div>
         {insights.map((insight) => (
-          <div className="ae-activity-note" key={insight.title}>
+          <div className="jv-activity-note" key={insight.title}>
             <span aria-hidden="true" />
             <p>
               <strong>{insight.title}</strong>
@@ -231,7 +232,7 @@ const NotesInsightsPanel = ({ insights }: { insights: ActivityPlanInsight[] }) =
         ))}
       </div>
     ) : (
-      <p className="ae-empty compact">Aucun insight supplementaire detecte.</p>
+      <p className="jv-theme-empty">Aucun insight supplémentaire détecté.</p>
     )}
   </article>
 );
@@ -248,22 +249,20 @@ const ActivityRecommendationPanel = ({
   const recommendation = result.activityPlan.recommendation;
 
   return (
-    <article className="ae-deal-panel ae-activity-reco">
-      <div className="ae-deal-panel-heading">
-        <h3>Recommandation IA</h3>
-        <strong className={`ae-activity-priority ${recommendation.priority}`}>
+    <article className="jv-theme-block">
+      <div className="jv-theme-block-head">
+        <span className="jv-section-label">Recommandation IA</span>
+        <span className={`jv-qual-pill ${recommendation.priority === "high" ? "red" : recommendation.priority === "medium" ? "amber" : "muted"}`}>
           {activityPriorityLabels[recommendation.priority]}
-        </strong>
+        </span>
       </div>
-      <p>{recommendation.summary}</p>
-      <div className="ae-next-best-action">
-        <span>Prochaine meilleure action</span>
-        <div className="ae-next-best-action-card">
-          <strong>{recommendation.nextBestAction.title}</strong>
-          <small>{recommendation.nextBestAction.rationale}</small>
-        </div>
+      <p className="jv-prose">{recommendation.summary}</p>
+      <div className="jv-nba-card">
+        <span className="jv-section-label">Prochaine meilleure action</span>
+        <strong>{recommendation.nextBestAction.title}</strong>
+        <small>{recommendation.nextBestAction.rationale}</small>
       </div>
-      <button disabled={isLoading} onClick={onRefresh} type="button">
+      <button className="jv-btn-ghost" disabled={isLoading} onClick={onRefresh} type="button">
         {isLoading ? "Analyse..." : "Relancer l'analyse IA"}
       </button>
     </article>
@@ -285,12 +284,12 @@ export const ActivitySection = ({
 }) => {
   if (!result) {
     return (
-        <AnalysisLoadingPanel
-          error={error}
-          idleText="Activite en cours de preparation."
+      <AnalysisLoadingPanel
+        error={error}
+        idleText="Activité en cours de préparation."
         isLoading={isLoading}
         steps={activityLoadingSteps}
-        title="Activite & plan d'action"
+        title="Activité & plan d'action"
       />
     );
   }
@@ -298,7 +297,7 @@ export const ActivitySection = ({
   const crmDealUrl = getHubSpotDealUrl(hubspotPortalId, result.hubspotDealId);
 
   return (
-    <section className="ae-activity-layout" aria-label="Activite et plan d'action">
+    <section aria-label="Activité et plan d'action" className="jv-activity-layout">
       {isLoading ? (
         <AnalysisLoadingPanel
           compact
@@ -306,14 +305,14 @@ export const ActivitySection = ({
           idleText=""
           isLoading={isLoading}
           steps={activityLoadingSteps}
-          title="Mise a jour de l'activite"
+          title="Mise à jour de l'activité"
         />
       ) : null}
-      {error ? <p className="ae-detail-error">{error}</p> : null}
-      <div className="ae-activity-main-column">
+      {error ? <p className="jv-banner jv-banner-error">{error}</p> : null}
+      <div className="jv-activity-main">
         <ActivityTimelinePanel crmDealUrl={crmDealUrl} result={result} />
       </div>
-      <div className="ae-activity-side-column">
+      <div className="jv-activity-side">
         <ChannelEngagementPanel channels={result.channelEngagement} />
         <NotesInsightsPanel insights={result.activityPlan.notesAndInsights} />
         <ActivityRecommendationPanel isLoading={isLoading} onRefresh={onRefresh} result={result} />

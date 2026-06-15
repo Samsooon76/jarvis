@@ -30,7 +30,7 @@ import {
   fetchDealPropertyHistory,
   fetchDealSalesActivityIds,
 } from "./hubspot/deals.js";
-import { fetchLeadsByOwner } from "./hubspot/leads.js";
+import { fetchLeadById, fetchLeadsByOwner } from "./hubspot/leads.js";
 import {
   buildAuthorizationUrl,
   decodeState,
@@ -78,6 +78,7 @@ export const hubSpotService = {
   fetchDealCount,
   fetchDealCountByOwner,
   fetchOwners,
+  fetchLeadById,
   fetchLeadsByOwner,
   fetchContactsByIds: fetchContactSnapshotsByIds,
   createTask,

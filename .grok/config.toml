@@ -1,0 +1,12 @@
+[mcp_servers.jarvis]
+command = "npx"
+args = ["-y", "tsx", "packages/jarvis-mcp/src/index.ts"]
+enabled = true
+startup_timeout_sec = 20
+tool_timeouts = { ask_jarvis = 180, analyze_deal = 240, get_forecast = 120, get_manager_digest = 180 }
+
+[mcp_servers.jarvis.env]
+JARVIS_API_URL = "http://localhost:4000"
+JARVIS_AUTH_TOKEN = "${JARVIS_AUTH_TOKEN}"
+JARVIS_ORG_ID = "${JARVIS_ORG_ID}"
+JARVIS_USER_ID = "${JARVIS_USER_ID}"

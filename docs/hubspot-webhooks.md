@@ -41,6 +41,14 @@ Create these generic webhook subscriptions in the HubSpot app Webhooks page, the
 | Note | `0-46` | Association changed |
 | Meeting event | `0-47` | Association changed |
 | Deal | `0-3` | Property changed: `dealstage`, `amount`, `closedate`, `hubspot_owner_id`, `hs_deal_stage_probability`, `pipeline` |
+| Task | `0-27` | Created |
+| Task | `0-27` | Deleted |
+| Task | `0-27` | Property changed: `hs_task_status`, `hs_task_priority`, `hs_task_subject`, `hs_task_body`, `hs_timestamp`, `hubspot_owner_id` |
+| Task | `0-27` | Association changed |
+| Lead | `0-136` | Created |
+| Lead | `0-136` | Deleted |
+| Lead | `0-136` | Property changed: `hs_lead_name`, `hs_pipeline`, `hs_pipeline_stage`, `hubspot_owner_id` |
+| Lead | `0-136` | Association changed |
 
 Add the legacy subscription separately:
 
@@ -61,4 +69,9 @@ Generic webhooks currently do not support `contact.privacyDeletion`, so this one
 7. Select the object and event from the table above.
 8. Save, then activate each subscription.
 
-HubSpot sends batches to the endpoint. Jarvis validates the HubSpot signature, deduplicates retries, hydrates the activity through the HubSpot API, mirrors it in Supabase, and debounces deal analysis by `HUBSPOT_WEBHOOK_DEBOUNCE_SECONDS`.
+HubSpot sends batches to the endpoint. Jarvis validates the HubSpot signature, deduplicates retries, then:
+
+- **Activities** (calls, emails, notes, meetings, communications): hydrated through the HubSpot API, mirrored in Supabase, and debounced deal analysis by `HUBSPOT_WEBHOOK_DEBOUNCE_SECONDS`.
+- **Deals**: property changes applied directly to `hubspot_deals` and `prospects`, with Jarvis Pulse notifications and optional re-analysis.
+- **Tasks**: cache invalidated so the tasks view reflects completions and edits within the next UI refresh.
+- **Leads**: upserted into `hubspot_leads` (or deleted on `object.deletion`) for near-real-time lead pipeline updates.

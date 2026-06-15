@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
-import type { ApiResponse } from "@jarvis/shared";
+import type { ApiResponse, AskJarvisRequest, AskJarvisResult } from "@jarvis/shared";
 import { assertManagerOrAdmin, assertOrgAccess, requireAuth } from "../services/app-auth.service.js";
+import { askJarvis } from "../services/llm/ask.service.js";
 import { createLlmProvider } from "../services/llm/provider.factory.js";
 import {
   isLlmProviderId,
@@ -99,6 +100,52 @@ export const registerLlmRoutes = async (app: FastifyInstance): Promise<void> => 
           success: false,
           error:
             error instanceof Error ? error.message : "Erreur inconnue pendant l'enregistrement de la preference IA.",
+        });
+      }
+    },
+  );
+
+  app.post<{ Body: AskJarvisRequest; Reply: ApiResponse<AskJarvisResult> }>(
+    "/api/llm/ask",
+    async (request, reply) => {
+      const orgId = request.body.orgId?.trim();
+      const question = request.body.question?.trim();
+
+      if (!orgId) {
+        return reply.code(400).send({
+          success: false,
+          error: "Le champ orgId est obligatoire.",
+        });
+      }
+
+      if (!question) {
+        return reply.code(400).send({
+          success: false,
+          error: "Le champ question est obligatoire.",
+        });
+      }
+
+      try {
+        assertOrgAccess(request, orgId);
+        requireAuth(request);
+
+        return reply.send({
+          success: true,
+          data: await askJarvis(request.body),
+        });
+      } catch (error) {
+        request.log.error(
+          {
+            err: error instanceof Error ? error : undefined,
+            errorMessage: error instanceof Error ? error.message : String(error),
+            orgId,
+          },
+          "Impossible de repondre a la question Jarvis.",
+        );
+
+        return reply.code(500).send({
+          success: false,
+          error: error instanceof Error ? error.message : "Erreur inconnue pendant la question Jarvis.",
         });
       }
     },

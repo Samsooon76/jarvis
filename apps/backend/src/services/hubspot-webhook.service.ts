@@ -109,6 +109,8 @@ export type AcceptedHubSpotWebhookBatch = {
 
 const SIGNATURE_TIMESTAMP_TOLERANCE_MS = 5 * 60 * 1000;
 const DEAL_OBJECT_TYPE_IDS = new Set(["0-3", "deal", "deals"]);
+const TASK_OBJECT_TYPE_IDS = new Set(["0-27", "task", "tasks"]);
+const LEAD_OBJECT_TYPE_IDS = new Set(["0-136", "lead", "leads"]);
 const INTERESTING_DEAL_PROPERTIES = new Set([
   "amount",
   "closedate",
@@ -117,6 +119,20 @@ const INTERESTING_DEAL_PROPERTIES = new Set([
   "probabilite_de__closing",
   "hubspot_owner_id",
   "pipeline",
+]);
+const INTERESTING_TASK_PROPERTIES = new Set([
+  "hs_task_status",
+  "hs_task_priority",
+  "hs_task_subject",
+  "hs_task_body",
+  "hs_timestamp",
+  "hubspot_owner_id",
+]);
+const INTERESTING_LEAD_PROPERTIES = new Set([
+  "hs_lead_name",
+  "hs_pipeline",
+  "hs_pipeline_stage",
+  "hubspot_owner_id",
 ]);
 const WEBHOOK_SCOPE_CACHE_TTL_MS = 60 * 1000;
 
@@ -291,8 +307,20 @@ const readStringArray = (record: Record<string, unknown>, key: string): string[]
 const isInterestingDealProperty = (propertyName: string | null): boolean =>
   !propertyName || INTERESTING_DEAL_PROPERTIES.has(propertyName);
 
+const isInterestingTaskProperty = (propertyName: string | null): boolean =>
+  !propertyName || INTERESTING_TASK_PROPERTIES.has(propertyName);
+
+const isInterestingLeadProperty = (propertyName: string | null): boolean =>
+  !propertyName || INTERESTING_LEAD_PROPERTIES.has(propertyName);
+
 const isDealObjectTypeId = (objectTypeId: string | null): boolean =>
   Boolean(objectTypeId && DEAL_OBJECT_TYPE_IDS.has(objectTypeId));
+
+const isTaskObjectTypeId = (objectTypeId: string | null): boolean =>
+  Boolean(objectTypeId && TASK_OBJECT_TYPE_IDS.has(objectTypeId));
+
+const isLeadObjectTypeId = (objectTypeId: string | null): boolean =>
+  Boolean(objectTypeId && LEAD_OBJECT_TYPE_IDS.has(objectTypeId));
 
 const resolveAssociationDealId = (event: NormalizedHubSpotWebhookEvent): string | null => {
   if (isDealObjectTypeId(event.association.fromObjectTypeId)) {
@@ -327,6 +355,66 @@ const isPrivacyDeletionEvent = (event: NormalizedHubSpotWebhookEvent): boolean =
 const isDealCreationEvent = (event: NormalizedHubSpotWebhookEvent): boolean =>
   (event.subscriptionType === "object.creation" && isDealObjectTypeId(event.objectTypeId)) ||
   event.subscriptionType === "deal.creation";
+
+const isTaskWebhookEvent = (event: NormalizedHubSpotWebhookEvent): boolean => {
+  if (event.subscriptionType === "object.creation" && isTaskObjectTypeId(event.objectTypeId)) {
+    return true;
+  }
+
+  if (event.subscriptionType === "object.deletion" && isTaskObjectTypeId(event.objectTypeId)) {
+    return true;
+  }
+
+  if (event.subscriptionType === "object.propertyChange" && isTaskObjectTypeId(event.objectTypeId)) {
+    return isInterestingTaskProperty(event.propertyName);
+  }
+
+  if (event.subscriptionType === "object.associationChange") {
+    const fromObjectTypeId = event.association.fromObjectTypeId;
+    const toObjectTypeId = event.association.toObjectTypeId;
+
+    return (
+      (fromObjectTypeId !== null && TASK_OBJECT_TYPE_IDS.has(fromObjectTypeId)) ||
+      (toObjectTypeId !== null && TASK_OBJECT_TYPE_IDS.has(toObjectTypeId))
+    );
+  }
+
+  return (
+    event.subscriptionType === "task.creation" ||
+    event.subscriptionType === "task.deletion" ||
+    event.subscriptionType === "task.propertyChange"
+  );
+};
+
+const isLeadWebhookEvent = (event: NormalizedHubSpotWebhookEvent): boolean => {
+  if (event.subscriptionType === "object.creation" && isLeadObjectTypeId(event.objectTypeId)) {
+    return true;
+  }
+
+  if (event.subscriptionType === "object.deletion" && isLeadObjectTypeId(event.objectTypeId)) {
+    return true;
+  }
+
+  if (event.subscriptionType === "object.propertyChange" && isLeadObjectTypeId(event.objectTypeId)) {
+    return isInterestingLeadProperty(event.propertyName);
+  }
+
+  if (event.subscriptionType === "object.associationChange") {
+    const fromObjectTypeId = event.association.fromObjectTypeId;
+    const toObjectTypeId = event.association.toObjectTypeId;
+
+    return (
+      (fromObjectTypeId !== null && LEAD_OBJECT_TYPE_IDS.has(fromObjectTypeId)) ||
+      (toObjectTypeId !== null && LEAD_OBJECT_TYPE_IDS.has(toObjectTypeId))
+    );
+  }
+
+  return (
+    event.subscriptionType === "lead.creation" ||
+    event.subscriptionType === "lead.deletion" ||
+    event.subscriptionType === "lead.propertyChange"
+  );
+};
 
 const normalizeTimestamp = (value: string | number | null): string | null => {
   if (typeof value === "number" && Number.isFinite(value)) {
@@ -647,6 +735,10 @@ const filterRealtimeScopedEvents = async (
     }
 
     if (isPrivacyDeletionEvent(event)) {
+      return true;
+    }
+
+    if (isTaskWebhookEvent(event) || isLeadWebhookEvent(event)) {
       return true;
     }
 

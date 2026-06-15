@@ -208,7 +208,7 @@ export const TasksView = ({
       }
 
       void loadTasksRef.current();
-    }, 60_000);
+    }, 30_000);
 
     return () => window.clearInterval(intervalId);
   }, [orgId, selectedOwnerId]);

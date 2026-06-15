@@ -1,6 +1,10 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { ApiResponse, ManagerDigest, ManagerDigestHistoryEntry, ManagerDigestPeriod } from "@jarvis/shared";
-import { loadAuthenticatedAppUserProfile, type AppUserProfile } from "../services/app-auth.service.js";
+import {
+  loadAuthenticatedAppUserProfile,
+  requireAuth,
+  type AppUserProfile,
+} from "../services/app-auth.service.js";
 import {
   getOrCreateManagerDigest,
   listManagerDigestHistory,
@@ -33,11 +37,35 @@ const parsePositiveInteger = (value: string | undefined): number | undefined => 
   return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
 };
 
+const resolveDigestRecipientFromServiceAuth = (request: FastifyRequest): ManagerDigestRecipient | null => {
+  const auth = requireAuth(request);
+
+  if (auth.authUserId !== "jarvis-mcp-service" || !auth.orgId) {
+    return null;
+  }
+
+  if (auth.role !== "admin" && auth.role !== "manager") {
+    return null;
+  }
+
+  return {
+    userId: auth.appUserId ?? "jarvis-mcp-service",
+    orgId: auth.orgId,
+    role: auth.role,
+  };
+};
+
 // Le digest est reserve aux admins/managers, comme Jarvis Pulse.
 const resolveDigestRecipient = async (
   request: FastifyRequest,
   reply: FastifyReply,
 ): Promise<ManagerDigestRecipient | null> => {
+  const serviceRecipient = resolveDigestRecipientFromServiceAuth(request);
+
+  if (serviceRecipient) {
+    return serviceRecipient;
+  }
+
   let profile: AppUserProfile;
 
   try {

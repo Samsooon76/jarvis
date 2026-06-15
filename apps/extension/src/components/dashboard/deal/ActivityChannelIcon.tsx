@@ -2,7 +2,7 @@ import { activityIconLabels, type ActivityIconType } from "../../../utils/dashbo
 
 export const ActivityChannelIcon = ({ channel }: { channel: ActivityIconType }) => (
   <span
-    className="ae-activity-icon"
+    className="jv-activity-icon"
     aria-label={activityIconLabels[channel]}
     role="img"
     title={activityIconLabels[channel]}

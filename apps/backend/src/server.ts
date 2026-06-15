@@ -82,6 +82,35 @@ const registerAuthHook = (app: FastifyInstance): void => {
       });
     }
 
+    if (env.mcpServiceToken && token === env.mcpServiceToken) {
+      const requestedOrgId = extractRequestedOrgId(request);
+
+      if (!requestedOrgId) {
+        request.log.warn({ path: request.url }, "Token MCP service refuse sans orgId.");
+        return reply.code(400).send({
+          success: false,
+          error: "orgId est obligatoire avec le token MCP service.",
+        });
+      }
+
+      request.auth = {
+        authUserId: "jarvis-mcp-service",
+        appUserId: null,
+        orgId: requestedOrgId,
+        role: "admin",
+        hubspotOwnerId: null,
+        email: "mcp@jarvis.local",
+      };
+
+      setRequestSentryUser({
+        id: "jarvis-mcp-service",
+        orgId: requestedOrgId,
+        role: "admin",
+      });
+
+      return;
+    }
+
     if (
       env.apiAuthToken &&
       token === env.apiAuthToken &&

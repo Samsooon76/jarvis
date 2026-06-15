@@ -212,7 +212,27 @@ export const LeadsView = ({
       })
       .finally(() => setIsLoading(false));
 
-    return () => abortController.abort();
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+
+      void fetchHubSpotLeadAccounts(orgId, selectedOwnerId, 500, { signal: abortController.signal }, true)
+        .then((loadedAccounts) => {
+          accountsByOwnerCache.set(cacheKey, loadedAccounts);
+          setAccounts(loadedAccounts);
+        })
+        .catch((loadError: unknown) => {
+          if (loadError instanceof DOMException && loadError.name === "AbortError") {
+            return;
+          }
+        });
+    }, 30_000);
+
+    return () => {
+      abortController.abort();
+      window.clearInterval(intervalId);
+    };
   }, [orgId, selectedOwnerId]);
 
   const phaseOptions = useMemo<PhaseFilterOption[]>(() => {

@@ -23,7 +23,25 @@ export const ACTIVITY_TYPE_BY_NAME: Record<string, HubSpotActivityType> = {
 };
 
 export const DEAL_OBJECT_TYPE_IDS = new Set(["0-3", "deal", "deals"]);
+export const TASK_OBJECT_TYPE_IDS = new Set(["0-27", "task", "tasks"]);
+export const LEAD_OBJECT_TYPE_IDS = new Set(["0-136", "lead", "leads"]);
 export const ACTIVITY_REHYDRATE_DELAY_MS = 2 * 60 * 1000;
+
+const INTERESTING_TASK_PROPERTIES = new Set([
+  "hs_task_status",
+  "hs_task_priority",
+  "hs_task_subject",
+  "hs_task_body",
+  "hs_timestamp",
+  "hubspot_owner_id",
+]);
+
+const INTERESTING_LEAD_PROPERTIES = new Set([
+  "hs_lead_name",
+  "hs_pipeline",
+  "hs_pipeline_stage",
+  "hubspot_owner_id",
+]);
 
 export const asRecord = (value: unknown): JsonRecord | null =>
   value && typeof value === "object" && !Array.isArray(value) ? (value as JsonRecord) : null;
@@ -104,6 +122,134 @@ export const isInterestingDealProperty = (propertyName: string | null): boolean 
     "hubspot_owner_id",
     "pipeline",
   ].includes(propertyName);
+
+export const isInterestingTaskProperty = (propertyName: string | null): boolean =>
+  !propertyName || INTERESTING_TASK_PROPERTIES.has(propertyName);
+
+export const isInterestingLeadProperty = (propertyName: string | null): boolean =>
+  !propertyName || INTERESTING_LEAD_PROPERTIES.has(propertyName);
+
+const isTaskObjectTypeId = (objectTypeId: string | null): boolean =>
+  Boolean(objectTypeId && TASK_OBJECT_TYPE_IDS.has(objectTypeId));
+
+const isLeadObjectTypeId = (objectTypeId: string | null): boolean =>
+  Boolean(objectTypeId && LEAD_OBJECT_TYPE_IDS.has(objectTypeId));
+
+export const resolveTaskId = (
+  objectTypeId: string | null,
+  objectId: string | null,
+  subscriptionType: string,
+): string | null => {
+  if (isTaskObjectTypeId(objectTypeId)) {
+    return objectId;
+  }
+
+  if (subscriptionType.startsWith("task.")) {
+    return objectId;
+  }
+
+  return null;
+};
+
+export const resolveLeadId = (
+  objectTypeId: string | null,
+  objectId: string | null,
+  subscriptionType: string,
+): string | null => {
+  if (isLeadObjectTypeId(objectTypeId)) {
+    return objectId;
+  }
+
+  if (subscriptionType.startsWith("lead.")) {
+    return objectId;
+  }
+
+  return null;
+};
+
+export const resolveAssociationTaskId = (payload: JsonRecord | null): string | null => {
+  const fromObjectTypeId = readPayloadString(payload, "fromObjectTypeId");
+  const toObjectTypeId = readPayloadString(payload, "toObjectTypeId");
+  const fromObjectId = readPayloadString(payload, "fromObjectId");
+  const toObjectId = readPayloadString(payload, "toObjectId");
+
+  if (fromObjectTypeId && TASK_OBJECT_TYPE_IDS.has(fromObjectTypeId)) {
+    return fromObjectId;
+  }
+
+  if (toObjectTypeId && TASK_OBJECT_TYPE_IDS.has(toObjectTypeId)) {
+    return toObjectId;
+  }
+
+  return null;
+};
+
+export const resolveAssociationLeadId = (payload: JsonRecord | null): string | null => {
+  const fromObjectTypeId = readPayloadString(payload, "fromObjectTypeId");
+  const toObjectTypeId = readPayloadString(payload, "toObjectTypeId");
+  const fromObjectId = readPayloadString(payload, "fromObjectId");
+  const toObjectId = readPayloadString(payload, "toObjectId");
+
+  if (fromObjectTypeId && LEAD_OBJECT_TYPE_IDS.has(fromObjectTypeId)) {
+    return fromObjectId;
+  }
+
+  if (toObjectTypeId && LEAD_OBJECT_TYPE_IDS.has(toObjectTypeId)) {
+    return toObjectId;
+  }
+
+  return null;
+};
+
+export const isTaskWebhookEvent = (
+  subscriptionType: string,
+  objectTypeId: string | null,
+  propertyName: string | null,
+): boolean => {
+  if (subscriptionType === "object.creation" && isTaskObjectTypeId(objectTypeId)) {
+    return true;
+  }
+
+  if (subscriptionType === "object.deletion" && isTaskObjectTypeId(objectTypeId)) {
+    return true;
+  }
+
+  if (subscriptionType === "object.propertyChange" && isTaskObjectTypeId(objectTypeId)) {
+    return isInterestingTaskProperty(propertyName);
+  }
+
+  if (subscriptionType === "object.associationChange") {
+    return Boolean(
+      (objectTypeId && TASK_OBJECT_TYPE_IDS.has(objectTypeId)) || subscriptionType.includes("task"),
+    );
+  }
+
+  return subscriptionType === "task.creation" || subscriptionType === "task.deletion" || subscriptionType === "task.propertyChange";
+};
+
+export const isLeadWebhookEvent = (
+  subscriptionType: string,
+  objectTypeId: string | null,
+  propertyName: string | null,
+): boolean => {
+  if (subscriptionType === "object.creation" && isLeadObjectTypeId(objectTypeId)) {
+    return true;
+  }
+
+  if (subscriptionType === "object.deletion" && isLeadObjectTypeId(objectTypeId)) {
+    return true;
+  }
+
+  if (subscriptionType === "object.propertyChange" && isLeadObjectTypeId(objectTypeId)) {
+    return isInterestingLeadProperty(propertyName);
+  }
+
+  if (subscriptionType === "object.associationChange" && isLeadObjectTypeId(objectTypeId)) {
+    return true;
+  }
+
+  return subscriptionType === "lead.creation" || subscriptionType === "lead.deletion" || subscriptionType === "lead.propertyChange";
+};
 
 export const resolveActivityTarget = (
   objectTypeId: string | null,

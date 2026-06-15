@@ -32,33 +32,33 @@ const qualificationLoadingSteps: LoadingStep[] = [
   },
   {
     label: "Historique commercial",
-    detail: "Collecte des notes, emails, calls, meetings et SMS dates.",
+    detail: "Collecte des notes, emails, calls, meetings et SMS datés.",
   },
   {
     label: "Qualification IA",
-    detail: "Analyse du comite d'achat, MEDDICC et processus de decision.",
+    detail: "Analyse du comité d'achat, MEDDICC et processus de décision.",
   },
   {
     label: "Validation",
-    detail: "Controle du format de reponse avant affichage.",
+    detail: "Contrôle du format de réponse avant affichage.",
   },
 ];
 
 const CommitteeTable = ({ members }: { members: BuyingCommitteeMember[] }) => (
-  <article className="ae-deal-panel ae-qualification-committee">
-    <h3>Comite d'achat</h3>
+  <article className="jv-theme-block">
+    <span className="jv-section-label">Comité d'achat</span>
     {members.length > 0 ? (
-      <div className="ae-committee-table">
-        <div className="ae-committee-row header">
+      <div className="jv-committee-table">
+        <div className="jv-committee-row header">
           <span>Personne</span>
-          <span>Role</span>
+          <span>Rôle</span>
           <span>Influence</span>
           <span>Sentiment</span>
-          <span>Role dans le deal</span>
+          <span>Rôle dans le deal</span>
         </div>
         {members.map((member) => (
-          <div className="ae-committee-row" key={`${member.name}:${member.role}`}>
-            <div className="ae-committee-person">
+          <div className="jv-committee-row" key={`${member.name}:${member.role}`}>
+            <div className="jv-committee-person">
               <i aria-hidden="true">{getInitials(member.name)}</i>
               <span>
                 <strong>{member.name}</strong>
@@ -66,36 +66,38 @@ const CommitteeTable = ({ members }: { members: BuyingCommitteeMember[] }) => (
               </span>
             </div>
             <span>{member.role}</span>
-            <span className="ae-qualification-influence">
+            <span className="jv-qualification-influence">
               <strong>{influenceLabels[member.influence]}</strong>
               <i>
                 <b style={{ width: `${getInfluenceScore(member.influence)}%` }} />
               </i>
             </span>
-            <span className={`ae-qualification-pill ${getSentimentTone(member.sentiment)}`}>
+            <span className={`jv-qual-pill ${getSentimentTone(member.sentiment)}`}>
               {sentimentLabels[member.sentiment]}
             </span>
-            <span className={`ae-qualification-pill ${getDealRoleTone(member.dealRole)}`}>
+            <span className={`jv-qual-pill ${getDealRoleTone(member.dealRole)}`}>
               {dealRoleLabels[member.dealRole]}
             </span>
           </div>
         ))}
       </div>
     ) : (
-      <p className="ae-empty compact">Aucun membre de comite nomme dans les donnees CRM.</p>
+      <p className="jv-theme-empty">Aucun membre de comité nommé dans les données CRM.</p>
     )}
   </article>
 );
 
 const MeddiccGrid = ({ criteria }: { criteria: MeddiccCriterion[] }) => (
-  <article className="ae-deal-panel ae-meddicc-panel">
-    <h3>Qualification MEDDICC</h3>
+  <article className="jv-theme-block">
+    <span className="jv-section-label">Qualification MEDDICC</span>
     {criteria.length > 0 ? (
-      <div className="ae-meddicc-grid">
+      <div className="jv-meddicc-grid">
         {criteria.map((criterion) => (
-          <div className="ae-meddicc-card" key={criterion.id}>
+          <div className="jv-meddicc-card" key={criterion.id}>
             <span>{criterion.label}</span>
-            <strong className={qualificationStatusTones[criterion.status]}>{qualificationStatusLabels[criterion.status]}</strong>
+            <span className={`jv-qual-pill ${qualificationStatusTones[criterion.status]}`}>
+              {qualificationStatusLabels[criterion.status]}
+            </span>
             <small>{criterion.score} %</small>
             <i className={qualificationStatusTones[criterion.status]}>
               <b style={{ width: `${criterion.score}%` }} />
@@ -105,84 +107,82 @@ const MeddiccGrid = ({ criteria }: { criteria: MeddiccCriterion[] }) => (
         ))}
       </div>
     ) : (
-      <p className="ae-empty compact">Qualification MEDDICC indisponible dans la reponse IA.</p>
+      <p className="jv-theme-empty">Qualification MEDDICC indisponible dans la réponse IA.</p>
     )}
   </article>
 );
 
 const DecisionProcessPanel = ({ process }: { process: DecisionProcess }) => (
-  <article className="ae-deal-panel ae-decision-panel">
-    <h3>Decision & processus</h3>
-    <dl className="ae-decision-list">
+  <article className="jv-theme-block">
+    <span className="jv-section-label">Décision & processus</span>
+    <dl className="jv-decision-list">
       <div>
-        <dt>Calendrier de decision</dt>
-        <dd>{process.decisionCalendar ?? "Non renseigne"}</dd>
+        <dt>Calendrier de décision</dt>
+        <dd>{process.decisionCalendar ?? "Non renseigné"}</dd>
       </div>
       <div>
-        <dt>Statut budgetaire</dt>
-        <dd className={process.budgetStatus === "validated" ? "green" : process.budgetStatus === "blocked" ? "red" : "amber"}>
+        <dt>Statut budgétaire</dt>
+        <dd className={`jv-qual-pill ${process.budgetStatus === "validated" ? "green" : process.budgetStatus === "blocked" ? "red" : "amber"}`}>
           {budgetStatusLabels[process.budgetStatus]}
         </dd>
       </div>
       <div>
         <dt>Processus d'achat</dt>
-        <dd className={process.purchaseProcess === "clear" ? "green" : process.purchaseProcess === "blocked" ? "red" : "amber"}>
+        <dd className={`jv-qual-pill ${process.purchaseProcess === "clear" ? "green" : process.purchaseProcess === "blocked" ? "red" : "amber"}`}>
           {purchaseProcessLabels[process.purchaseProcess]}
         </dd>
       </div>
       <div>
         <dt>Statut juridique</dt>
-        <dd className={process.legalStatus === "approved" ? "green" : process.legalStatus === "blocked" ? "red" : "amber"}>
+        <dd className={`jv-qual-pill ${process.legalStatus === "approved" ? "green" : process.legalStatus === "blocked" ? "red" : "amber"}`}>
           {legalStatusLabels[process.legalStatus]}
         </dd>
       </div>
       <div>
-        <dt>Prochaine etape de gouvernance</dt>
-        <dd>{process.nextGovernanceStep ?? "Non renseignee"}</dd>
+        <dt>Prochaine étape de gouvernance</dt>
+        <dd>{process.nextGovernanceStep ?? "Non renseignée"}</dd>
       </div>
     </dl>
   </article>
 );
 
 const QualificationRiskRows = ({ risks }: { risks: QualificationRisk[] }) => (
-  <article className="ae-deal-panel">
-    <h3>Risques & blocages</h3>
+  <article className="jv-theme-block">
+    <span className="jv-section-label">Risques & blocages</span>
     {risks.length > 0 ? (
-      <div className="ae-qualification-risk-list">
+      <div>
         {risks.map((risk) => (
-          <div className="ae-qualification-risk-row" key={`${risk.title}:${risk.severity}`}>
-            <span>{risk.title}</span>
+          <div className="jv-qual-risk-row" key={`${risk.title}:${risk.severity}`}>
+            <strong>{risk.title}</strong>
             <small>{risk.evidence}</small>
-            <strong className={getRiskTone(risk.severity)}>{riskSeverityLabels[risk.severity]}</strong>
+            <span className={`jv-qual-pill ${getRiskTone(risk.severity)}`}>
+              {riskSeverityLabels[risk.severity]}
+            </span>
           </div>
         ))}
       </div>
     ) : (
-      <p className="ae-empty compact">Aucun risque qualifie par l'IA.</p>
+      <p className="jv-theme-empty">Aucun risque qualifié par l'IA.</p>
     )}
   </article>
 );
 
 const QualificationInsightList = ({ items }: { items: QualificationInsight[] }) =>
   items.length > 0 ? (
-    <div className="ae-qualification-insight-list">
+    <ul className="jv-bullet-list">
       {items.map((item) => (
-        <div className="ae-qualification-insight-row" key={item.title}>
-          <span aria-hidden="true" />
-          <p>
-            <strong>{item.title}</strong>
-            <small>{item.rationale}</small>
-          </p>
-        </div>
+        <li key={item.title}>
+          <strong>{item.title}</strong> — {item.rationale}
+        </li>
       ))}
-    </div>
+    </ul>
   ) : (
-    <p className="ae-empty compact">Aucune information disponible.</p>
+    <p className="jv-theme-empty">Aucune information disponible.</p>
   );
 
 const QualificationInsightRows = ({ title, items }: { title: string; items: QualificationInsight[] }) => (
-  <article className="ae-deal-panel">
-    <h3>{title}</h3>
+  <article className="jv-theme-block">
+    <span className="jv-section-label">{title}</span>
     <QualificationInsightList items={items} />
   </article>
 );
@@ -200,17 +200,17 @@ const QualificationAiAside = ({
   onRefresh: () => void;
   result: DealQualificationResult;
 }) => (
-  <aside className="ae-deal-panel ae-qualification-ai">
-    <h3>Lecture IA</h3>
+  <aside className="jv-theme-block jv-qual-aside">
+    <span className="jv-section-label">Lecture IA</span>
     <small>
       {result.provider} · {result.model} · {formatOptionalDateTime(result.generatedAt)}
     </small>
-    {error ? <p className="ae-detail-error">{error}</p> : null}
-    <div className="ae-qualification-ai-section">
-      <h4>Ce qui manque pour ameliorer la probabilite de gain</h4>
+    {error ? <p className="jv-banner jv-banner-error">{error}</p> : null}
+    <div>
+      <span className="jv-section-label">Ce qui manque pour améliorer la probabilité</span>
       <QualificationInsightList items={items} />
     </div>
-    <button disabled={isLoading} onClick={onRefresh} type="button">
+    <button className="jv-btn-ghost" disabled={isLoading} onClick={onRefresh} type="button">
       {isLoading ? "Analyse..." : "Relancer l'analyse IA"}
     </button>
   </aside>
@@ -229,12 +229,12 @@ export const QualificationSection = ({
 }) => {
   if (!result) {
     return (
-        <AnalysisLoadingPanel
-          error={error}
-          idleText="Analyse en cours de preparation."
-          isLoading={isLoading}
+      <AnalysisLoadingPanel
+        error={error}
+        idleText="Analyse en cours de préparation."
+        isLoading={isLoading}
         steps={qualificationLoadingSteps}
-        title="Comite & qualification"
+        title="Comité & qualification"
       />
     );
   }
@@ -242,14 +242,14 @@ export const QualificationSection = ({
   const qualification = result.qualification;
 
   return (
-    <section className="ae-qualification-layout" aria-label="Comite et qualification">
-      <div className="ae-qualification-main">
+    <section aria-label="Comité et qualification" className="jv-qualification-layout">
+      <div className="jv-qualification-main">
         <CommitteeTable members={qualification.buyingCommittee} />
-        <div className="ae-qualification-top-grid">
+        <div className="jv-qualification-top-grid">
           <MeddiccGrid criteria={qualification.meddicc} />
           <DecisionProcessPanel process={qualification.decisionProcess} />
         </div>
-        <div className="ae-qualification-bottom-grid">
+        <div className="jv-qualification-bottom-grid">
           <QualificationRiskRows risks={qualification.risks} />
           <QualificationInsightRows items={qualification.strengths} title="Atouts du deal" />
         </div>

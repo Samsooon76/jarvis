@@ -1,6 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { QueueProspect } from "@jarvis/shared";
-import { CircleHelp, Loader2 } from "lucide-react";
+import {
+  AlertTriangle,
+  AlignLeft,
+  ArrowLeft,
+  ChartNoAxesCombined,
+  CircleHelp,
+  Lightbulb,
+  ListChecks,
+  Radar,
+  RefreshCw,
+  Sparkles,
+  TrendingUp,
+  type LucideIcon,
+} from "lucide-react";
 import {
   createFollowUpTask,
   fetchDealActivityPlan,
@@ -21,15 +34,18 @@ import {
   compactText,
   forecastLabels,
   formatCloseDelta,
+  formatMetricCaption,
+  formatMetricValue,
   formatOptionalDate,
   formatOptionalDateTime,
   getDealAnalysisCacheKey,
 } from "../../utils/dashboard/dealAnalysis";
 import { getInitials } from "../../utils/dashboard/prospects";
+import "../styles/deal-analysis.css";
 import { DealProbabilityHistoryPanel } from "./DealProbabilityHistoryPanel";
 import { WinGapsCard } from "./WinGapsCard";
 import { AnalysisLoadingPanel, type LoadingStep } from "./deal/AnalysisLoadingPanel";
-import { ActionRows, HealthDimension, InsightRows, MetricCard, TrendChart } from "./deal/OverviewPanels";
+import { ActionRows, HealthDimension, InsightRows, TrendChart } from "./deal/OverviewPanels";
 import { QualificationSection } from "./deal/QualificationSection";
 import { ActivitySection } from "./deal/ActivitySection";
 
@@ -48,26 +64,62 @@ const pageCache = new Map<string, DealAnalysisPageResult>();
 const qualificationCache = new Map<string, DealQualificationResult>();
 const activityPlanCache = new Map<string, DealActivityPlanResult>();
 
-const getErrorMessage = (error: unknown, fallback: string): string => (error instanceof Error ? error.message : fallback);
+const sectionOptions: Array<{ id: DealSection; label: string }> = [
+  { id: "overview", label: "Vue d'ensemble" },
+  { id: "qualification", label: "Comité & qualification" },
+  { id: "activity", label: "Activité & plan" },
+];
 
 const dealAnalysisLoadingSteps: LoadingStep[] = [
   {
-    label: "Resolution du deal",
+    label: "Résolution du deal",
     detail: "Identification du prospect, du deal HubSpot et du contexte organisation.",
   },
   {
     label: "Lecture HubSpot",
-    detail: "Chargement de la timeline, du snapshot deal et des contacts associes.",
+    detail: "Chargement de la timeline, du snapshot deal et des contacts associés.",
   },
   {
     label: "Analyse IA",
-    detail: "Evaluation de la probabilite, des risques et des prochaines actions.",
+    detail: "Évaluation de la probabilité, des risques et des prochaines actions.",
   },
   {
-    label: "Preparation dashboard",
-    detail: "Construction des metriques, tendances et cartes de synthese.",
+    label: "Préparation dashboard",
+    detail: "Construction des métriques, tendances et cartes de synthèse.",
   },
 ];
+
+const getErrorMessage = (error: unknown, fallback: string): string => (error instanceof Error ? error.message : fallback);
+
+const SectionLabel = ({ children, icon: Icon }: { children: string; icon: LucideIcon }) => (
+  <span className="jv-section-label">
+    <Icon aria-hidden="true" className="jv-section-icon" size={13} strokeWidth={1.5} />
+    {children}
+  </span>
+);
+
+const FilterPills = <T extends string>({
+  active,
+  onChange,
+  options,
+}: {
+  active: T;
+  onChange: (value: T) => void;
+  options: Array<{ id: T; label: string }>;
+}) => (
+  <div aria-label="Sections analyse deal" className="jv-filter-pills" role="group">
+    {options.map((option) => (
+      <button
+        className={active === option.id ? "active" : undefined}
+        key={option.id}
+        onClick={() => onChange(option.id)}
+        type="button"
+      >
+        {option.label}
+      </button>
+    ))}
+  </div>
+);
 
 export const DealAnalysisView = ({
   activeProspect,
@@ -180,7 +232,7 @@ export const DealAnalysisView = ({
         model: selectedAiProvider.model,
         refresh,
       });
-      setActivityPlanError(getErrorMessage(error, "Activite deal indisponible."));
+      setActivityPlanError(getErrorMessage(error, "Activité deal indisponible."));
     } finally {
       setActivityPlanLoading(false);
     }
@@ -200,7 +252,7 @@ export const DealAnalysisView = ({
 
   const runDealAnalysisJob = async (refresh: boolean): Promise<DealAnalysisBundleResult> => {
     if (!activeProspect) {
-      throw new Error("Aucun deal selectionne.");
+      throw new Error("Aucun deal sélectionné.");
     }
 
     return startAndPollDealAnalysisRun(activeProspect, orgId, selectedAiProvider, refresh, (status) => {
@@ -287,7 +339,6 @@ export const DealAnalysisView = ({
 
     if (activeProspect) {
       void loadPage(false);
-      // Warm the other sections in parallel so switching tabs is instant.
       void loadQualification(false);
       void loadActivityPlan(false);
     }
@@ -314,7 +365,7 @@ export const DealAnalysisView = ({
         provider: selectedAiProvider.id,
         model: selectedAiProvider.model,
       });
-      setAnalysisError(getErrorMessage(error, "Impossible de creer la tache HubSpot."));
+      setAnalysisError(getErrorMessage(error, "Impossible de créer la tâche HubSpot."));
     } finally {
       setTaskLoading(false);
     }
@@ -361,7 +412,7 @@ export const DealAnalysisView = ({
         activityPlanCache.delete(cacheKey);
 
         applyBundle(result, cacheKey);
-        setRefreshMessage(`Deal rafraichi avec l'analyse du ${formatOptionalDateTime(result.page.generatedAt)}.`);
+        setRefreshMessage(`Deal rafraîchi avec l'analyse du ${formatOptionalDateTime(result.page.generatedAt)}.`);
       } catch (error) {
         captureAppError(error, {
           feature: "deal_analysis",
@@ -373,8 +424,8 @@ export const DealAnalysisView = ({
           model: selectedAiProvider.model,
           refresh: true,
         });
-        const message = getErrorMessage(error, "Erreur inconnue pendant le rafraichissement du deal.");
-        setAnalysisError(`Impossible de rafraichir le deal complet. Reessaie le rafraichissement. Detail: ${message}`);
+        const message = getErrorMessage(error, "Erreur inconnue pendant le rafraîchissement du deal.");
+        setAnalysisError(`Impossible de rafraîchir le deal complet. Réessaie le rafraîchissement. Détail : ${message}`);
       } finally {
         setIsAnalyzing(false);
         setQualificationLoading(false);
@@ -397,216 +448,213 @@ export const DealAnalysisView = ({
     return [analysis.executiveSummary, ...analysis.detailedAnalysis].filter(Boolean).slice(0, 3);
   }, [analysis]);
   const scoreExplanation = useMemo(() => (analysis ? buildScoreExplanation(analysis) : []), [analysis]);
+  const probabilityDegrees = analysis ? Math.round((analysis.closeWonProbability / 100) * 360) : 0;
 
   if (!activeProspect) {
     return (
-      <section className="ae-deal-page" aria-label="Analyse deal">
-        <button className="ae-deal-back" onClick={onBack} type="button">
-          Retour overview
-        </button>
-        <p className="ae-empty">Selectionne un deal dans l'overview pour ouvrir son analyse.</p>
-      </section>
+      <div aria-label="Analyse deal" className="jv-deal-page">
+        <header className="jv-page-header">
+          <ChartNoAxesCombined aria-hidden="true" className="jv-page-icon" size={18} strokeWidth={1.5} />
+          <h1>
+            Analyse deal
+            <span className="jv-page-kicker">pipeline</span>
+          </h1>
+        </header>
+        <div className="jv-detail-empty">
+          <ChartNoAxesCombined aria-hidden="true" size={20} strokeWidth={1.25} />
+          <strong>Sélectionnez un deal</strong>
+          <p>Choisissez un deal dans l'overview pour ouvrir son analyse.</p>
+          <button className="jv-btn-ghost" onClick={onBack} type="button">
+            <ArrowLeft size={14} strokeWidth={1.5} />
+            Retour overview
+          </button>
+        </div>
+      </div>
     );
   }
 
   return (
-    <section className="ae-deal-page" aria-label="Analyse deal">
-      <div className="ae-deal-titlebar">
-        <button className="ae-deal-back" onClick={onBack} type="button">
-          Retour overview
-        </button>
-        <div>
-          <p className="ae-eyebrow">Pipeline inbox / Deal analysis</p>
-          <h2>{snapshot?.companyName ?? activeProspect.company}</h2>
+    <div aria-label="Analyse deal" className="jv-deal-page">
+      <header className="jv-page-header">
+        <ChartNoAxesCombined aria-hidden="true" className="jv-page-icon" size={18} strokeWidth={1.5} />
+        <h1>
+          Analyse deal
+          <span className="jv-page-kicker">pipeline</span>
+        </h1>
+      </header>
+
+      <div className="jv-toolbar">
+        <div className="jv-toolbar-filters">
+          <button className="jv-btn-ghost" onClick={onBack} type="button">
+            <ArrowLeft size={14} strokeWidth={1.5} />
+            Retour overview
+          </button>
+          <FilterPills active={activeSection} onChange={handleSectionChange} options={sectionOptions} />
         </div>
-        <div className="ae-deal-sync-note">
-          <span>Derniere analyse</span>
-          <strong>{formatOptionalDateTime(page?.generatedAt)}</strong>
+        <div className="jv-toolbar-actions">
+          <span className="jv-sync-note">
+            Dernière analyse
+            <strong>{formatOptionalDateTime(page?.generatedAt)}</strong>
+          </span>
+          <button className="jv-btn-primary" disabled={refreshLoading} onClick={handleRefresh} type="button">
+            {refreshLoading ? (
+              <>
+                <RefreshCw aria-hidden="true" className="jv-spin" size={14} strokeWidth={1.5} />
+                {analysisJobStep ?? (refreshAttempt ? `Analyse ${refreshAttempt}%` : "Analyse...")}
+              </>
+            ) : (
+              <>
+                <Sparkles aria-hidden="true" size={14} strokeWidth={1.5} />
+                Rafraîchir le deal
+              </>
+            )}
+          </button>
         </div>
-        <button
-          className="ae-deal-refresh"
-          disabled={refreshLoading}
-          onClick={handleRefresh}
-          type="button"
-        >
-          {refreshLoading ? (
-            <span className="ae-button-spinner" aria-label="Rafraichissement en cours" role="status">
-              <Loader2 size={15} strokeWidth={2.4} />
-              <small>{analysisJobStep ?? (refreshAttempt ? `Analyse ${refreshAttempt}%` : "Analyse...")}</small>
-            </span>
-          ) : (
-            "Rafraichir le deal complet"
-          )}
-        </button>
       </div>
 
-      {analysisError ? <p className="ae-detail-error">{analysisError}</p> : null}
-      {refreshMessage ? <p className="ae-detail-success">{refreshMessage}</p> : null}
+      {analysisError ? <p className="jv-banner jv-banner-error">{analysisError}</p> : null}
+      {refreshMessage ? <p className="jv-banner jv-banner-success">{refreshMessage}</p> : null}
       {taskResult ? (
-        <p className="ae-detail-success">
-          {taskResult.created ? "Task HubSpot creee." : taskResult.recommendation.rationale}
+        <p className="jv-banner jv-banner-success">
+          {taskResult.created ? "Tâche HubSpot créée." : taskResult.recommendation.rationale}
         </p>
-      ) : null}
-
-      {activeProspect.hubspotDealId ? (
-        <WinGapsCard hubspotDealId={activeProspect.hubspotDealId} orgId={orgId} />
       ) : null}
 
       {page && snapshot && analysis ? (
         <>
-          <section className="ae-deal-hero">
-            <div className="ae-deal-company-block">
-              <span aria-hidden="true">{getInitials(snapshot.companyName)}</span>
-              <div>
-                <h3>{snapshot.companyName}</h3>
-                <strong>{snapshot.contactName}</strong>
-                <p>
-                  {[snapshot.contactEmail, snapshot.contactPhone].filter(Boolean).join(" · ") || "Contact CRM"}
-                </p>
+          <div className="jv-deal-head">
+            <span aria-hidden="true" className="jv-deal-avatar">
+              {getInitials(snapshot.companyName)}
+            </span>
+            <div className="jv-deal-head-main">
+              <h2>{snapshot.companyName}</h2>
+              <p>
+                {[snapshot.contactName, snapshot.contactEmail, snapshot.contactPhone].filter(Boolean).join(" · ") ||
+                  "Contact CRM"}
+              </p>
+              <div className="jv-item-meta">
+                <span>{snapshot.ownerName ?? "Non assigné"}</span>
+                <span>{snapshot.stage}</span>
+                <span className="jv-meta-score">{forecastLabels[snapshot.forecastLabel]}</span>
               </div>
             </div>
+            <div className="jv-sync-note">
+              Valeur
+              <strong>{formatAmount(snapshot.amount)}</strong>
+            </div>
+          </div>
 
-            <dl className="ae-deal-hero-facts">
-              <div>
-                <dt>Proprietaire du deal</dt>
-                <dd>{snapshot.ownerName ?? "Non assigne"}</dd>
+          <section aria-label="Indicateurs deal" className={`jv-stat-strip${page.metrics.length === 4 ? " cols-4" : ""}`}>
+            {page.metrics.map((metric, index) => (
+              <div className="jv-stat" key={metric.id} style={{ animationDelay: `${index * 60}ms` }}>
+                <span className="jv-stat-label">{metric.label}</span>
+                <span className="jv-stat-value">{formatMetricValue(metric)}</span>
+                {formatMetricCaption(metric) ? (
+                  <small className="jv-stat-caption">{formatMetricCaption(metric)}</small>
+                ) : null}
               </div>
-              <div>
-                <dt>Valeur</dt>
-                <dd>{formatAmount(snapshot.amount)}</dd>
-              </div>
-              <div>
-                <dt>Etape</dt>
-                <dd>
-                  <i aria-hidden="true" />
-                  {snapshot.stage}
-                </dd>
-              </div>
-              <div>
-                <dt className="ae-score-label">
-                  Probabilite de gain
-                  <span className="ae-score-help" tabIndex={0}>
-                    <CircleHelp size={14} strokeWidth={2.2} />
-                    <span className="ae-score-tooltip" role="tooltip">
-                      <strong>Pourquoi ce score ?</strong>
-                      {scoreExplanation.length > 0 ? (
-                        scoreExplanation.map((item) => <small key={item}>{item}</small>)
-                      ) : (
-                        <small>Analyse IA non disponible pour expliquer ce score.</small>
-                      )}
-                    </span>
-                  </span>
-                </dt>
-                <dd>{analysis.closeWonProbability} %</dd>
-                <span className="ae-deal-probability-bar">
-                  <i style={{ width: `${analysis.closeWonProbability}%` }} />
+            ))}
+          </section>
+
+          <section aria-label="Probabilité de gain" className="jv-score-banner">
+            <div
+              className="jv-score-ring"
+              style={{
+                background: `conic-gradient(var(--jv-terra) ${probabilityDegrees}deg, #ece9e3 0)`,
+              }}
+            >
+              <span>{analysis.closeWonProbability} %</span>
+            </div>
+            <div className="jv-score-copy">
+              <strong>Probabilité de gain</strong>
+              <p>{compactText(analysis.executiveSummary, 160)}</p>
+              <small>
+                Clôture prévue {formatOptionalDate(snapshot.closeDate)} · {formatCloseDelta(snapshot.closeDate)}
+              </small>
+              <span className="jv-score-help" tabIndex={0} title="Pourquoi ce score ?">
+                <CircleHelp size={13} strokeWidth={2} />
+                <span className="jv-score-tooltip" role="tooltip">
+                  {scoreExplanation.length > 0
+                    ? scoreExplanation.map((item) => <small key={item}>{item}</small>)
+                    : <small>Analyse IA non disponible pour expliquer ce score.</small>}
                 </span>
-              </div>
-              <div>
-                <dt>Prevision</dt>
-                <dd className="green">{forecastLabels[snapshot.forecastLabel]}</dd>
-              </div>
-              <div>
-                <dt>Date de cloture prevue</dt>
-                <dd>{formatOptionalDate(snapshot.closeDate)}</dd>
-                <small>{formatCloseDelta(snapshot.closeDate)}</small>
-              </div>
-            </dl>
+              </span>
+            </div>
+            <span className="jv-score-badge">
+              <Sparkles aria-hidden="true" size={11} strokeWidth={1.5} />
+              IA
+            </span>
+          </section>
 
-            <div className="ae-deal-hero-actions">
-              <h3>Actions principales</h3>
-              {page.primaryActions.slice(0, 3).map((action) => (
-                <p key={`${action.title}:${action.dueAt}`}>
-                  <span aria-hidden="true" />
-                  {action.title}
-                </p>
-              ))}
+          <section className="jv-themes-row">
+            <div className="jv-theme-block">
+              <SectionLabel icon={AlertTriangle}>Risques clés</SectionLabel>
+              <InsightRows items={analysis.risks.slice(0, 5)} tone="red" />
+            </div>
+            <div className="jv-theme-block">
+              <SectionLabel icon={Lightbulb}>Signaux positifs</SectionLabel>
+              <InsightRows icon={Lightbulb} items={analysis.positiveSignals.slice(0, 5)} tone="green" />
             </div>
           </section>
 
-          <nav className="ae-deal-tabs" aria-label="Analyse deal sections">
-            <button
-              className={activeSection === "overview" ? "active" : undefined}
-              onClick={() => handleSectionChange("overview")}
-              type="button"
-            >
-              Vue d'ensemble
-            </button>
-            <button
-              className={activeSection === "qualification" ? "active" : undefined}
-              onClick={() => handleSectionChange("qualification")}
-              type="button"
-            >
-              Comite & qualification
-            </button>
-            <button
-              className={activeSection === "activity" ? "active" : undefined}
-              onClick={() => handleSectionChange("activity")}
-              type="button"
-            >
-              Activite & plan d'action
-            </button>
-          </nav>
+          {activeProspect.hubspotDealId ? (
+            <WinGapsCard hubspotDealId={activeProspect.hubspotDealId} orgId={orgId} />
+          ) : null}
 
           {activeSection === "overview" ? (
-            <>
-              <section className="ae-deal-metrics" aria-label="Deal metrics">
-                {page.metrics.map((metric) => (
-                  <MetricCard key={metric.id} metric={metric} />
-                ))}
-              </section>
-
-              <section className="ae-deal-grid">
-                <article className="ae-deal-panel ae-summary-panel">
-                  <h3>Resume IA</h3>
+            <div className="jv-deal-content">
+              <div className="jv-deal-grid">
+                <article className="jv-theme-block span-2">
+                  <SectionLabel icon={AlignLeft}>Résumé IA</SectionLabel>
                   {summaryLines.map((line) => (
-                    <p key={line}>{compactText(line, 180)}</p>
+                    <p className="jv-prose" key={line}>
+                      {compactText(line, 220)}
+                    </p>
                   ))}
-                  <div className="ae-next-best-action">
-                    <span>Prochaine meilleure action</span>
-                    <button disabled={taskLoading} onClick={handleCreateTask} type="button">
-                      <strong>{primaryAction?.title ?? analysis.suggestedMove}</strong>
-                      <small>
-                        {primaryAction ? primaryAction.rationale : "Synchronise depuis l'analyse IA du deal."}
-                      </small>
-                    </button>
+                  <div className="jv-callout">
+                    <Sparkles aria-hidden="true" size={15} strokeWidth={1.5} />
+                    <div>
+                      <p>Prochaine meilleure action</p>
+                      <button
+                        className="jv-callout-action"
+                        disabled={taskLoading}
+                        onClick={handleCreateTask}
+                        type="button"
+                      >
+                        <strong>{primaryAction?.title ?? analysis.suggestedMove}</strong>
+                        <small>
+                          {primaryAction ? primaryAction.rationale : "Synchronisé depuis l'analyse IA du deal."}
+                        </small>
+                      </button>
+                    </div>
                   </div>
                 </article>
 
-                <article className="ae-deal-panel ae-health-panel">
-                  <h3>Sante du deal</h3>
-                  <div className="ae-health-grid">
+                <article className="jv-theme-block">
+                  <SectionLabel icon={Radar}>Santé du deal</SectionLabel>
+                  <div className="jv-health-grid">
                     {page.healthDimensions.map((dimension) => (
                       <HealthDimension dimension={dimension} key={dimension.id} />
                     ))}
                   </div>
                 </article>
 
-                <article className="ae-deal-panel ae-chart-panel">
+                <article className="jv-theme-block">
+                  <SectionLabel icon={TrendingUp}>Évolution du deal</SectionLabel>
                   <TrendChart points={page.probabilityTrend} />
                 </article>
 
                 <DealProbabilityHistoryPanel orgId={orgId} hubspotDealId={activeProspect.hubspotDealId ?? null} />
 
-                <article className="ae-deal-panel">
-                  <h3>Risques cles</h3>
-                  <InsightRows items={analysis.risks} tone="red" />
-                </article>
-
-                <article className="ae-deal-panel">
-                  <h3>Signaux positifs</h3>
-                  <InsightRows items={analysis.positiveSignals} tone="green" />
-                </article>
-
-                <article className="ae-deal-panel">
-                  <h3>Prochaines actions</h3>
+                <article className="jv-theme-block">
+                  <SectionLabel icon={ListChecks}>Prochaines actions</SectionLabel>
                   <ActionRows actions={page.primaryActions} />
-                  <button className="ae-link-button" disabled={taskLoading} onClick={handleCreateTask} type="button">
-                    {taskLoading ? "Creation..." : "Creer une tache HubSpot"}
+                  <button className="jv-link-button" disabled={taskLoading} onClick={handleCreateTask} type="button">
+                    {taskLoading ? "Création..." : "Créer une tâche HubSpot"}
                   </button>
                 </article>
-              </section>
-            </>
+              </div>
+            </div>
           ) : null}
 
           {activeSection === "qualification" ? (
@@ -637,6 +685,6 @@ export const DealAnalysisView = ({
           title="Vue d'ensemble du deal"
         />
       )}
-    </section>
+    </div>
   );
 };

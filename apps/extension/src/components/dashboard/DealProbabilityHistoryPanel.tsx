@@ -87,7 +87,7 @@ const HistoryChart = ({ timeline }: { timeline: DealProbabilityTimeline }) => {
   }, [timeline]);
 
   return (
-    <div className="ae-forecast-canvas-stage" role="img" aria-label="Evolution de la probabilite de closing du deal">
+    <div className="jv-probability-canvas" role="img" aria-label="Évolution de la probabilité de closing du deal">
       <canvas ref={canvasRef} />
     </div>
   );
@@ -136,21 +136,23 @@ export const DealProbabilityHistoryPanel = ({ orgId, hubspotDealId }: DealProbab
   const hasPoints = (timeline?.points.length ?? 0) > 0;
 
   return (
-    <article className="ae-deal-panel ae-chart-panel">
-      <div className="ae-deal-panel-heading">
-        <h3>Historique probabilite (CRM)</h3>
-        <span className="ae-deal-chart-legend">
-          {timeline?.ageDays !== null && timeline?.ageDays !== undefined ? `Deal cree il y a ${timeline.ageDays} j` : "probabilite_de__closing"}
+    <article className="jv-theme-block">
+      <div className="jv-theme-block-head">
+        <span className="jv-section-label">Historique probabilité (CRM)</span>
+        <span className="jv-chart-legend">
+          {timeline?.ageDays !== null && timeline?.ageDays !== undefined
+            ? `Deal créé il y a ${timeline.ageDays} j`
+            : "probabilite_de__closing"}
         </span>
       </div>
-      {error ? <p className="ae-admin-feedback error">{error}</p> : null}
+      {error ? <p className="jv-banner jv-banner-error">{error}</p> : null}
       {hasPoints && timeline ? (
         <HistoryChart timeline={timeline} />
       ) : (
-        <p className="ae-empty">
+        <p className="jv-theme-empty">
           {isLoading
             ? "Chargement de l'historique..."
-            : "Aucun historique de probabilite pour ce deal. Lance l'import HubSpot depuis Statistiques."}
+            : "Aucun historique de probabilité pour ce deal. Lance l'import HubSpot depuis Statistiques."}
         </p>
       )}
     </article>
