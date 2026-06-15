@@ -143,7 +143,9 @@ export const useQueueDashboard = ({
     window.addEventListener("hashchange", handleRouteChange);
     window.addEventListener("popstate", handleRouteChange);
 
-    if (!window.location.hash) {
+    const hashView = window.location.hash.replace("#", "").trim();
+
+    if (!hashView || hashView === "landing" || hashView === "auth" || hashView.startsWith("auth/")) {
       window.history.replaceState(null, "", "#overview");
     }
 

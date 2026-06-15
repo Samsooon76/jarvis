@@ -20,10 +20,15 @@ export default defineConfig({
           manifest.background.service_worker = "background.js";
         }
 
-        manifest.host_permissions = [
+        const sourceHostPermissions = Array.isArray(manifest.host_permissions)
+          ? manifest.host_permissions
+          : [];
+        const requiredHostPermissions = [
           "https://jarvisapi-production-10cd.up.railway.app/*",
           "http://localhost:4000/*",
         ];
+
+        manifest.host_permissions = [...new Set([...sourceHostPermissions, ...requiredHostPermissions])];
 
         mkdirSync(distDir, { recursive: true });
         writeFileSync(resolve(distDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);

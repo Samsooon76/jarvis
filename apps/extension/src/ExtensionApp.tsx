@@ -25,6 +25,7 @@ import {
   type AppUserProfile,
 } from "./services/api";
 import { clearApiAuthToken, setApiAuthSession } from "./services/api/client";
+import { completeOAuthCallbackIfPresent } from "./services/googleOAuth";
 import { getSupabaseClient, isSupabaseAuthConfigured, type JarvisSession } from "./services/supabase";
 import { setSentryUser } from "./sentry";
 import { navigateToLanding, parsePublicRoute, type PublicRouteState } from "./utils/publicRoute";
@@ -130,6 +131,16 @@ export const ExtensionApp = () => {
 
       writeCachedAuthProfile(profile);
       setAuthProfile(profile);
+
+      const hash = window.location.hash.replace("#", "").trim();
+
+      if (hash === "landing" || hash === "auth" || hash.startsWith("auth/")) {
+        window.history.replaceState(
+          {},
+          document.title,
+          `${window.location.pathname}${window.location.search}#overview`,
+        );
+      }
     } catch (profileError) {
       setAuthError(profileError instanceof Error ? profileError.message : "Impossible de charger la session Jarvis.");
       clearCachedAuthProfile();
@@ -168,6 +179,22 @@ export const ExtensionApp = () => {
     let isCancelled = false;
 
     const initSession = async () => {
+      try {
+        const oauthSession = await completeOAuthCallbackIfPresent();
+
+        if (!isCancelled && oauthSession) {
+          await loadProfileForSession(oauthSession);
+          return;
+        }
+      } catch (oauthError) {
+        if (!isCancelled) {
+          setAuthError(oauthError instanceof Error ? oauthError.message : "Connexion OAuth impossible.");
+          setAuthLoading(false);
+        }
+
+        return;
+      }
+
       const { data: sessionData } = await getSupabaseClient().auth.getSession();
 
       if (!isCancelled) {

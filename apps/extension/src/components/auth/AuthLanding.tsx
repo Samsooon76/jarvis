@@ -7,13 +7,9 @@ import {
   type AppUserProfile,
 } from "../../services/api";
 import { setApiAuthSession } from "../../services/api/client";
+import { getOAuthRedirectUrl, isGoogleOAuthAvailable, signInWithGoogleOAuth } from "../../services/googleOAuth";
 import { getSupabaseClient, isSupabaseAuthConfigured } from "../../services/supabase";
-import {
-  getAuthRedirectUrl,
-  navigateToAuth,
-  navigateToLanding,
-  type AuthMode,
-} from "../../utils/publicRoute";
+import { navigateToAuth, navigateToLanding, type AuthMode } from "../../utils/publicRoute";
 import { GoogleLogo } from "./GoogleLogo";
 import "../styles/auth-landing.css";
 
@@ -62,10 +58,16 @@ export const AuthPage = ({ error, initialMode = "signup", onAuthenticated }: Aut
 
     try {
       setIsSubmitting(true);
+
+      if (isGoogleOAuthAvailable()) {
+        await signInWithGoogleOAuth();
+        return;
+      }
+
       const { error: googleError } = await getSupabaseClient().auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: getAuthRedirectUrl(),
+          redirectTo: getOAuthRedirectUrl(),
           queryParams: {
             prompt: "select_account",
           },
@@ -77,6 +79,7 @@ export const AuthPage = ({ error, initialMode = "signup", onAuthenticated }: Aut
       }
     } catch (signInError) {
       setLocalError(signInError instanceof Error ? signInError.message : "Connexion Google impossible.");
+    } finally {
       setIsSubmitting(false);
     }
   };

@@ -3,7 +3,7 @@
   "name": "Jarvis - Sales Copilot",
   "version": "0.1.0",
   "description": "AI-powered sales copilot that orchestrates your day",
-  "permissions": ["sidePanel", "notifications", "alarms", "storage"],
+  "permissions": ["sidePanel", "notifications", "alarms", "storage", "identity"],
   "host_permissions": [
     "https://jarvisapi-production-10cd.up.railway.app/*",
     "https://*.supabase.co/*",
