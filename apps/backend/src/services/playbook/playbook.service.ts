@@ -1,4 +1,5 @@
 import type { Playbook, PlaybookDetail, PlaybookPlay, PlaybookPlayInput } from "@jarvis/shared";
+import { enrichPlaybookDetailOverview, mapStoredOverview } from "./overview.js";
 import {
   insertPlay,
   insertPlaybook,
@@ -57,10 +58,21 @@ export const listPlaybooks = async (orgId: string): Promise<Playbook[]> => {
     countsByPlaybookId.set(play.playbook_id, counts);
   }
 
+  const playsByPlaybookId = new Map<string, PlaybookPlay[]>();
+
+  for (const play of plays) {
+    const mappedPlay = mapPlayRow(play, []);
+    const existing = playsByPlaybookId.get(play.playbook_id) ?? [];
+    existing.push(mappedPlay);
+    playsByPlaybookId.set(play.playbook_id, existing);
+  }
+
   return rows.map((row) => {
     const counts = countsByPlaybookId.get(row.id) ?? { total: 0, active: 0 };
+    const playbookPlays = playsByPlaybookId.get(row.id) ?? [];
+    const overview = mapStoredOverview(row.overview);
 
-    return mapPlaybookRow(row, counts.total, counts.active);
+    return mapPlaybookRow(row, counts.total, counts.active, playbookPlays, overview);
   });
 };
 
@@ -70,11 +82,21 @@ export const getPlaybookDetail = async (orgId: string, playbookId: string): Prom
   const evidenceByPlayId = groupEvidenceByPlayId(await loadEvidence(orgId, playRows.map((play) => play.id)));
   const plays = playRows.map((play) => mapPlayRow(play, evidenceByPlayId.get(play.id) ?? []));
   const visiblePlays = plays.filter((play) => play.status !== "archived");
+  const overview = mapStoredOverview(row.overview);
 
-  return {
-    ...mapPlaybookRow(row, visiblePlays.length, visiblePlays.filter((play) => play.status === "active").length),
-    plays,
-  };
+  return enrichPlaybookDetailOverview(
+    {
+      ...mapPlaybookRow(
+        row,
+        visiblePlays.length,
+        visiblePlays.filter((play) => play.status === "active").length,
+        plays,
+        overview,
+      ),
+      plays,
+    },
+    overview,
+  );
 };
 
 export const createPlaybook = async (input: CreatePlaybookInput): Promise<Playbook> => {

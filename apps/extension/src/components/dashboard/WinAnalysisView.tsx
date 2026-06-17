@@ -7,6 +7,7 @@ import {
   Lightbulb,
   ListChecks,
   RefreshCw,
+  Search,
   Sparkles,
   TrendingUp,
   Trophy,
@@ -74,7 +75,7 @@ const WinningPatterns = ({ overview }: { overview: WinAnalysisOverview | null })
       <SectionLabel icon={TrendingUp}>Patterns gagnants</SectionLabel>
       {patterns.length > 0 ? (
         <div className="jv-win-pattern-list">
-          {patterns.slice(0, 5).map((pattern, index) => (
+          {patterns.map((pattern, index) => (
             <div className="jv-win-pattern-item" key={pattern}>
               <em>{String(index + 1).padStart(2, "0")}</em>
               <span>{pattern}</span>
@@ -88,7 +89,7 @@ const WinningPatterns = ({ overview }: { overview: WinAnalysisOverview | null })
         <>
           <SectionLabel icon={ListChecks}>Séquence gagnante type</SectionLabel>
           <ol className="jv-win-sequence-list">
-            {sequence.slice(0, 5).map((step) => (
+            {sequence.map((step) => (
               <li key={step}>{step}</li>
             ))}
           </ol>
@@ -124,7 +125,7 @@ const WinRecommendations = ({ overview }: { overview: WinAnalysisOverview | null
 
       {recommendations.length > 0 ? (
         <div className="jv-recommendation-list">
-          {recommendations.slice(0, 5).map((recommendation) => (
+          {recommendations.map((recommendation) => (
             <div className="jv-recommendation-item" key={recommendation.title}>
               <div className="jv-recommendation-item-head">
                 <strong>{recommendation.title}</strong>
@@ -224,6 +225,16 @@ const DealMeta = ({ deal }: { deal: WinAnalysisDealListItem }) => (
   </span>
 );
 
+const matchesDealSearch = (deal: WinAnalysisDealListItem, normalizedSearchTerm: string): boolean => {
+  if (!normalizedSearchTerm) {
+    return true;
+  }
+
+  return [deal.companyName, deal.dealName, deal.ownerName, deal.primaryWinFactor, deal.hubspotDealId]
+    .filter((value): value is string => Boolean(value))
+    .some((value) => value.toLowerCase().includes(normalizedSearchTerm));
+};
+
 const DealList = ({
   activeDealId,
   deals,
@@ -234,20 +245,43 @@ const DealList = ({
   deals: WinAnalysisDealListItem[];
   isLoading: boolean;
   onDealSelect: (hubspotDealId: string) => void;
-}) => (
+}) => {
+  const [searchTerm, setSearchTerm] = useState("");
+  const normalizedSearchTerm = searchTerm.trim().toLowerCase();
+  const filteredDeals = useMemo(
+    () => deals.filter((deal) => matchesDealSearch(deal, normalizedSearchTerm)),
+    [deals, normalizedSearchTerm],
+  );
+  const resultLabel =
+    normalizedSearchTerm && deals.length > 0
+      ? `${filteredDeals.length} / ${deals.length}`
+      : `${deals.length} résultat${deals.length > 1 ? "s" : ""}`;
+
+  return (
   <section aria-busy={isLoading} aria-label="Deals gagnés" className="jv-list-shell">
     <header className="jv-list-head">
       <SectionLabel icon={History}>Deals gagnés</SectionLabel>
-      <span className="jv-list-count">
-        {deals.length} résultat{deals.length > 1 ? "s" : ""}
-      </span>
+      <span className="jv-list-count">{resultLabel}</span>
     </header>
+    <label className="jv-list-search">
+      <Search aria-hidden="true" size={15} strokeWidth={1.5} />
+      <input
+        aria-label="Rechercher un deal gagné"
+        onChange={(event) => setSearchTerm(event.target.value)}
+        placeholder="Société, deal, owner…"
+        type="search"
+        value={searchTerm}
+      />
+    </label>
     <div className="jv-list-body">
       {isLoading && deals.length === 0 ? <p className="jv-list-empty">Chargement des deals…</p> : null}
       {!isLoading && deals.length === 0 ? (
         <p className="jv-list-empty">Aucun deal gagné sur les 12 derniers mois.</p>
       ) : null}
-      {deals.map((deal) => (
+      {!isLoading && deals.length > 0 && filteredDeals.length === 0 ? (
+        <p className="jv-list-empty">Aucun deal ne correspond à votre recherche.</p>
+      ) : null}
+      {filteredDeals.map((deal) => (
         <button
           className={activeDealId === deal.hubspotDealId ? "jv-list-item selected" : "jv-list-item"}
           key={deal.hubspotDealId}
@@ -268,7 +302,8 @@ const DealList = ({
       ))}
     </div>
   </section>
-);
+  );
+};
 
 const DetailSection = ({ children, icon, label }: { children: React.ReactNode; icon: LucideIcon; label: string }) => (
   <section className="jv-detail-section">
@@ -290,7 +325,7 @@ const DealDeepDive = ({
 }) => {
   if (!deal && !isLoading) {
     return (
-      <aside className="jv-detail">
+      <aside className="jv-detail jv-detail-expanded">
         <div className="jv-detail-empty">
           <Trophy aria-hidden="true" size={20} strokeWidth={1.25} />
           <strong>Sélectionnez un deal</strong>
@@ -305,7 +340,7 @@ const DealDeepDive = ({
     : "";
 
   return (
-    <aside aria-busy={isLoading} className="jv-detail">
+    <aside aria-busy={isLoading} className="jv-detail jv-detail-expanded">
       <header className="jv-detail-head">
         <div>
           <h2>{deal?.companyName ?? "Chargement…"}</h2>

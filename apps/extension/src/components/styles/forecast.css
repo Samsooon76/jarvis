@@ -132,6 +132,40 @@
   }
 }
 
+/* ── Controls (toolbar) ── */
+
+.jv-forecast-page .jv-controls {
+  background: var(--jv-surface);
+  border: 1px solid var(--jv-border);
+  border-radius: 14px;
+  padding: 12px 14px;
+}
+
+.jv-forecast-page .jv-controls-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 12px;
+}
+
+.jv-forecast-page .jv-controls-actions {
+  align-items: center;
+  border-left: 1px solid var(--jv-border);
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 10px 12px;
+  margin-left: 4px;
+  min-height: 36px;
+  padding-left: 12px;
+}
+
+.jv-forecast-page .jv-toolbar-buttons {
+  align-items: center;
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
 /* ── Toolbar ── */
 
 .jv-forecast-page .jv-toolbar {
@@ -678,6 +712,27 @@
   white-space: pre-wrap;
 }
 
+.jv-forecast-page .jv-detail-expanded {
+  max-height: none;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.jv-forecast-page .jv-detail-expanded .jv-detail-head h2,
+.jv-forecast-page .jv-detail-expanded .jv-detail-head p,
+.jv-forecast-page .jv-detail-expanded .jv-prose,
+.jv-forecast-page .jv-detail-expanded .jv-bullet-list li,
+.jv-forecast-page .jv-detail-expanded .jv-section-label,
+.jv-forecast-page .jv-detail-expanded .jv-callout p,
+.jv-forecast-page .jv-detail-expanded .jv-callout small {
+  -webkit-line-clamp: unset;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: unset;
+  white-space: normal;
+  word-break: break-word;
+}
+
 .ae-inbox .jv-forecast-page .jv-bullet-list {
   display: grid;
   font-size: 14px;
@@ -791,8 +846,10 @@
     grid-template-columns: 1fr;
   }
 
-  .jv-forecast-page .jv-toolbar-actions {
+  .jv-forecast-page .jv-controls-actions {
+    border-left: 0;
     margin-left: 0;
+    padding-left: 0;
     width: 100%;
   }
 
@@ -802,14 +859,29 @@
 }
 
 @media (max-width: 640px) {
-  .jv-forecast-page .jv-toolbar {
+  .jv-forecast-page .jv-controls {
+    padding: 10px 12px;
+  }
+
+  .jv-forecast-page .jv-toolbar-filters {
     align-items: stretch;
     flex-direction: column;
   }
 
-  .jv-forecast-page .jv-toolbar-filters {
-    flex-direction: column;
+  .jv-forecast-page .jv-controls-actions {
     align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .jv-forecast-page .jv-toolbar-buttons {
+    width: 100%;
+  }
+
+  .jv-forecast-page .jv-toolbar-buttons .jv-btn-ghost,
+  .jv-forecast-page .jv-toolbar-buttons .jv-btn-primary {
+    flex: 1;
+    justify-content: center;
   }
 
   .ae-inbox .jv-forecast-page .jv-page-header h1 {
@@ -1558,10 +1630,13 @@
   gap: 4px;
 }
 
-.jv-forecast-page .jv-toolbar-meta {
+.ae-inbox .jv-forecast-page .jv-toolbar-meta {
   color: var(--jv-faint);
   font-size: 12px;
   font-weight: 400;
+  line-height: 1.3;
+  margin: 0;
+  white-space: nowrap;
 }
 
 .jv-forecast-page .jv-stat-strip.cols-4 {
@@ -1572,29 +1647,35 @@
   grid-template-columns: repeat(6, minmax(0, 1fr));
 }
 
-.jv-forecast-page .jv-panel-grid {
+.jv-forecast-page .jv-forecast-bottom {
   display: grid;
   gap: 12px;
-  grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr);
+}
+
+.jv-forecast-page .jv-forecast-bottom .jv-theme-block {
+  min-width: 0;
 }
 
 .jv-forecast-page .jv-scenarios {
   display: grid;
-  gap: 8px;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .jv-forecast-page .jv-scenario {
   background: rgba(28, 25, 23, 0.02);
-  border: 1px solid rgba(28, 25, 23, 0.05);
+  border: 1px solid rgba(28, 25, 23, 0.08);
   border-radius: 10px;
   display: grid;
-  gap: 2px;
-  padding: 10px 12px;
+  gap: 4px;
+  padding: 14px 12px;
+  text-align: center;
 }
 
 .jv-forecast-page .jv-scenario.active {
   background: rgba(212, 113, 74, 0.06);
-  border-color: rgba(212, 113, 74, 0.18);
+  border-color: rgba(212, 113, 74, 0.22);
+  box-shadow: inset 0 0 0 1px rgba(212, 113, 74, 0.12);
 }
 
 .ae-inbox .jv-forecast-page .jv-scenario span {
@@ -1605,7 +1686,7 @@
 
 .ae-inbox .jv-forecast-page .jv-scenario strong {
   color: var(--jv-text);
-  font-size: 18px;
+  font-size: 20px;
   font-variant-numeric: tabular-nums;
   font-weight: 300;
   letter-spacing: -0.01em;
@@ -1640,10 +1721,11 @@
 }
 
 .jv-forecast-page .jv-chart-legend i {
-  border-radius: 50%;
+  border-radius: 999px;
   display: inline-block;
-  height: 8px;
-  width: 8px;
+  flex-shrink: 0;
+  height: 3px;
+  width: 22px;
 }
 
 .jv-forecast-page .jv-chart-legend i.commit {
@@ -1655,17 +1737,21 @@
 }
 
 .jv-forecast-page .jv-chart-legend i.objective {
-  background: #94a3b8;
+  background-image: linear-gradient(90deg, #94a3b8 45%, transparent 45%);
+  background-size: 8px 3px;
 }
 
 .jv-forecast-page .jv-chart-stage {
-  min-height: 220px;
+  height: 240px;
+  min-height: 240px;
+  min-width: 0;
   position: relative;
 }
 
 .jv-forecast-page .jv-chart-stage canvas {
   display: block;
-  width: 100%;
+  height: 100% !important;
+  width: 100% !important;
 }
 
 .jv-forecast-page .jv-month-grid {
@@ -1685,8 +1771,10 @@
 
 .jv-forecast-page .jv-month-card header {
   align-items: baseline;
+  border-bottom: 1px solid rgba(28, 25, 23, 0.06);
   display: flex;
   justify-content: space-between;
+  padding-bottom: 10px;
 }
 
 .ae-inbox .jv-forecast-page .jv-month-card header strong {
@@ -1708,10 +1796,10 @@
 }
 
 .jv-forecast-page .jv-month-card dl > div {
-  align-items: baseline;
-  display: grid;
-  gap: 2px;
-  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
 }
 
 .ae-inbox .jv-forecast-page .jv-month-card dt {
@@ -1722,9 +1810,12 @@
 
 .ae-inbox .jv-forecast-page .jv-month-card dd {
   color: var(--jv-text);
-  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  font-size: 14px;
   font-variant-numeric: tabular-nums;
   font-weight: 500;
+  gap: 2px;
   margin: 0;
   text-align: right;
 }
@@ -1737,14 +1828,17 @@
 }
 
 .jv-forecast-page .jv-month-card dl > div.highlight {
+  align-items: baseline;
   background: rgba(212, 113, 74, 0.06);
   border-radius: 8px;
-  grid-template-columns: 1fr;
-  padding: 8px 10px;
+  flex-direction: column;
+  gap: 4px;
+  margin: 2px 0;
+  padding: 10px 12px;
 }
 
 .jv-forecast-page .jv-month-card dl > div.highlight dd {
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 300;
   text-align: left;
 }
@@ -2068,7 +2162,7 @@
 }
 
 @media (max-width: 1024px) {
-  .jv-forecast-page .jv-panel-grid {
+  .jv-forecast-page .jv-scenarios {
     grid-template-columns: 1fr;
   }
 

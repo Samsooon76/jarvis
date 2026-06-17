@@ -26,7 +26,7 @@ export const ForecastInsightPanels = ({ overview }: ForecastInsightPanelsProps) 
       <SectionLabel icon={AlertTriangle}>Risques pipe</SectionLabel>
       {(overview?.risks ?? []).length > 0 ? (
         <ul className="jv-theme-list">
-          {(overview?.risks ?? []).slice(0, 5).map((risk) => (
+          {(overview?.risks ?? []).map((risk) => (
             <li key={risk.title}>
               <span>{risk.title}</span>
               <em className={getRiskClassName(risk.severity)}>{severityLabels[risk.severity]}</em>
@@ -42,7 +42,7 @@ export const ForecastInsightPanels = ({ overview }: ForecastInsightPanelsProps) 
       <SectionLabel icon={TrendingUp}>Mouvements clés</SectionLabel>
       {(overview?.levers ?? []).length > 0 ? (
         <ul className="jv-theme-list">
-          {(overview?.levers ?? []).slice(0, 5).map((lever) => (
+          {(overview?.levers ?? []).map((lever) => (
             <li key={lever.title}>
               <span>{lever.title}</span>
               <em>{formatAmount(lever.amount)}</em>

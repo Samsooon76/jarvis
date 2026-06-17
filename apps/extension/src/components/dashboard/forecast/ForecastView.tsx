@@ -54,6 +54,7 @@ type ForecastViewProps = {
   selectedAiProvider: AiProviderOption;
   selectedOwnerId?: string;
   canViewTeamForecast?: boolean;
+  dataRefreshKey?: number;
 };
 
 type ForecastTab = "overview" | "synthesis" | "vs" | "accuracy";
@@ -78,6 +79,7 @@ export const ForecastView = ({
   selectedAiProvider,
   selectedOwnerId,
   canViewTeamForecast = false,
+  dataRefreshKey = 0,
 }: ForecastViewProps) => {
   const defaultDates = useMemo(() => getPeriodBounds("currentMonth"), []);
   const [ownerId, setOwnerId] = useState(selectedOwnerId ?? "");
@@ -106,7 +108,7 @@ export const ForecastView = ({
   useEffect(() => {
     let isMounted = true;
 
-    const loadOverview = async () => {
+    const loadOverview = async (forceRefresh = false) => {
       try {
         setIsLoading(true);
         setError(null);
@@ -117,6 +119,7 @@ export const ForecastView = ({
           dateFrom,
           dateTo,
           aiProvider: selectedAiProvider,
+          forceRefresh,
         });
 
         if (isMounted) {
@@ -133,12 +136,12 @@ export const ForecastView = ({
       }
     };
 
-    void loadOverview();
+    void loadOverview(dataRefreshKey > 0);
 
     return () => {
       isMounted = false;
     };
-  }, [dateFrom, dateTo, orgId, resolvedOwnerId, scope, selectedAiProvider]);
+  }, [dataRefreshKey, dateFrom, dateTo, orgId, resolvedOwnerId, scope, selectedAiProvider]);
 
   const projection = useMemo(() => buildProjection(overview), [overview]);
   const synthesis: ForecastSynthesis | null = overview?.synthesis ?? null;
@@ -302,52 +305,56 @@ export const ForecastView = ({
         </h1>
       </header>
 
-      <div className="jv-toolbar">
-        <ForecastFilters
-          canViewTeamForecast={canViewTeamForecast}
-          dateFrom={dateFrom}
-          dateTo={dateTo}
-          onDateFromChange={handleDateFromChange}
-          onDateToChange={handleDateToChange}
-          onOwnerIdChange={setOwnerId}
-          onPeriodChange={setPeriod}
-          ownerId={ownerId}
-          owners={owners}
-          periodMode={periodMode}
-        />
-        <div className="jv-toolbar-actions">
-          <span className="jv-toolbar-meta">
-            Dernière MAJ IA : {overview?.lastAnalyzedAt ? formatDateTime(overview.lastAnalyzedAt) : "aucune analyse"}
-          </span>
-          <button
-            className="jv-btn-ghost"
-            disabled={isAnalyzing || openDeals.length === 0}
-            onClick={() => void handleAnalyze(true)}
-            type="button"
-          >
-            <RefreshCw aria-hidden="true" className={isAnalyzing ? "jv-spin" : undefined} size={14} strokeWidth={1.5} />
-            {isAnalyzing ? "Recalcul…" : "Recalculer"}
-          </button>
-          <button
-            className="jv-btn-primary"
-            disabled={isAnalyzing || openDeals.length === 0}
-            onClick={() => void handleAnalyze(false)}
-            type="button"
-          >
-            {isAnalyzing ? (
-              <>
-                <RefreshCw aria-hidden="true" className="jv-spin" size={14} strokeWidth={1.5} />
-                Analyse…
-              </>
-            ) : (
-              <>
-                <Sparkles aria-hidden="true" size={14} strokeWidth={1.5} />
-                Analyser les deals ouverts
-              </>
-            )}
-          </button>
+      <section aria-label="Filtres forecast" className="jv-controls">
+        <div className="jv-controls-row">
+          <ForecastFilters
+            canViewTeamForecast={canViewTeamForecast}
+            dateFrom={dateFrom}
+            dateTo={dateTo}
+            onDateFromChange={handleDateFromChange}
+            onDateToChange={handleDateToChange}
+            onOwnerIdChange={setOwnerId}
+            onPeriodChange={setPeriod}
+            ownerId={ownerId}
+            owners={owners}
+            periodMode={periodMode}
+          />
+          <div aria-label="Actions forecast" className="jv-controls-actions">
+            <span className="jv-toolbar-meta">
+              Dernière MAJ IA : {overview?.lastAnalyzedAt ? formatDateTime(overview.lastAnalyzedAt) : "aucune analyse"}
+            </span>
+            <div className="jv-toolbar-buttons">
+              <button
+                className="jv-btn-ghost"
+                disabled={isAnalyzing || openDeals.length === 0}
+                onClick={() => void handleAnalyze(true)}
+                type="button"
+              >
+                <RefreshCw aria-hidden="true" className={isAnalyzing ? "jv-spin" : undefined} size={14} strokeWidth={1.5} />
+                {isAnalyzing ? "Recalcul…" : "Recalculer"}
+              </button>
+              <button
+                className="jv-btn-primary"
+                disabled={isAnalyzing || openDeals.length === 0}
+                onClick={() => void handleAnalyze(false)}
+                type="button"
+              >
+                {isAnalyzing ? (
+                  <>
+                    <RefreshCw aria-hidden="true" className="jv-spin" size={14} strokeWidth={1.5} />
+                    Analyse…
+                  </>
+                ) : (
+                  <>
+                    <Sparkles aria-hidden="true" size={14} strokeWidth={1.5} />
+                    Analyser les deals ouverts
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
+      </section>
 
       <div aria-label="Sections forecast" className="jv-section-tabs jv-filter-pills" role="group">
         {visibleTabs.map((tab) => (
@@ -449,7 +456,7 @@ export const ForecastView = ({
             />
           </section>
 
-          <section className="jv-panel-grid">
+          <section aria-label="Projection et scénarios" className="jv-forecast-bottom">
             <article className="jv-theme-block chart-block">
               <div className="jv-theme-block-head">
                 <SectionLabel icon={BarChart3}>Projection mois par mois</SectionLabel>
@@ -467,8 +474,10 @@ export const ForecastView = ({
               )}
             </article>
 
-            <article className="jv-theme-block">
-              <SectionLabel icon={TrendingUp}>Scénarios</SectionLabel>
+            <article className="jv-theme-block scenarios-block">
+              <div className="jv-theme-block-head">
+                <SectionLabel icon={TrendingUp}>Scénarios</SectionLabel>
+              </div>
               <div className="jv-scenarios">
                 {(overview?.scenarios ?? []).map((scenario) => (
                   <div className={getScenarioClassName(scenario.id)} key={scenario.id}>
@@ -481,7 +490,7 @@ export const ForecastView = ({
             </article>
           </section>
 
-          {projection.length > 0 ? <MonthlyProjectionCards months={overview?.monthlyProjection ?? []} /> : null}
+          {projection.length > 1 ? <MonthlyProjectionCards months={overview?.monthlyProjection ?? []} /> : null}
 
           <SignedDealsTable getOwnerDisplayName={getOwnerDisplayName} isLoading={isLoading} signedDeals={signedDeals} />
         </>

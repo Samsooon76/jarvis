@@ -9,6 +9,7 @@ import { Sidebar } from "./dashboard/Sidebar";
 import type { PlannedProspectTask, QueueViewProps } from "./dashboard/types";
 import { useQueueDashboard } from "../hooks/dashboard/useQueueDashboard";
 import {
+  clearAnalyticsCacheByPrefix,
   fetchCloseLostOverview,
   fetchForecastOverview,
   fetchHubSpotLeadAccounts,
@@ -121,11 +122,6 @@ const workspaceCopy = {
     eyebrow: "Call intelligence",
     title: "Appels",
     subtitle: "Analyse des appels sales, signaux clients et prochaines actions.",
-  },
-  dealAnalysis: {
-    eyebrow: "Deal workspace",
-    title: "Deal analysis",
-    subtitle: "Analyse approfondie d'un deal, separee de la queue operationnelle.",
   },
   coaching: {
     eyebrow: "Manager workspace",
@@ -242,6 +238,7 @@ export const QueueView = ({
   ownerName,
   selectedOwnerId,
   canViewTeamForecast = false,
+  dataRefreshKey = 0,
   prospects,
 }: QueueViewProps) => {
   const [hubspotTasks, setHubspotTasks] = useState<HubSpotTaskListItem[]>([]);
@@ -291,6 +288,10 @@ export const QueueView = ({
     const forecastDates = getForecastMonthBounds();
     const forecastScope = selectedOwnerId ? "owner" : "all";
 
+    if (dataRefreshKey > 0) {
+      clearAnalyticsCacheByPrefix("forecast-");
+    }
+
     void fetchForecastOverview({
       orgId,
       scope: forecastScope,
@@ -298,8 +299,9 @@ export const QueueView = ({
       dateFrom: forecastDates.dateFrom,
       dateTo: forecastDates.dateTo,
       aiProvider: dashboard.selectedAiProvider,
+      forceRefresh: dataRefreshKey > 0,
     }).catch(() => undefined);
-  }, [dashboard.selectedAiProvider, isConnected, orgId, selectedOwnerId]);
+  }, [dashboard.selectedAiProvider, dataRefreshKey, isConnected, orgId, selectedOwnerId]);
 
   // Close-lost prefetch is owner-independent: it must not refire on owner switch.
   useEffect(() => {
@@ -387,6 +389,7 @@ export const QueueView = ({
         dashboard.activeView !== "playbook" &&
         dashboard.activeView !== "settings" &&
         dashboard.activeView !== "stats" &&
+        dashboard.activeView !== "dealAnalysis" &&
         pageCopy ? (
           <HubSpotHeader
             eyebrow={pageCopy.eyebrow}
@@ -534,6 +537,7 @@ export const QueueView = ({
               selectedAiProvider={dashboard.selectedAiProvider}
               selectedOwnerId={selectedOwnerId}
               canViewTeamForecast={canViewTeamForecast}
+              dataRefreshKey={dataRefreshKey}
             />
           ) : null}
 
@@ -575,13 +579,17 @@ export const QueueView = ({
               }
               dashboard.setActiveView("dealAnalysis");
             }}
+            onOwnerChange={onOwnerChange}
             onSearchTermChange={dashboard.setSearchTerm}
             onStageFilterChange={dashboard.setStageFilter}
             onStatusFilterChange={dashboard.setStatusFilter}
             onSyncHubSpot={dashboard.handleSyncHubSpot}
             orgId={orgId}
+            owners={owners}
+            ownerName={ownerName}
             plannedTasksByProspectId={plannedTasksByProspectId}
             prospects={prospects}
+            selectedOwnerId={selectedOwnerId}
             syncLoading={dashboard.syncLoading}
           />
         ) : null}

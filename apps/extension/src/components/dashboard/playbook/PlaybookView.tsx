@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   AlignLeft,
   BookOpenCheck,
@@ -6,6 +6,7 @@ import {
   History,
   Layers,
   Lightbulb,
+  Map as MapIcon,
   Plus,
   RefreshCw,
   Sparkles,
@@ -13,6 +14,7 @@ import {
 } from "lucide-react";
 import type {
   Playbook,
+  PlaybookBootstrapReadiness,
   PlaybookDetail,
   PlaybookPlay,
   PlaybookPlayCategory,
@@ -23,16 +25,74 @@ import type {
 import { PLAYBOOK_PLAY_CATEGORIES } from "@jarvis/shared";
 import {
   acceptPlaybookSuggestion,
+  bootstrapPlaybookFromWonDeals,
   createPlaybook,
   createPlaybookPlay,
+  fetchPlaybookBootstrapReadiness,
   fetchPlaybookDetail,
   fetchPlaybooks,
   fetchPlaybookSuggestions,
   generatePlaybookSuggestions,
   rejectPlaybookSuggestion,
+  synthesizePlaybookOverview,
   updatePlaybookPlay,
 } from "../../../services/api";
+import { LoadingState } from "../LoadingState";
 import "../../styles/playbook.css";
+
+const BOOTSTRAP_PROGRESS_STEPS = [
+  { afterMs: 0, label: "Analyse des deals gagnés", detail: "Jarvis lit l'historique HubSpot deal par deal (10 max)." },
+  { afterMs: 25_000, label: "Synthèse de la séquence gagnante", detail: "Identification des étapes communes aux victoires de l'équipe." },
+  { afterMs: 55_000, label: "Structuration du playbook", detail: "Organisation des plays par étapes du cycle de vente." },
+  { afterMs: 100_000, label: "Finalisation", detail: "Encore un peu de patience — l'IA termine la synthèse." },
+] as const;
+
+const resolveBootstrapStep = (elapsedMs: number) => {
+  let step = BOOTSTRAP_PROGRESS_STEPS[0];
+
+  for (const candidate of BOOTSTRAP_PROGRESS_STEPS) {
+    if (elapsedMs >= candidate.afterMs) {
+      step = candidate;
+    }
+  }
+
+  return step;
+};
+
+const estimateBootstrapProgress = (elapsedMs: number): number =>
+  Math.min(94, Math.max(4, Math.round((1 - Math.exp(-elapsedMs / 75_000)) * 94)));
+
+const BootstrapProgressOverlay = ({
+  elapsedMs,
+  progress,
+}: {
+  elapsedMs: number;
+  progress: number;
+}) => {
+  const step = resolveBootstrapStep(elapsedMs);
+  const elapsedLabel = `${Math.max(1, Math.round(elapsedMs / 1000))} s`;
+
+  return (
+    <div aria-busy="true" aria-live="polite" className="jv-playbook-bootstrap-overlay" role="status">
+      <div className="jv-playbook-bootstrap-overlay-card">
+        <LoadingState detail={step.detail} label={step.label} tone="panel" />
+        <section className="jv-run-progress">
+          <div className="jv-run-progress-head">
+            <span>Génération du playbook en cours</span>
+            <strong>{progress}%</strong>
+          </div>
+          <span className="jv-run-progress-bar">
+            <span style={{ width: `${progress}%` }} />
+          </span>
+          <small>
+            Lancé par vous · {elapsedLabel} écoulée{elapsedMs >= 2000 ? "s" : ""} · comptez 1 à 3 minutes
+          </small>
+        </section>
+        <p className="jv-playbook-bootstrap-overlay-note">Ne quittez pas cette page pendant la génération.</p>
+      </div>
+    </div>
+  );
+};
 
 const categoryLabels: Record<PlaybookPlayCategory, string> = {
   qualification: "Qualification",
@@ -69,7 +129,25 @@ type PlaybookViewProps = {
   canEdit: boolean;
 };
 
-type PlaybookSection = "plays" | "suggestions";
+type PlaybookSection = "plays" | "overview" | "suggestions";
+
+const MIN_PLAYS_FOR_OVERVIEW = 2;
+
+const formatOverviewDate = (value: string): string => {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "date inconnue";
+  }
+
+  return date.toLocaleString("fr-FR", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};
 
 const SectionLabel = ({ children, icon: Icon }: { children: string; icon: LucideIcon }) => (
   <span className="jv-section-label">
@@ -144,20 +222,20 @@ const PlayForm = ({ initialValue, submitLabel, busy, onCancel, onSubmit }: PlayF
         />
       </label>
       <label>
-        Déclencheur — quand appliquer ce play ?
+        Quand appliquer ce play (étape / signal)
         <textarea
           maxLength={600}
-          placeholder="Ex : Le prospect mentionne un concurrent pendant la démo."
+          placeholder="Ex : Stage Discovery — le besoin est identifié mais le comité d'achat n'est pas cartographié."
           rows={2}
           value={form.triggerDescription}
           onChange={(event) => setForm({ ...form, triggerDescription: event.target.value })}
         />
       </label>
       <label>
-        Réponse recommandée
+        Comment exécuter le play
         <textarea
           maxLength={4000}
-          placeholder="Ce que le commercial doit faire ou dire, et pourquoi ça marche."
+          placeholder="Objectif, étapes, questions à poser, signaux de succès et prochaine action."
           rows={4}
           value={form.recommendedResponse}
           onChange={(event) => setForm({ ...form, recommendedResponse: event.target.value })}
@@ -192,6 +270,103 @@ const SuggestionEvidenceList = ({ evidence }: { evidence: PlaybookSuggestion["ev
   );
 };
 
+const BootstrapPanel = ({
+  bootstrapping,
+  busy,
+  canEdit,
+  newPlaybookName,
+  onBootstrap,
+  onCreateManual,
+  onNameChange,
+  readiness,
+}: {
+  bootstrapping: boolean;
+  busy: boolean;
+  canEdit: boolean;
+  newPlaybookName: string;
+  onBootstrap: () => void;
+  onCreateManual: () => void;
+  onNameChange: (value: string) => void;
+  readiness: PlaybookBootstrapReadiness | null;
+}) => {
+  const dealSampleCount = readiness?.recommendedDealCount ?? 10;
+  const teamScopeLabel =
+    readiness && readiness.teamOwnerCount > 0
+      ? `équipe Sales AE · ${readiness.teamOwnerCount} commercial${readiness.teamOwnerCount > 1 ? "aux" : ""}`
+      : "toute l'équipe";
+  const wonDealLabel =
+    readiness === null
+      ? null
+      : readiness.wonDealCount === 0
+        ? `Aucun deal gagné synchronisé pour ${teamScopeLabel}`
+        : `${readiness.wonDealCount} deal${readiness.wonDealCount > 1 ? "s" : ""} gagné${readiness.wonDealCount > 1 ? "s" : ""} · ${teamScopeLabel}`;
+  const bootstrapLabel = readiness?.replacesDrafts
+    ? `Relancer la génération (${readiness.draftPlayCount} brouillon${readiness.draftPlayCount > 1 ? "s" : ""} remplacé${readiness.draftPlayCount > 1 ? "s" : ""})`
+    : `Générer depuis ${dealSampleCount} deal${dealSampleCount > 1 ? "s" : ""} gagné${dealSampleCount > 1 ? "s" : ""}`;
+
+  return (
+    <aside className="jv-detail jv-playbook-empty-panel">
+      <div className="jv-detail-empty">
+        <BookOpenCheck aria-hidden="true" size={20} strokeWidth={1.25} />
+        <strong>Construisez votre playbook depuis vos victoires</strong>
+        <p>
+          Jarvis analyse les deals gagnés de toute l&apos;équipe Sales AE et construit un playbook structuré par étapes du
+          cycle de vente (qualification → closing), pas une simple liste de réponses à objections.
+        </p>
+      </div>
+
+      {wonDealLabel ? <p className="jv-playbook-readiness">{wonDealLabel}</p> : null}
+      {readiness && readiness.draftPlayCount > 0 && readiness.canBootstrap ? (
+        <p className="jv-banner jv-banner-info">
+          {readiness.draftPlayCount} play{readiness.draftPlayCount > 1 ? "s" : ""} en brouillon détecté
+          {readiness.draftPlayCount > 1 ? "s" : ""} — relancez la génération ou activez-les dans l&apos;onglet Plays.
+        </p>
+      ) : null}
+      {readiness?.blockingReason ? <p className="jv-banner jv-banner-warning">{readiness.blockingReason}</p> : null}
+
+      {canEdit ? (
+        <div className="jv-playbook-create">
+          <button
+            className={readiness?.canBootstrap ? "jv-btn-primary" : "jv-btn-primary is-disabled"}
+            disabled={bootstrapping || busy || !readiness?.canBootstrap}
+            onClick={onBootstrap}
+            type="button"
+          >
+            <Sparkles aria-hidden="true" size={14} strokeWidth={1.5} />
+            {bootstrapLabel}
+          </button>
+          <p className="jv-theme-empty">
+            {readiness?.canBootstrap
+              ? "Cliquez pour lancer la génération (sync HubSpot de l'équipe incluse). Comptez 1 à 3 minutes — un indicateur de progression s'affichera."
+              : readiness && readiness.wonDealCount < readiness.minDealCount
+                ? "Cliquez sur Générer pour synchroniser les deals de l'équipe puis construire le playbook."
+                : "La génération automatique n'est pas disponible dans l'état actuel du playbook."}
+          </p>
+          <div className="jv-playbook-create-manual">
+            <input
+              disabled={bootstrapping}
+              maxLength={120}
+              placeholder="Ou créez un playbook vide (ex : Playbook AE 2026)"
+              value={newPlaybookName}
+              onChange={(event) => onNameChange(event.target.value)}
+            />
+            <button className="jv-btn-ghost" disabled={bootstrapping || busy} onClick={onCreateManual} type="button">
+              {busy ? (
+                <RefreshCw aria-hidden="true" className="jv-spin" size={14} strokeWidth={1.5} />
+              ) : (
+                <Plus aria-hidden="true" size={14} strokeWidth={1.5} />
+              )}
+              {busy ? "Création…" : "Créer vide"}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <p className="jv-theme-empty">Aucun playbook publié pour le moment. Votre manager peut en générer un depuis les deals gagnés.</p>
+      )}
+    </aside>
+  );
+};
+
 const PlayList = ({
   activePlayId,
   plays,
@@ -210,7 +385,9 @@ const PlayList = ({
     </header>
     <div className="jv-list-body">
       {plays.length === 0 ? (
-        <p className="jv-list-empty">Aucun play pour l&apos;instant. Ajoutez votre premier play ou générez-en depuis vos analyses win/loss.</p>
+        <p className="jv-list-empty">
+          Aucun play pour l&apos;instant. Lancez la génération depuis vos deals gagnés ou ajoutez un play manuellement.
+        </p>
       ) : null}
       {plays.map((play) => (
         <button
@@ -301,7 +478,7 @@ const PlayDetail = ({
 }) => {
   if (creating) {
     return (
-      <aside className="jv-detail">
+      <aside className="jv-detail jv-detail-expanded">
         <header className="jv-detail-head">
           <div>
             <h2>Nouveau play</h2>
@@ -315,7 +492,7 @@ const PlayDetail = ({
 
   if (editing && play) {
     return (
-      <aside className="jv-detail">
+      <aside className="jv-detail jv-detail-expanded">
         <header className="jv-detail-head">
           <div>
             <h2>Modifier le play</h2>
@@ -340,18 +517,18 @@ const PlayDetail = ({
 
   if (!play) {
     return (
-      <aside className="jv-detail">
+      <aside className="jv-detail jv-detail-expanded">
         <div className="jv-detail-empty">
           <BookOpenCheck aria-hidden="true" size={20} strokeWidth={1.25} />
           <strong>Sélectionnez un play</strong>
-          <p>Déclencheurs, réponses recommandées et preuves issues de vos deals.</p>
+          <p>Étapes du cycle, exécution recommandée et preuves issues de vos deals gagnés.</p>
         </div>
       </aside>
     );
   }
 
   return (
-    <aside className="jv-detail">
+    <aside className="jv-detail jv-detail-expanded">
       <header className="jv-detail-head">
         <div>
           <h2>{play.title}</h2>
@@ -364,11 +541,11 @@ const PlayDetail = ({
         ) : null}
       </header>
 
-      <DetailSection icon={Lightbulb} label="Déclencheur">
+      <DetailSection icon={Lightbulb} label="Quand appliquer">
         <p className="jv-prose">{play.triggerDescription}</p>
       </DetailSection>
 
-      <DetailSection icon={AlignLeft} label="Réponse recommandée">
+      <DetailSection icon={AlignLeft} label="Comment exécuter">
         <p className="jv-prose">{play.recommendedResponse}</p>
       </DetailSection>
 
@@ -398,6 +575,178 @@ const PlayDetail = ({
   );
 };
 
+const OverviewPanel = ({
+  busy,
+  canEdit,
+  detail,
+  onOpenPlay,
+  onSynthesize,
+  plays,
+}: {
+  busy: boolean;
+  canEdit: boolean;
+  detail: PlaybookDetail;
+  onOpenPlay: (playId: string) => void;
+  onSynthesize: () => void;
+  plays: PlaybookPlay[];
+}) => {
+  const overview = detail.overview;
+  const sourcePlays = plays.filter((play) => play.status !== "archived");
+  const playById = new Map(plays.map((play) => [play.id, play]));
+
+  if (sourcePlays.length < MIN_PLAYS_FOR_OVERVIEW) {
+    return (
+      <section aria-label="Vue globale du playbook" className="jv-playbook-overview jv-playbook-overview-empty">
+        <div className="jv-detail-empty">
+          <MapIcon aria-hidden="true" size={20} strokeWidth={1.25} />
+          <strong>Vue globale pas encore disponible</strong>
+          <p>
+            Il faut au moins {MIN_PLAYS_FOR_OVERVIEW} plays pour construire le playbook global. Générez ou ajoutez des
+            plays, puis lancez la synthèse.
+          </p>
+        </div>
+      </section>
+    );
+  }
+
+  if (!overview) {
+    return (
+      <section aria-label="Vue globale du playbook" className="jv-playbook-overview jv-playbook-overview-empty">
+        <div className="jv-detail-empty">
+          <MapIcon aria-hidden="true" size={20} strokeWidth={1.25} />
+          <strong>Construire le playbook global</strong>
+          <p>
+            Jarvis va relier vos plays en une doctrine, une séquence du cycle et des objectifs par étape — le référentiel
+            lisible pour l&apos;équipe.
+          </p>
+        </div>
+        {canEdit ? (
+          <button className="jv-btn-primary" disabled={busy} onClick={onSynthesize} type="button">
+            <Sparkles aria-hidden="true" size={14} strokeWidth={1.5} />
+            {busy ? "Synthèse en cours…" : "Synthétiser la vue globale"}
+          </button>
+        ) : null}
+      </section>
+    );
+  }
+
+  return (
+    <section aria-label="Vue globale du playbook" className="jv-playbook-overview">
+      {detail.overviewIsStale ? (
+        <p className="jv-banner jv-banner-warning">
+          Le playbook global n&apos;est plus aligné avec les plays actuels. Mettez à jour la synthèse pour refléter les
+          changements.
+        </p>
+      ) : null}
+
+      <header className="jv-playbook-overview-head">
+        <div>
+          <h2>{detail.name}</h2>
+          <p>
+            Synthèse du {formatOverviewDate(overview.synthesizedAt)} · confiance {overview.confidence} ·{" "}
+            {overview.sourceSnapshot.length} play{overview.sourceSnapshot.length > 1 ? "s" : ""} source
+          </p>
+        </div>
+        {canEdit ? (
+          <button className="jv-btn-ghost" disabled={busy} onClick={onSynthesize} type="button">
+            {busy ? (
+              <RefreshCw aria-hidden="true" className="jv-spin" size={14} strokeWidth={1.5} />
+            ) : (
+              <Sparkles aria-hidden="true" size={14} strokeWidth={1.5} />
+            )}
+            {busy ? "Mise à jour…" : detail.overviewIsStale ? "Mettre à jour" : "Rafraîchir"}
+          </button>
+        ) : null}
+      </header>
+
+      <div className="jv-playbook-overview-grid">
+        <article className="jv-playbook-overview-card">
+          <SectionLabel icon={Lightbulb}>Doctrine</SectionLabel>
+          <p className="jv-prose">{overview.doctrine}</p>
+        </article>
+
+        <article className="jv-playbook-overview-card">
+          <SectionLabel icon={MapIcon}>Séquence type</SectionLabel>
+          <ol className="jv-playbook-overview-sequence">
+            {overview.idealSequence.map((step) => (
+              <li key={step}>{step}</li>
+            ))}
+          </ol>
+        </article>
+
+        <article className="jv-playbook-overview-card jv-playbook-overview-card-wide">
+          <SectionLabel icon={Layers}>Étapes du cycle</SectionLabel>
+          {overview.stages.length > 0 ? (
+            <div className="jv-playbook-overview-stages">
+              {overview.stages.map((stage) => (
+                <div className="jv-playbook-overview-stage" key={`${stage.category}-${stage.objective}`}>
+                  <header>
+                    <strong>{categoryLabels[stage.category]}</strong>
+                    <span>{stage.playIds.length} play{stage.playIds.length > 1 ? "s" : ""}</span>
+                  </header>
+                  <p className="jv-prose">
+                    <em>Objectif</em> — {stage.objective}
+                  </p>
+                  <p className="jv-prose">
+                    <em>Passage</em> — {stage.exitCriteria}
+                  </p>
+                  {stage.playIds.length > 0 ? (
+                    <ul className="jv-playbook-overview-play-links">
+                      {stage.playIds.map((playId) => {
+                        const play = playById.get(playId);
+
+                        if (!play) {
+                          return null;
+                        }
+
+                        return (
+                          <li key={playId}>
+                            <button onClick={() => onOpenPlay(playId)} type="button">
+                              {play.title}
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="jv-theme-empty">Aucune étape structurée pour l&apos;instant.</p>
+          )}
+        </article>
+
+        <article className="jv-playbook-overview-card">
+          <SectionLabel icon={Sparkles}>Principes transverses</SectionLabel>
+          {overview.principles.length > 0 ? (
+            <ul className="jv-playbook-overview-list">
+              {overview.principles.map((principle) => (
+                <li key={principle}>{principle}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="jv-theme-empty">Aucun principe identifié.</p>
+          )}
+        </article>
+
+        <article className="jv-playbook-overview-card">
+          <SectionLabel icon={History}>Gaps</SectionLabel>
+          {overview.gaps.length > 0 ? (
+            <ul className="jv-playbook-overview-list jv-playbook-overview-gaps">
+              {overview.gaps.map((gap) => (
+                <li key={gap}>{gap}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="jv-theme-empty">Aucun gap structurel détecté.</p>
+          )}
+        </article>
+      </div>
+    </section>
+  );
+};
+
 const SuggestionDetail = ({
   busy,
   editing,
@@ -417,7 +766,7 @@ const SuggestionDetail = ({
 }) => {
   if (!suggestion) {
     return (
-      <aside className="jv-detail">
+      <aside className="jv-detail jv-detail-expanded">
         <div className="jv-detail-empty">
           <Sparkles aria-hidden="true" size={20} strokeWidth={1.25} />
           <strong>Sélectionnez une suggestion</strong>
@@ -436,7 +785,7 @@ const SuggestionDetail = ({
 
   if (editing) {
     return (
-      <aside className="jv-detail">
+      <aside className="jv-detail jv-detail-expanded">
         <header className="jv-detail-head">
           <div>
             <h2>Éditer avant acceptation</h2>
@@ -449,7 +798,7 @@ const SuggestionDetail = ({
   }
 
   return (
-    <aside className="jv-detail">
+    <aside className="jv-detail jv-detail-expanded">
       <header className="jv-detail-head">
         <div>
           <h2>{suggestion.title}</h2>
@@ -465,11 +814,11 @@ const SuggestionDetail = ({
         </div>
       </div>
 
-      <DetailSection icon={Lightbulb} label="Déclencheur">
+      <DetailSection icon={Lightbulb} label="Quand appliquer">
         <p className="jv-prose">{suggestion.triggerDescription}</p>
       </DetailSection>
 
-      <DetailSection icon={AlignLeft} label="Réponse recommandée">
+      <DetailSection icon={AlignLeft} label="Comment exécuter">
         <p className="jv-prose">{suggestion.recommendedResponse}</p>
       </DetailSection>
 
@@ -509,14 +858,23 @@ export const PlaybookView = ({ orgId, canEdit }: PlaybookViewProps) => {
   const [activeSection, setActiveSection] = useState<PlaybookSection>("plays");
   const [selectedPlayId, setSelectedPlayId] = useState<string | null>(null);
   const [selectedSuggestionId, setSelectedSuggestionId] = useState<string | null>(null);
+  const [readiness, setReadiness] = useState<PlaybookBootstrapReadiness | null>(null);
+  const [bootstrapping, setBootstrapping] = useState(false);
+  const [bootstrapStartedAt, setBootstrapStartedAt] = useState<number | null>(null);
+  const [bootstrapElapsedMs, setBootstrapElapsedMs] = useState(0);
+  const [bootstrapProgress, setBootstrapProgress] = useState(0);
 
   const loadData = useCallback(
     async (forceRefresh = false) => {
       setError(null);
 
       try {
-        const list = await fetchPlaybooks(orgId, forceRefresh);
+        const [list, nextReadiness] = await Promise.all([
+          fetchPlaybooks(orgId, forceRefresh),
+          fetchPlaybookBootstrapReadiness(orgId, forceRefresh),
+        ]);
 
+        setReadiness(nextReadiness);
         setPlaybooks(list);
         const active = list.find((playbook) => playbook.status === "active") ?? list[0] ?? null;
 
@@ -544,8 +902,27 @@ export const PlaybookView = ({ orgId, canEdit }: PlaybookViewProps) => {
 
   useEffect(() => {
     setLoading(true);
-    void loadData();
+    void loadData(true);
   }, [loadData]);
+
+  useEffect(() => {
+    if (!bootstrapping || bootstrapStartedAt === null) {
+      return;
+    }
+
+    const tick = (): void => {
+      const elapsedMs = Date.now() - bootstrapStartedAt;
+      setBootstrapElapsedMs(elapsedMs);
+      setBootstrapProgress(estimateBootstrapProgress(elapsedMs));
+    };
+
+    tick();
+    const intervalId = window.setInterval(tick, 500);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [bootstrapStartedAt, bootstrapping]);
 
   const visiblePlays = useMemo(() => {
     const plays = detail?.plays ?? [];
@@ -634,11 +1011,56 @@ export const PlaybookView = ({ orgId, canEdit }: PlaybookViewProps) => {
     }
   };
 
+  const handleSynthesizeOverview = () =>
+    runMutation(async () => {
+      if (!detail) {
+        return;
+      }
+
+      await synthesizePlaybookOverview(orgId, detail.id);
+      setActiveSection("overview");
+    });
+
+  const handleOpenPlayFromOverview = (playId: string): void => {
+    setActiveSection("plays");
+    setCreatingPlay(false);
+    setEditingPlayId(null);
+    setSelectedPlayId(playId);
+  };
+
   const handleCreatePlaybook = () =>
     runMutation(async () => {
       await createPlaybook(orgId, newPlaybookName.trim() || "Playbook de vente");
       setNewPlaybookName("");
     });
+
+  const handleBootstrapPlaybook = async (): Promise<void> => {
+    if (bootstrapping) {
+      return;
+    }
+
+    setBootstrapping(true);
+    setBootstrapStartedAt(Date.now());
+    setBootstrapElapsedMs(0);
+    setBootstrapProgress(4);
+    setError(null);
+
+    try {
+      await bootstrapPlaybookFromWonDeals(orgId, {
+        dealCount: readiness?.recommendedDealCount ?? 10,
+      });
+      setBootstrapProgress(100);
+      await loadData(true);
+      setActiveSection("overview");
+    } catch (mutationError) {
+      setError(mutationError instanceof Error ? mutationError.message : "La génération du playbook a échoué.");
+    } finally {
+      setBootstrapping(false);
+      setBootstrapStartedAt(null);
+      setBootstrapElapsedMs(0);
+      setBootstrapProgress(0);
+    }
+  };
 
   const handleCreatePlay = (form: PlayFormState) =>
     runMutation(async () => {
@@ -705,25 +1127,37 @@ export const PlaybookView = ({ orgId, canEdit }: PlaybookViewProps) => {
     });
 
   const coveredCategories = categoryCounts.size;
+  const playbookIsEmpty = readiness
+    ? readiness.playCount === 0
+    : detail
+      ? detail.playCount === 0
+      : playbooks.length === 0;
   const periodLabel = detail
     ? `${detail.activePlayCount} play${detail.activePlayCount > 1 ? "s" : ""} actif${detail.activePlayCount > 1 ? "s" : ""} sur ${detail.playCount}`
     : "Référentiel des meilleures pratiques de vente";
 
+  const pageShell = (content: ReactNode): ReactNode => (
+    <div className="jv-playbook-page" aria-busy={bootstrapping} aria-label="Playbook de vente">
+      {bootstrapping ? <BootstrapProgressOverlay elapsedMs={bootstrapElapsedMs} progress={bootstrapProgress} /> : null}
+      {content}
+    </div>
+  );
+
   if (loading) {
-    return (
-      <div className="jv-playbook-page" aria-busy="true" aria-label="Playbook de vente">
+    return pageShell(
+      <>
         <header className="jv-page-header">
           <BookOpenCheck aria-hidden="true" className="jv-page-icon" size={18} strokeWidth={1.5} />
           <h1>Playbook</h1>
         </header>
-        <p className="jv-list-empty">Chargement du playbook…</p>
-      </div>
+        <LoadingState detail="Récupération du playbook et du nombre de deals gagnés." label="Chargement de la page" tone="panel" />
+      </>,
     );
   }
 
   if (playbooks.length === 0) {
-    return (
-      <div className="jv-playbook-page" aria-label="Playbook de vente">
+    return pageShell(
+      <>
         <header className="jv-page-header">
           <BookOpenCheck aria-hidden="true" className="jv-page-icon" size={18} strokeWidth={1.5} />
           <h1>
@@ -734,40 +1168,22 @@ export const PlaybookView = ({ orgId, canEdit }: PlaybookViewProps) => {
 
         {error ? <p className="jv-banner jv-banner-error">{error}</p> : null}
 
-        <aside className="jv-detail jv-playbook-empty-panel">
-          <div className="jv-detail-empty">
-            <BookOpenCheck aria-hidden="true" size={20} strokeWidth={1.25} />
-            <strong>Créez le playbook de votre équipe</strong>
-            <p>Capitalisez vos meilleures pratiques : déclencheurs, réponses recommandées et preuves issues de vos deals.</p>
-          </div>
-
-          {canEdit ? (
-            <div className="jv-playbook-create">
-              <input
-                maxLength={120}
-                placeholder="Nom du playbook (ex : Playbook AE 2026)"
-                value={newPlaybookName}
-                onChange={(event) => setNewPlaybookName(event.target.value)}
-              />
-              <button className="jv-btn-primary" disabled={busy} onClick={() => void handleCreatePlaybook()} type="button">
-                {busy ? (
-                  <RefreshCw aria-hidden="true" className="jv-spin" size={14} strokeWidth={1.5} />
-                ) : (
-                  <Plus aria-hidden="true" size={14} strokeWidth={1.5} />
-                )}
-                {busy ? "Création…" : "Créer le playbook"}
-              </button>
-            </div>
-          ) : (
-            <p className="jv-theme-empty">Aucun playbook publié pour le moment. Votre manager peut en créer un.</p>
-          )}
-        </aside>
-      </div>
+        <BootstrapPanel
+          bootstrapping={bootstrapping}
+          busy={busy}
+          canEdit={canEdit}
+          newPlaybookName={newPlaybookName}
+          onBootstrap={() => void handleBootstrapPlaybook()}
+          onCreateManual={() => void handleCreatePlaybook()}
+          onNameChange={setNewPlaybookName}
+          readiness={readiness}
+        />
+      </>,
     );
   }
 
-  return (
-    <div className="jv-playbook-page" aria-label="Playbook de vente">
+  return pageShell(
+    <>
       <header className="jv-page-header">
         <BookOpenCheck aria-hidden="true" className="jv-page-icon" size={18} strokeWidth={1.5} />
         <h1>Playbook</h1>
@@ -786,6 +1202,19 @@ export const PlaybookView = ({ orgId, canEdit }: PlaybookViewProps) => {
               type="button"
             >
               Plays
+            </button>
+            <button
+              className={activeSection === "overview" ? "active" : ""}
+              onClick={() => {
+                setActiveSection("overview");
+                setCreatingPlay(false);
+                setEditingPlayId(null);
+                setEditingSuggestionId(null);
+              }}
+              type="button"
+            >
+              Vue globale
+              {detail?.overviewIsStale ? <em>!</em> : null}
             </button>
             {canEdit ? (
               <button
@@ -812,18 +1241,40 @@ export const PlaybookView = ({ orgId, canEdit }: PlaybookViewProps) => {
         <div className="jv-toolbar-actions">
           <span className="jv-toolbar-period">{periodLabel}</span>
           {canEdit && activeSection === "plays" && !creatingPlay ? (
-            <button
-              className="jv-btn-primary"
-              disabled={busy}
-              onClick={() => {
-                setCreatingPlay(true);
-                setEditingPlayId(null);
-                setSelectedPlayId(null);
-              }}
-              type="button"
-            >
-              <Plus aria-hidden="true" size={14} strokeWidth={1.5} />
-              Nouveau play
+            readiness?.canBootstrap && (playbookIsEmpty || readiness.replacesDrafts) ? (
+              <button
+                className="jv-btn-primary"
+                disabled={bootstrapping || busy}
+                onClick={() => void handleBootstrapPlaybook()}
+                type="button"
+              >
+                <Sparkles aria-hidden="true" size={14} strokeWidth={1.5} />
+                {readiness.replacesDrafts ? "Relancer" : "Générer le playbook"}
+              </button>
+            ) : (
+              <button
+                className="jv-btn-primary"
+                disabled={busy}
+                onClick={() => {
+                  setCreatingPlay(true);
+                  setEditingPlayId(null);
+                  setSelectedPlayId(null);
+                }}
+                type="button"
+              >
+                <Plus aria-hidden="true" size={14} strokeWidth={1.5} />
+                Nouveau play
+              </button>
+            )
+          ) : null}
+          {canEdit && activeSection === "overview" && !playbookIsEmpty ? (
+            <button className="jv-btn-primary" disabled={busy} onClick={() => void handleSynthesizeOverview()} type="button">
+              {busy ? (
+                <RefreshCw aria-hidden="true" className="jv-spin" size={14} strokeWidth={1.5} />
+              ) : (
+                <Sparkles aria-hidden="true" size={14} strokeWidth={1.5} />
+              )}
+              {busy ? "Synthèse…" : detail?.overview ? "Mettre à jour" : "Synthétiser"}
             </button>
           ) : null}
           {canEdit && activeSection === "suggestions" ? (
@@ -843,6 +1294,8 @@ export const PlaybookView = ({ orgId, canEdit }: PlaybookViewProps) => {
 
       {detail ? (
         <>
+          {!playbookIsEmpty ? (
+          <>
           <section aria-label="Indicateurs playbook" className="jv-stat-strip">
             <div className="jv-stat" style={{ animationDelay: "0ms" }}>
               <span className="jv-stat-label">Plays actifs</span>
@@ -902,9 +1355,32 @@ export const PlaybookView = ({ orgId, canEdit }: PlaybookViewProps) => {
               )}
             </div>
           </section>
+          </>
+          ) : null}
 
-          <div className="jv-workspace">
-            {activeSection === "plays" ? (
+          {playbookIsEmpty ? (
+            <BootstrapPanel
+              bootstrapping={bootstrapping}
+              busy={busy}
+              canEdit={canEdit}
+              newPlaybookName={newPlaybookName}
+              onBootstrap={() => void handleBootstrapPlaybook()}
+              onCreateManual={() => void handleCreatePlaybook()}
+              onNameChange={setNewPlaybookName}
+              readiness={readiness}
+            />
+          ) : (
+          <div className={activeSection === "overview" ? "jv-playbook-overview-shell" : "jv-workspace"}>
+            {activeSection === "overview" ? (
+              <OverviewPanel
+                busy={busy}
+                canEdit={canEdit}
+                detail={detail}
+                onOpenPlay={handleOpenPlayFromOverview}
+                onSynthesize={() => void handleSynthesizeOverview()}
+                plays={detail.plays}
+              />
+            ) : activeSection === "plays" ? (
               <>
                 <PlayList activePlayId={selectedPlayId} onPlaySelect={setSelectedPlayId} plays={visiblePlays} />
                 <PlayDetail
@@ -940,7 +1416,7 @@ export const PlaybookView = ({ orgId, canEdit }: PlaybookViewProps) => {
                   play={selectedPlay}
                 />
               </>
-            ) : (
+            ) : activeSection === "suggestions" ? (
               <>
                 <SuggestionList
                   activeSuggestionId={selectedSuggestionId}
@@ -969,12 +1445,13 @@ export const PlaybookView = ({ orgId, canEdit }: PlaybookViewProps) => {
                   suggestion={selectedSuggestion}
                 />
               </>
-            )}
+            ) : null}
           </div>
+          )}
         </>
       ) : (
         <p className="jv-list-empty">Playbook indisponible.</p>
       )}
-    </div>
+    </>,
   );
 };

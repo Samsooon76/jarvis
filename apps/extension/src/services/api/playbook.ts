@@ -4,6 +4,9 @@ import type {
   PlaybookPlay,
   PlaybookPlayInput,
   PlaybookPlayStatus,
+  PlaybookBootstrapReadiness,
+  PlaybookBootstrapResult,
+  PlaybookOverviewResult,
   PlaybookSuggestion,
   PlaybookSuggestionGenerationResult,
   PlaybookStatus,
@@ -42,6 +45,34 @@ export const fetchPlaybookDetail = async (
 
 export const createPlaybook = async (orgId: string, name: string, description?: string | null): Promise<Playbook> =>
   postJson<Playbook>("/api/playbook", { orgId, name, description: description ?? null }).finally(clearPlaybookCache);
+
+export const fetchPlaybookBootstrapReadiness = async (
+  orgId: string,
+  forceRefresh = false,
+): Promise<PlaybookBootstrapReadiness> => {
+  const path = apiPath("/api/playbook/bootstrap/readiness", { orgId });
+
+  return getCachedJson<PlaybookBootstrapReadiness>(
+    `${PLAYBOOK_CACHE_PREFIX}bootstrap-readiness:${path}`,
+    path,
+    30_000,
+    forceRefresh,
+  );
+};
+
+export const bootstrapPlaybookFromWonDeals = async (
+  orgId: string,
+  options?: { dealCount?: number; lookbackDays?: number },
+): Promise<PlaybookBootstrapResult> =>
+  postJson<PlaybookBootstrapResult>("/api/playbook/bootstrap", { orgId, ...options }).finally(clearPlaybookCache);
+
+export const synthesizePlaybookOverview = async (
+  orgId: string,
+  playbookId: string,
+): Promise<PlaybookOverviewResult> =>
+  postJson<PlaybookOverviewResult>(`/api/playbook/${encodeURIComponent(playbookId)}/synthesize`, { orgId }).finally(
+    clearPlaybookCache,
+  );
 
 export const updatePlaybook = async (
   orgId: string,

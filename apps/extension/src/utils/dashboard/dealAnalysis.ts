@@ -136,15 +136,8 @@ export const activityIconLabels: Record<ActivityIconType, string> = {
   recommendation: "Recommandation IA",
 };
 
-export const compactText = (value: string | undefined, maxLength: number): string => {
-  const compacted = (value ?? "").replace(/\s+/g, " ").trim();
-
-  if (compacted.length <= maxLength) {
-    return compacted;
-  }
-
-  return `${compacted.slice(0, maxLength - 3).trim()}...`;
-};
+export const compactText = (value: string | undefined, _maxLength?: number): string =>
+  (value ?? "").replace(/\s+/g, " ").trim();
 
 export const getDealAnalysisCacheKey = (
   orgId: string,

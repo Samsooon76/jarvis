@@ -11,7 +11,7 @@ import type {
   OwnerUserRow,
 } from "./types.js";
 import { addDays } from "./shared.js";
-import { isForecastableDeal, isSignedPaymentPendingStage } from "./deal-status.js";
+import { isForecastableDeal, isPaymentReceivedStage, isSignedPaymentPendingStage } from "./deal-status.js";
 
 export const MAX_OPEN_DEALS = 250;
 
@@ -50,7 +50,9 @@ export const loadOpenDealContexts = async (options: Required<Pick<ForecastOvervi
 
   // 2) Backlog signe : "Deal Signed/Payment Pending" toujours visible, quelle que soit la date de signature.
   const backlogQuery = scopedQuery()
-    .or("deal_stage_label.ilike.%payment pending%,deal_stage_label.ilike.%signed%")
+    .or(
+      "deal_stage_label.ilike.%payment pending%,deal_stage_label.ilike.%payment received%,deal_stage_label.ilike.%signed%",
+    )
     .order("amount", { ascending: false })
     .limit(MAX_OPEN_DEALS);
 
@@ -70,10 +72,10 @@ export const loadOpenDealContexts = async (options: Required<Pick<ForecastOvervi
     dealRowsById.set(row.hubspot_deal_id, row);
   }
 
-  // On n'ajoute du backlog que les deals reellement en "signed / payment pending" (les paiements recus
-  // hors periode restent exclus, conformement au rattachement par mois civil).
+  // Backlog signe : deals en attente de paiement toujours visibles; paiements recus du mois courant
+  // rattaches via closed_at meme si la date de closing CRM est hors periode.
   for (const row of (backlogResult.data ?? []) as HubSpotDealRow[]) {
-    if (isSignedPaymentPendingStage(row) && !dealRowsById.has(row.hubspot_deal_id)) {
+    if (!dealRowsById.has(row.hubspot_deal_id) && (isSignedPaymentPendingStage(row) || isPaymentReceivedStage(row))) {
       dealRowsById.set(row.hubspot_deal_id, row);
     }
   }

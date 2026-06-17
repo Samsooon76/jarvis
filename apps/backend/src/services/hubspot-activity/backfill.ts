@@ -12,7 +12,7 @@ import { upsertHubSpotActivity } from "./activity-ingestion.js";
 // limiter le volume d'appels API.
 
 const ACTIVITY_BACKFILL_CONCURRENCY = 4;
-const SALES_ACTIVITY_BACKFILL_TYPES = ["call", "meeting", "communication"] as const satisfies readonly HubSpotActivityType[];
+const SALES_ACTIVITY_BACKFILL_TYPES = ["call", "meeting", "communication", "email"] as const satisfies readonly HubSpotActivityType[];
 
 export type SalesActivityBackfillResult = {
   dealsProcessed: number;
@@ -24,7 +24,7 @@ const backfillSingleDealActivities = async (
   accessToken: string,
   dealId: string,
 ): Promise<number> => {
-  let idsByType: { call: string[]; meeting: string[]; communication: string[] };
+  let idsByType: { call: string[]; meeting: string[]; communication: string[]; email: string[] };
 
   try {
     idsByType = await hubSpotService.fetchDealSalesActivityIds(accessToken, dealId);
@@ -33,10 +33,11 @@ const backfillSingleDealActivities = async (
     return 0;
   }
 
-  const byType: Record<"call" | "meeting" | "communication", string[]> = {
+  const byType: Record<"call" | "meeting" | "communication" | "email", string[]> = {
     call: idsByType.call,
     meeting: idsByType.meeting,
     communication: idsByType.communication,
+    email: idsByType.email,
   };
 
   let upserted = 0;

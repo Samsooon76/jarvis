@@ -1,3 +1,4 @@
+import { compactText } from "../../lib/text.js";
 import type {
   AnalyzeRepCoachingInput,
   RepCoachingAction,
@@ -21,16 +22,6 @@ const MAX_STRENGTHS = 3;
 const MAX_WEAKNESSES = 3;
 const MAX_LOSS_PATTERNS = 4;
 const MAX_COACHING_ACTIONS = 4;
-
-const compactText = (value: string, maxLength: number): string => {
-  const compacted = value.replace(/\s+/g, " ").trim();
-
-  if (compacted.length <= maxLength) {
-    return compacted;
-  }
-
-  return `${compacted.slice(0, maxLength - 1).trim()}...`;
-};
 
 const normalizeJsonResponse = (value: string): string => {
   const trimmedValue = value.trim();

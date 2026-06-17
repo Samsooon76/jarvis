@@ -1,11 +1,11 @@
 import { useMemo } from "react";
 import type { QueueProspect } from "@jarvis/shared";
 import { Flame, History, LayoutDashboard, RefreshCw, Sparkles, Target, type LucideIcon } from "lucide-react";
-import { buckets, dealStatusFilters } from "./config";
+import { buckets } from "./config";
 import { QueueFilters } from "./queue/QueueFilters";
 import { ProspectDetail } from "./queue/ProspectDetail";
 import { ProspectTable } from "./queue/ProspectTable";
-import type { HubSpotLastUpdateItem } from "../../services/api";
+import type { HubSpotLastUpdateItem, HubSpotOwnerOption } from "../../services/api";
 import type {
   CloseDatePreset,
   DashboardFilters,
@@ -118,13 +118,17 @@ type OverviewViewProps = {
   onCloseDatePresetChange: (closeDatePreset: CloseDatePreset) => void;
   onCloseDateToChange: (closeDateTo: string) => void;
   onOpenDealAnalysis: (prospectId?: string) => void;
+  onOwnerChange?: (ownerId: string) => void;
   onSearchTermChange: (searchTerm: string) => void;
   onStageFilterChange: (stageFilter: StageFilter) => void;
   onStatusFilterChange: (statusFilter: DealStatusFilter) => void;
   onSyncHubSpot?: () => void;
   orgId: string;
+  owners?: HubSpotOwnerOption[];
+  ownerName?: string;
   plannedTasksByProspectId: Map<string, PlannedProspectTask>;
   prospects: QueueProspect[];
+  selectedOwnerId?: string;
   syncLoading?: boolean;
 };
 
@@ -145,15 +149,25 @@ export const OverviewView = ({
   onCloseDatePresetChange,
   onCloseDateToChange,
   onOpenDealAnalysis,
+  onOwnerChange,
   onSearchTermChange,
   onStageFilterChange,
   onStatusFilterChange,
   onSyncHubSpot,
   orgId,
+  owners = [],
+  ownerName,
   plannedTasksByProspectId,
   prospects,
+  selectedOwnerId,
   syncLoading = false,
 }: OverviewViewProps) => {
+  const selectedOwner = owners.find((owner) => owner.ownerId === selectedOwnerId) ?? null;
+  const ownerKicker = selectedOwner
+    ? `${selectedOwner.name} · pipeline`
+    : ownerName
+      ? `${ownerName} · pipeline`
+      : "pipeline";
   const pipelineSummary = useMemo(() => {
     const pipelineTotal = baseFilteredProspects.reduce((sum, prospect) => sum + prospect.dealAmount, 0);
     const avgClose =
@@ -239,48 +253,65 @@ export const OverviewView = ({
         <LayoutDashboard aria-hidden="true" className="jv-page-icon" size={18} strokeWidth={1.5} />
         <h1>
           Vue d'ensemble
-          <span className="jv-page-kicker">pipeline</span>
+          <span className="jv-page-kicker">{ownerKicker}</span>
         </h1>
       </header>
 
-      <div className="jv-toolbar">
-        <div className="jv-toolbar-filters">
-          <div className="jv-filter-pills jv-bucket-pills" role="group" aria-label="Buckets queue">
-            {buckets.map((bucket) => (
-              <button
-                className={activeBucket === bucket.id ? "active" : ""}
-                key={bucket.id}
-                onClick={() => onActiveBucketChange(bucket.id)}
-                title={bucket.description}
-                type="button"
+      <section className="jv-controls" aria-label="Filtres pipeline">
+        <div className="jv-toolbar">
+          <div className="jv-toolbar-filters">
+            <div className="jv-filter-pills jv-bucket-pills" role="group" aria-label="Buckets queue">
+              {buckets.map((bucket) => (
+                <button
+                  className={activeBucket === bucket.id ? "active" : ""}
+                  key={bucket.id}
+                  onClick={() => onActiveBucketChange(bucket.id)}
+                  title={bucket.description}
+                  type="button"
+                >
+                  {bucket.label}
+                  <em>{bucket.id === "lastUpdate" ? lastUpdates.length : bucketCounts[bucket.id]}</em>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="jv-toolbar-actions">
+            {owners.length > 0 ? (
+              <select
+                aria-label="Filtrer par commercial"
+                className="jv-select"
+                disabled={!onOwnerChange}
+                onChange={(event) => onOwnerChange?.(event.target.value)}
+                value={selectedOwnerId ?? ""}
               >
-                {bucket.label}
-                <em>{bucket.id === "lastUpdate" ? lastUpdates.length : bucketCounts[bucket.id]}</em>
+                {owners.map((owner) => (
+                  <option key={owner.ownerId} value={owner.ownerId}>
+                    {owner.name}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+            {onSyncHubSpot ? (
+              <button className="jv-btn-primary" disabled={!isConnected || syncLoading} onClick={onSyncHubSpot} type="button">
+                <RefreshCw aria-hidden="true" className={syncLoading ? "jv-spin" : undefined} size={15} strokeWidth={1.5} />
+                Sync HubSpot
               </button>
-            ))}
+            ) : null}
           </div>
         </div>
-        <div className="jv-toolbar-actions">
-          <select
-            aria-label="Filtrer par statut deal"
-            className="jv-select"
-            onChange={(event) => onStatusFilterChange(event.target.value as DealStatusFilter)}
-            value={filters.statusFilter}
-          >
-            {dealStatusFilters.map((filter) => (
-              <option key={filter.id} value={filter.id}>
-                {filter.label}
-              </option>
-            ))}
-          </select>
-          {onSyncHubSpot ? (
-            <button className="jv-btn-primary" disabled={!isConnected || syncLoading} onClick={onSyncHubSpot} type="button">
-              <RefreshCw aria-hidden="true" className={syncLoading ? "jv-spin" : undefined} size={15} strokeWidth={1.5} />
-              Sync HubSpot
-            </button>
-          ) : null}
-        </div>
-      </div>
+
+        {showQueueWorkspace ? (
+          <QueueFilters
+            filters={filters}
+            onCloseDateFromChange={onCloseDateFromChange}
+            onCloseDatePresetChange={onCloseDatePresetChange}
+            onCloseDateToChange={onCloseDateToChange}
+            onSearchTermChange={onSearchTermChange}
+            onStageFilterChange={onStageFilterChange}
+            onStatusFilterChange={onStatusFilterChange}
+          />
+        ) : null}
+      </section>
 
       <section className="jv-stat-strip cols-4" aria-label="Resume pipeline">
         {stats.map((stat, index) => (
@@ -319,16 +350,6 @@ export const OverviewView = ({
             <ThemeBlock empty="Aucun signal." icon={Flame} items={queueInsights.signals} title="Signaux du jour" />
             <ThemeBlock empty="Aucune action." icon={Target} items={queueInsights.suggested} title="Actions suggerees" />
           </section>
-
-          <QueueFilters
-            filters={filters}
-            onCloseDateFromChange={onCloseDateFromChange}
-            onCloseDatePresetChange={onCloseDatePresetChange}
-            onCloseDateToChange={onCloseDateToChange}
-            onSearchTermChange={onSearchTermChange}
-            onStageFilterChange={onStageFilterChange}
-            onStatusFilterChange={onStatusFilterChange}
-          />
         </>
       ) : null}
 

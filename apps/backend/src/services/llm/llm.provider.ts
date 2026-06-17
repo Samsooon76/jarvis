@@ -1,3 +1,5 @@
+import type { DealAnalysisType, DealAnalysisV1, DealLifecycleStatus, PlaybookPlayCategory } from "@jarvis/shared";
+
 export type DealHistoryAnalysis = {
   summary: string;
   risks: string[];
@@ -507,6 +509,24 @@ export type AnalyzeDealActivityPlanInput = AnalyzeDealQualificationInput & {
   channelEngagementSummary?: string | null;
 };
 
+export type AnalyzeDealAnalysisV1Input = AnalyzeDealActivityPlanInput & {
+  orgId: string;
+  hubspotDealId: string;
+  hubspotOwnerId?: string | null;
+  primaryContactId?: string | null;
+  primaryCompanyId?: string | null;
+  prospectId?: string | null;
+  pipeline?: string | null;
+  lifecycleStatus: DealLifecycleStatus;
+  companyIndustry?: string | null;
+  activitySignalsSummary?: string | null;
+  winBenchmarkSummary?: string | null;
+  analysisType?: DealAnalysisType;
+  inputHash?: string | null;
+  sourceSyncedAt?: string | null;
+  lightUserPrompt?: string | null;
+};
+
 export type AnalyzeCloseLostDealInput = {
   history: string;
   sourceActivities?: CloseLostEvidenceSource[];
@@ -532,6 +552,56 @@ export type AnalyzeCloseWonPortfolioInput = {
   wonDealCount: number;
   totalWonValue: number;
   analyzedDealCount: number;
+};
+
+export type PlaybookBootstrapPlay = {
+  category: PlaybookPlayCategory;
+  title: string;
+  triggerDescription: string;
+  recommendedResponse: string;
+  sourceDealIds: string[];
+};
+
+export type PlaybookBootstrapAnalysis = {
+  name: string;
+  description: string;
+  plays: PlaybookBootstrapPlay[];
+  confidence: "low" | "medium" | "high";
+};
+
+export type AnalyzePlaybookBootstrapInput = {
+  dealsSummary: string;
+  portfolioSummary: string;
+  analyzedDealCount: number;
+  dateFrom: string;
+  dateTo: string;
+  knownDealIds: string[];
+  keyInsight?: string;
+  winningPatterns?: string[];
+  idealSequence?: string[];
+};
+
+export type PlaybookOverviewAnalysis = {
+  doctrine: string;
+  idealSequence: string[];
+  stages: Array<{
+    category: PlaybookPlayCategory;
+    objective: string;
+    exitCriteria: string;
+    playIds: string[];
+  }>;
+  principles: string[];
+  gaps: string[];
+  confidence: "low" | "medium" | "high";
+};
+
+export type AnalyzePlaybookOverviewInput = {
+  playbookName: string;
+  playbookDescription: string | null;
+  playsSummary: string;
+  playCount: number;
+  activePlayCount: number;
+  knownPlayIds: string[];
 };
 
 export type AnalyzeCloseLostPortfolioInput = {
@@ -570,10 +640,13 @@ export interface LlmProvider {
   analyzeDealFull(input: AnalyzeDealActivityPlanInput): Promise<DealFullAnalysis>;
   analyzeDealQualification(input: AnalyzeDealQualificationInput): Promise<DealQualificationAnalysis>;
   analyzeDealActivityPlan(input: AnalyzeDealActivityPlanInput): Promise<DealActivityPlanAnalysis>;
+  analyzeDealAnalysisV1(input: AnalyzeDealAnalysisV1Input): Promise<DealAnalysisV1>;
   analyzeCloseLostDeal(input: AnalyzeCloseLostDealInput): Promise<CloseLostDealAnalysis>;
   analyzeCloseLostPortfolio(input: AnalyzeCloseLostPortfolioInput): Promise<CloseLostPortfolioAnalysis>;
   analyzeCloseWonDeal(input: AnalyzeCloseWonDealInput): Promise<CloseWonDealAnalysis>;
   analyzeCloseWonPortfolio(input: AnalyzeCloseWonPortfolioInput): Promise<CloseWonPortfolioAnalysis>;
+  generatePlaybookBootstrap(input: AnalyzePlaybookBootstrapInput): Promise<PlaybookBootstrapAnalysis>;
+  synthesizePlaybookOverview(input: AnalyzePlaybookOverviewInput): Promise<PlaybookOverviewAnalysis>;
   analyzeForecastSynthesis(input: AnalyzeForecastSynthesisInput): Promise<ForecastSynthesisAnalysis>;
   analyzeManagerDigest(input: AnalyzeManagerDigestInput): Promise<ManagerDigestAnalysis>;
   analyzeRepCoaching(input: AnalyzeRepCoachingInput): Promise<RepCoachingAnalysis>;

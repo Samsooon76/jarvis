@@ -1,3 +1,4 @@
+import { compactText } from "../../lib/text.js";
 import type {
   AnalyzeCloseLostDealInput,
   AnalyzeCloseLostPortfolioInput,
@@ -85,16 +86,6 @@ const LOSS_REASON_CATEGORIES = [
   "no_decision",
   "other",
 ] as const satisfies readonly CloseLostReasonCategory[];
-
-const compactText = (value: string, maxLength: number): string => {
-  const compacted = value.replace(/\s+/g, " ").trim();
-
-  if (compacted.length <= maxLength) {
-    return compacted;
-  }
-
-  return `${compacted.slice(0, maxLength - 1).trim()}...`;
-};
 
 const clampInteger = (value: number, min: number, max: number): number =>
   Math.max(min, Math.min(max, Math.round(value)));

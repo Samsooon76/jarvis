@@ -95,11 +95,13 @@ const MeddiccGrid = ({ criteria }: { criteria: MeddiccCriterion[] }) => (
       <div className="jv-meddicc-grid">
         {criteria.map((criterion) => (
           <div className="jv-meddicc-card" key={criterion.id}>
-            <span>{criterion.label}</span>
-            <span className={`jv-qual-pill ${qualificationStatusTones[criterion.status]}`}>
-              {qualificationStatusLabels[criterion.status]}
-            </span>
-            <small>{criterion.score} %</small>
+            <span className="jv-meddicc-label">{criterion.label}</span>
+            <div className="jv-meddicc-meta">
+              <span className={`jv-qual-pill ${qualificationStatusTones[criterion.status]}`}>
+                {qualificationStatusLabels[criterion.status]}
+              </span>
+              <small>{criterion.score} %</small>
+            </div>
             <i className={qualificationStatusTones[criterion.status]}>
               <b style={{ width: `${criterion.score}%` }} />
             </i>
@@ -223,17 +225,23 @@ const QualificationAiAside = ({
 );
 
 export const QualificationSection = ({
+  embedded = false,
   error,
   isLoading,
   onRefresh,
   result,
 }: {
+  embedded?: boolean;
   error: string | null;
   isLoading: boolean;
   onRefresh: () => void;
   result: DealQualificationResult | null;
 }) => {
   if (!result) {
+    if (embedded) {
+      return null;
+    }
+
     return (
       <AnalysisLoadingPanel
         error={error}
@@ -248,9 +256,12 @@ export const QualificationSection = ({
   const qualification = result.qualification;
 
   return (
-    <section aria-label="Comité et qualification" className="jv-qualification-layout">
+    <section
+      aria-label="Comité et qualification"
+      className={`jv-qualification-layout${embedded ? " is-embedded" : ""}`}
+    >
       <div className="jv-qualification-main">
-        <CommitteeTable members={qualification.buyingCommittee} />
+        {!embedded ? <CommitteeTable members={qualification.buyingCommittee} /> : null}
         <div className="jv-qualification-top-grid">
           <MeddiccGrid criteria={qualification.meddicc} />
           <DecisionProcessPanel process={qualification.decisionProcess} />
@@ -261,13 +272,15 @@ export const QualificationSection = ({
         </div>
       </div>
 
-      <QualificationAiAside
-        error={error}
-        isLoading={isLoading}
-        items={qualification.missingForWin}
-        onRefresh={onRefresh}
-        result={result}
-      />
+      {!embedded ? (
+        <QualificationAiAside
+          error={error}
+          isLoading={isLoading}
+          items={qualification.missingForWin}
+          onRefresh={onRefresh}
+          result={result}
+        />
+      ) : null}
     </section>
   );
 };

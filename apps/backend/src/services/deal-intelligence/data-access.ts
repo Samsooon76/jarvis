@@ -76,7 +76,7 @@ export const loadHubSpotDealSnapshot = async (
   const { data, error } = await supabase
     .from("hubspot_deals")
     .select(
-      "hubspot_owner_id, primary_contact_id, primary_company_id, deal_name, amount, deal_stage, deal_stage_label, close_probability, closed_at, hubspot_created_at, hubspot_updated_at, properties, synced_at",
+      "hubspot_owner_id, primary_contact_id, primary_company_id, deal_name, amount, pipeline_label, deal_stage, deal_stage_label, deal_lifecycle_status, is_closed_deal, close_probability, closed_at, hubspot_created_at, hubspot_updated_at, properties, synced_at",
     )
     .eq("org_id", orgId)
     .eq("hubspot_deal_id", hubspotDealId)

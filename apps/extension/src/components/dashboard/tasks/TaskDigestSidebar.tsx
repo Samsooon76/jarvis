@@ -50,7 +50,7 @@ export const TaskDigestSidebar = ({
   todayTaskCount,
   urgentTask,
 }: TaskDigestSidebarProps) => (
-  <aside className="jv-detail" aria-label="Digest du jour">
+  <aside className="jv-detail jv-detail-expanded" aria-label="Digest du jour">
     <header className="jv-detail-head">
       <div>
         <h2>

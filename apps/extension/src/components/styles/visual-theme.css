@@ -1934,3 +1934,46 @@ body,
   }
 }
 
+/* Detail panels: never truncate narrative IA / prose content */
+.ae-inbox [class*="-page"] .jv-detail-expanded,
+.ae-inbox [class*="-page"] .jv-detail.jv-detail-expanded {
+  max-height: none;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.ae-inbox [class*="-page"] .jv-prose,
+.ae-inbox [class*="-page"] .jv-score-copy p,
+.ae-inbox [class*="-page"] .jv-theme-list span,
+.ae-inbox [class*="-page"] .jv-bullet-list li,
+.ae-inbox [class*="-page"] .jv-detail-expanded .jv-detail-head h2,
+.ae-inbox [class*="-page"] .jv-detail-expanded .jv-detail-head p,
+.ae-inbox [class*="-page"] .jv-detail-expanded .jv-prose,
+.ae-inbox [class*="-page"] .jv-detail-expanded .jv-bullet-list li,
+.ae-inbox [class*="-page"] .jv-detail-expanded .jv-section-label,
+.ae-inbox [class*="-page"] .jv-detail-expanded .jv-callout p,
+.ae-inbox [class*="-page"] .jv-detail-expanded .jv-callout small,
+.ae-inbox [class*="-page"] .jv-detail-expanded .jv-theme-list span,
+.ae-inbox [class*="-page"] .jv-detail-expanded .jv-risk-list li,
+.ae-inbox [class*="-page"] .jv-detail-expanded .jv-synthesis-deal p,
+.ae-inbox [class*="-page"] .jv-detail-expanded .jv-action-plan-item p,
+.ae-inbox [class*="-page"] .jv-detail-expanded .jv-action-plan-item small {
+  -webkit-line-clamp: unset;
+  display: block;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: unset;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.ae-inbox .jv-leads-page .jv-lead-contact-row .jv-cell-copy > strong,
+.ae-inbox .jv-leads-page .jv-lead-contact-row .jv-cell-copy > small {
+  -webkit-line-clamp: unset;
+  display: block;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: unset;
+  white-space: normal;
+}
+

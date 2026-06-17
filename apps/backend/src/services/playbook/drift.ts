@@ -1,3 +1,4 @@
+import { compactText } from "../../lib/text.js";
 import { createHash } from "node:crypto";
 import type { JsonObject, JsonValue, PlaybookDriftRunResult, PlaybookPlayInput, PlaybookSuggestion } from "@jarvis/shared";
 import { generatePulseNotificationsForPlaybookSuggestion } from "../pulse.service.js";
@@ -45,12 +46,6 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const readText = (value: unknown): string | null =>
   typeof value === "string" && value.trim() ? value.trim() : null;
-
-const compact = (value: string, maxLength: number): string => {
-  const normalized = value.replace(/\s+/g, " ").trim();
-
-  return normalized.length <= maxLength ? normalized : `${normalized.slice(0, maxLength - 1).trim()}...`;
-};
 
 const sinceIso = (lookbackDays: number): string => {
   const date = new Date();
@@ -227,12 +222,12 @@ const buildCandidate = (
     return null;
   }
 
-  const targetResponse = `${play.recommended_response}\n\nAjustement propose: ${compact(strongestSignal.text, 700)}`;
+  const targetResponse = `${play.recommended_response}\n\nAjustement propose: ${compactText(strongestSignal.text, 700)}`;
   const payload = validatePlayInput({
     category: play.category,
     title: play.title,
-    triggerDescription: compact(play.trigger_description, 600),
-    recommendedResponse: compact(targetResponse, 4000),
+    triggerDescription: compactText(play.trigger_description, 600),
+    recommendedResponse: compactText(targetResponse, 4000),
     status: "draft",
     evidence: sortedSignals.slice(0, 5).map((signal) => ({
       kind: signal.source === "call_insight" ? "call" : "analysis",
@@ -316,7 +311,7 @@ export const runPlaybookDrift = async (
       evidence: candidate.signals.slice(0, 5).map((signal) => ({
         title: signal.title,
         sourceId: signal.refId,
-        quote: compact(signal.text, 500),
+        quote: compactText(signal.text, 500),
       })) as JsonValue[],
       source: "drift",
       source_key: candidate.key,

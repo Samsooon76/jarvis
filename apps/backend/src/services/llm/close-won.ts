@@ -1,3 +1,4 @@
+import { compactText } from "../../lib/text.js";
 import type {
   AnalyzeCloseWonDealInput,
   AnalyzeCloseWonPortfolioInput,
@@ -44,16 +45,6 @@ const MAX_KEY_MOMENTS = 5;
 const MAX_REPLICABLE_PLAYS = 4;
 const MAX_PATTERNS = 6;
 const MAX_RECOMMENDATIONS = 5;
-
-const compactText = (value: string, maxLength: number): string => {
-  const compacted = value.replace(/\s+/g, " ").trim();
-
-  if (compacted.length <= maxLength) {
-    return compacted;
-  }
-
-  return `${compacted.slice(0, maxLength - 1).trim()}...`;
-};
 
 const normalizeJsonResponse = (value: string): string => {
   const trimmedValue = value.trim();

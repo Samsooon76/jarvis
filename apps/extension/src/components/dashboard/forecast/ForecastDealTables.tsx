@@ -196,7 +196,7 @@ export const ForecastDealDetail = ({
 }: ForecastDealDetailProps) => {
   if (!deal) {
     return (
-      <aside className="jv-detail">
+      <aside className="jv-detail jv-detail-expanded">
         <div className="jv-detail-empty">
           <History aria-hidden="true" size={20} strokeWidth={1.25} />
           <strong>Sélectionnez un deal</strong>
@@ -207,10 +207,14 @@ export const ForecastDealDetail = ({
   }
 
   const delta = getDelta(deal);
-  const signals = [...deal.positiveSignals, ...deal.risks].slice(0, 4);
+  const detailedAnalysis = deal.detailedAnalysis ?? [];
+  const risks = deal.risks ?? [];
+  const positiveSignals = deal.positiveSignals ?? [];
+  const evidence = deal.evidence ?? [];
+  const missingData = deal.missingData ?? [];
 
   return (
-    <aside className="jv-detail">
+    <aside className="jv-detail jv-detail-expanded">
       <header className="jv-detail-head">
         <div>
           <h2>{deal.dealName ?? deal.hubspotDealId}</h2>
@@ -275,6 +279,24 @@ export const ForecastDealDetail = ({
         </div>
       )}
 
+      {detailedAnalysis.length > 0 ? (
+        <section className="jv-detail-section">
+          <span className="jv-section-label">Analyse détaillée</span>
+          <ul className="jv-bullet-list">
+            {detailedAnalysis.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {deal.whyNow ? (
+        <section className="jv-detail-section">
+          <span className="jv-section-label">Pourquoi maintenant</span>
+          <p className="jv-prose">{deal.whyNow}</p>
+        </section>
+      ) : null}
+
       {deal.suggestedMove ? (
         <section className="jv-detail-section">
           <span className="jv-section-label">Prochaine action</span>
@@ -282,12 +304,45 @@ export const ForecastDealDetail = ({
         </section>
       ) : null}
 
-      {signals.length > 0 ? (
+      {risks.length > 0 ? (
         <section className="jv-detail-section">
-          <span className="jv-section-label">Signaux factuels</span>
+          <span className="jv-section-label">Risques</span>
           <ul className="jv-bullet-list">
-            {signals.map((signal) => (
+            {risks.map((risk) => (
+              <li key={risk}>{risk}</li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {positiveSignals.length > 0 ? (
+        <section className="jv-detail-section">
+          <span className="jv-section-label">Signaux positifs</span>
+          <ul className="jv-bullet-list">
+            {positiveSignals.map((signal) => (
               <li key={signal}>{signal}</li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {evidence.length > 0 ? (
+        <section className="jv-detail-section">
+          <span className="jv-section-label">Preuves observées</span>
+          <ul className="jv-bullet-list">
+            {evidence.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {missingData.length > 0 ? (
+        <section className="jv-detail-section">
+          <span className="jv-section-label">Données manquantes</span>
+          <ul className="jv-bullet-list">
+            {missingData.map((item) => (
+              <li key={item}>{item}</li>
             ))}
           </ul>
         </section>

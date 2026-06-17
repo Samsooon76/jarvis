@@ -582,11 +582,36 @@ export type PlaybookPlay = {
 
 export type PlaybookStatus = "active" | "archived";
 
+export type PlaybookOverviewStage = {
+  category: PlaybookPlayCategory;
+  objective: string;
+  exitCriteria: string;
+  playIds: string[];
+};
+
+export type PlaybookOverviewSnapshot = {
+  playId: string;
+  version: number;
+};
+
+export type PlaybookOverview = {
+  doctrine: string;
+  idealSequence: string[];
+  stages: PlaybookOverviewStage[];
+  principles: string[];
+  gaps: string[];
+  confidence: "low" | "medium" | "high";
+  synthesizedAt: string;
+  sourceSnapshot: PlaybookOverviewSnapshot[];
+};
+
 export type Playbook = {
   id: string;
   orgId: string;
   name: string;
   description: string | null;
+  overview: PlaybookOverview | null;
+  overviewIsStale: boolean;
   status: PlaybookStatus;
   createdBy: string | null;
   playCount: number;
@@ -597,6 +622,36 @@ export type Playbook = {
 
 export type PlaybookDetail = Playbook & {
   plays: PlaybookPlay[];
+};
+
+export type PlaybookOverviewResult = {
+  playbook: PlaybookDetail;
+  overview: PlaybookOverview;
+};
+
+export const isPlaybookOverviewStale = (
+  overview: PlaybookOverview | null,
+  plays: PlaybookPlay[],
+): boolean => {
+  if (!overview) {
+    return true;
+  }
+
+  const activePlays = plays.filter((play) => play.status === "active");
+  const sourcePlays = activePlays.length > 0 ? activePlays : plays.filter((play) => play.status !== "archived");
+  const currentSnapshot = sourcePlays
+    .map((play) => ({ playId: play.id, version: play.version }))
+    .sort((left, right) => left.playId.localeCompare(right.playId));
+  const storedSnapshot = [...overview.sourceSnapshot].sort((left, right) => left.playId.localeCompare(right.playId));
+
+  if (currentSnapshot.length !== storedSnapshot.length) {
+    return true;
+  }
+
+  return currentSnapshot.some(
+    (entry, index) =>
+      entry.playId !== storedSnapshot[index]?.playId || entry.version !== storedSnapshot[index]?.version,
+  );
 };
 
 export type PlaybookPlayInput = {
@@ -656,6 +711,31 @@ export type PlaybookSuggestion = {
 export type PlaybookSuggestionGenerationResult = {
   generatedCount: number;
   suggestions: PlaybookSuggestion[];
+};
+
+export type PlaybookBootstrapResult = {
+  playbook: PlaybookDetail;
+  analyzedDealCount: number;
+  reusedAnalysisCount: number;
+  generatedPlayCount: number;
+  confidence: "low" | "medium" | "high";
+};
+
+export type PlaybookBootstrapReadiness = {
+  wonDealCount: number;
+  minDealCount: number;
+  recommendedDealCount: number;
+  canBootstrap: boolean;
+  hasPlaybook: boolean;
+  playbookIsEmpty: boolean;
+  playCount: number;
+  activePlayCount: number;
+  draftPlayCount: number;
+  replacesDrafts: boolean;
+  teamOwnerCount: number;
+  teamDealCount: number;
+  teamOwnerNames: string[];
+  blockingReason: string | null;
 };
 
 export type PlaybookDriftRunResult = {
@@ -768,3 +848,32 @@ export type McpSetupInfo = {
   mcpHttpUrl: string;
   orgId: string;
 };
+
+export type {
+  DealAnalysisV1,
+  DealAnalysisActionPlan,
+  DealAnalysisActivitySignals,
+  DealAnalysisBenchmarkGap,
+  DealAnalysisCacheMeta,
+  DealAnalysisClosedLostExtension,
+  DealAnalysisClosedWonExtension,
+  DealAnalysisCompany,
+  DealAnalysisConfidence,
+  DealAnalysisDataQuality,
+  DealAnalysisEvidenceRef,
+  DealAnalysisForecast,
+  DealAnalysisIdentifiers,
+  DealAnalysisLifecycleExtension,
+  DealAnalysisMeddiccCriterion,
+  DealAnalysisMeddiccCriterionId,
+  DealAnalysisMetadata,
+  DealAnalysisOverview,
+  DealAnalysisPriority,
+  DealAnalysisQualification,
+  DealAnalysisSeverity,
+  DealAnalysisSignal,
+  DealAnalysisStakeholder,
+  DealAnalysisTimeline,
+  DealAnalysisType,
+  DealLifecycleStatus,
+} from "./deal-analysis-v1.js";

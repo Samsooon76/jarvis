@@ -1,3 +1,4 @@
+import { compactText } from "../../lib/text.js";
 import type {
   AnalyzeForecastSynthesisInput,
   ForecastSynthesisAction,
@@ -33,16 +34,6 @@ const FORECAST_SYNTHESIS_CATEGORIES = [
   "atRisk",
   "slipping",
 ] as const satisfies readonly ForecastSynthesisCategory[];
-
-const compactText = (value: string, maxLength: number): string => {
-  const compacted = value.replace(/\s+/g, " ").trim();
-
-  if (compacted.length <= maxLength) {
-    return compacted;
-  }
-
-  return `${compacted.slice(0, maxLength - 1).trim()}...`;
-};
 
 const normalizeJsonResponse = (value: string): string => {
   const trimmedValue = value.trim();

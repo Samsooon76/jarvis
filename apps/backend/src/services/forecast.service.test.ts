@@ -30,9 +30,13 @@ const buildDeal = (overrides: Partial<ForecastDeal>): ForecastDeal => ({
   confidence: "medium",
   dealHealth: "medium",
   summary: null,
+  detailedAnalysis: [],
+  whyNow: null,
   suggestedMove: null,
   risks: [],
   positiveSignals: [],
+  evidence: [],
+  missingData: [],
   ...overrides,
 });
 
@@ -120,7 +124,7 @@ test("summarizes signed revenue at 100 percent plus weighted open forecast", () 
   assert.equal(summary.pipelineAmount, 30_000);
 });
 
-test("parseForecastSynthesisAnalysis drops verdicts for unknown deals and bounds lengths", () => {
+test("parseForecastSynthesisAnalysis drops verdicts for unknown deals and preserves full narrative text", () => {
   const longReason = "x".repeat(300);
   const raw = JSON.stringify({
     headline: "y".repeat(300),
@@ -143,10 +147,8 @@ test("parseForecastSynthesisAnalysis drops verdicts for unknown deals and bounds
   assert.equal(analysis.dealVerdicts.length, 1);
   assert.equal(analysis.dealVerdicts[0]?.hubspotDealId, "deal-1");
   assert.equal(analysis.dealVerdicts[0]?.category, "commit");
-  assert.ok(analysis.dealVerdicts[0]?.reason.endsWith("..."));
-  assert.ok((analysis.dealVerdicts[0]?.reason.length ?? 0) <= 142);
-  assert.ok(analysis.headline.endsWith("..."));
-  assert.ok(analysis.headline.length <= 182);
+  assert.equal(analysis.dealVerdicts[0]?.reason, `${"x".repeat(139)}…`);
+  assert.equal(analysis.headline, `${"y".repeat(179)}…`);
   // ActionPlan: action a priorite invalide ignoree; relatedDealIds filtre les ids inconnus.
   assert.equal(analysis.actionPlan.length, 1);
   assert.deepEqual(analysis.actionPlan[0]?.relatedDealIds, ["deal-1"]);

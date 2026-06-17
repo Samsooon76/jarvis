@@ -1,3 +1,4 @@
+import { compactText } from "../../lib/text.js";
 import type {
   AnalyzeDealQualificationInput,
   BuyingCommitteeMember,
@@ -80,16 +81,6 @@ const MEDDICC_CRITERION_LABELS: Record<MeddiccCriterionId, string> = {
   identifyPain: "Identify pain",
   metrics: "Metrics",
   paperProcess: "Paper process",
-};
-
-const compactText = (value: string, maxLength: number): string => {
-  const compacted = value.replace(/\s+/g, " ").trim();
-
-  if (compacted.length <= maxLength) {
-    return compacted;
-  }
-
-  return `${compacted.slice(0, maxLength - 1).trim()}…`;
 };
 
 const clampInteger = (value: number, min: number, max: number): number =>

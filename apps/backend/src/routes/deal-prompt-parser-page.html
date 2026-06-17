@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Jarvis — Deal Prompt Parser (temp)</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: Inter, system-ui, sans-serif;
+        background: #0f1115;
+        color: #e8ecf1;
+      }
+      body {
+        margin: 0;
+        padding: 24px;
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 1.25rem;
+      }
+      p {
+        margin: 0 0 16px;
+        color: #9aa7b8;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+      }
+      textarea {
+        width: 100%;
+        min-height: 420px;
+        resize: vertical;
+        border: 1px solid #2a3340;
+        border-radius: 10px;
+        background: #151a22;
+        color: #e8ecf1;
+        padding: 12px;
+        font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+        box-sizing: border-box;
+      }
+      .panel {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-bottom: 16px;
+      }
+      button {
+        border: 0;
+        border-radius: 8px;
+        padding: 10px 14px;
+        background: #3b82f6;
+        color: white;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button.secondary {
+        background: #2a3340;
+      }
+      .stats {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-bottom: 12px;
+      }
+      .stat {
+        background: #151a22;
+        border: 1px solid #2a3340;
+        border-radius: 8px;
+        padding: 8px 10px;
+        font-size: 12px;
+      }
+      .removed {
+        font-size: 12px;
+        color: #9aa7b8;
+        white-space: pre-wrap;
+        background: #151a22;
+        border: 1px solid #2a3340;
+        border-radius: 8px;
+        padding: 10px;
+        max-height: 140px;
+        overflow: auto;
+      }
+      @media (max-width: 960px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Deal Prompt Parser (temp)</h1>
+    <p>Colle le user prompt brut (dump Doers/Medicis), puis parse pour obtenir la version allégée.</p>
+
+    <div class="actions">
+      <button id="parseBtn" type="button">Parser</button>
+      <button id="copyBtn" class="secondary" type="button">Copier output</button>
+      <button id="sampleBtn" class="secondary" type="button">Charger extrait Doers</button>
+    </div>
+
+    <div class="stats" id="stats"></div>
+
+    <div class="grid">
+      <div class="panel">
+        <strong>Input brut</strong>
+        <textarea id="input" placeholder="Colle ici le user prompt complet..."></textarea>
+      </div>
+      <div class="panel">
+        <strong>Output light</strong>
+        <textarea id="output" readonly placeholder="Le prompt nettoyé apparaîtra ici..."></textarea>
+        <strong>Exemples supprimés</strong>
+        <div class="removed" id="removed">—</div>
+      </div>
+    </div>
+
+    <script>
+      const input = document.getElementById("input");
+      const output = document.getElementById("output");
+      const removed = document.getElementById("removed");
+      const stats = document.getElementById("stats");
+
+      const sample = `Contexte deal:
+- Entreprise: Doers EmLab
+- Owner: Hugo Samson
+- Aujourd'hui: 2026-06-16T09:55:22.957Z
+
+Resume activite CRM:
+2026-05-21T14:09:44.000Z | [note] | Note 493291018478 | owner: Hugo Samson | Le prospect a annoncé qu'il avait signé et qu'il attendait un virement du centre de formation, prévu autour du 4 juin.
+2026-05-21T14:09:44.000Z | [call] | Appel avec Alexandre Francois | owner: Hugo Samson | Would like to go deeper into the call: Ask anything to Modjo AI
+2026-02-03T15:01:42.235Z | [note] | Note 442476766407 | owner: Hugo Samson | Alexandre exprime une forte insatisfaction avec Ringover, qualifiant le service de 'pourri'
+
+Engagement par canal:
+Emails: 11 | Appels: 29 | Reunions: 5
+
+Benchmark win:
+Sur 136 deals gagnes: cycle moyen 22.8 jours`;
+
+      const renderStats = (data) => {
+        const items = [
+          ["Input", `${data.stats.inputChars.toLocaleString("fr-FR")} chars`],
+          ["Output", `${data.stats.outputChars.toLocaleString("fr-FR")} chars`],
+          ["Réduction", `${Math.round((1 - data.stats.outputChars / Math.max(data.stats.inputChars, 1)) * 100)}%`],
+          ["Activités lues", String(data.stats.inputActivityLines)],
+          ["Activités gardées", String(data.stats.keptActivities)],
+          ["Doublons", String(data.stats.removedDuplicates)],
+          ["Bruit", String(data.stats.removedNoise)],
+        ];
+
+        stats.innerHTML = items
+          .map(([label, value]) => `<div class="stat"><strong>${label}</strong><br />${value}</div>`)
+          .join("");
+      };
+
+      const parse = async () => {
+        const response = await fetch("/api/debug/parse-deal-prompt", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ rawInput: input.value }),
+        });
+
+        const payload = await response.json();
+
+        if (!response.ok || !payload.success) {
+          output.value = payload.error || "Erreur de parsing";
+          return;
+        }
+
+        output.value = payload.data.lightPrompt;
+        removed.textContent = payload.data.removedSamples.join("\n") || "—";
+        renderStats(payload.data);
+      };
+
+      document.getElementById("parseBtn").addEventListener("click", () => {
+        void parse();
+      });
+
+      document.getElementById("copyBtn").addEventListener("click", async () => {
+        await navigator.clipboard.writeText(output.value);
+      });
+
+      document.getElementById("sampleBtn").addEventListener("click", () => {
+        input.value = sample;
+      });
+    </script>
+  </body>
+</html>

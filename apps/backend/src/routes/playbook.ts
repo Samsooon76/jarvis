@@ -10,6 +10,9 @@ import type {
   PlaybookPlayInput,
   PlaybookDriftRunResult,
   PlaybookSuggestion,
+  PlaybookBootstrapReadiness,
+  PlaybookBootstrapResult,
+  PlaybookOverviewResult,
   PlaybookSuggestionGenerationResult,
   PlaybookStatus,
 } from "@jarvis/shared";
@@ -33,6 +36,8 @@ import {
   listSuggestions,
   rejectSuggestion,
 } from "../services/playbook/suggestions.js";
+import { bootstrapPlaybookFromWonDeals, getPlaybookBootstrapReadiness } from "../services/playbook/bootstrap.js";
+import { synthesizePlaybookOverview } from "../services/playbook/overview.js";
 import { runPlaybookDrift } from "../services/playbook/drift.js";
 import { measurePlaybookAdherenceForCall } from "../services/playbook/adherence.js";
 import type { UpdatePlayInput } from "../services/playbook/types.js";
@@ -79,6 +84,11 @@ type SuggestionParams = PlaybookParams & {
 };
 
 type GenerateSuggestionsBody = OrgQuery & {
+  lookbackDays?: number;
+};
+
+type BootstrapPlaybookBody = OrgQuery & {
+  dealCount?: number;
   lookbackDays?: number;
 };
 
@@ -224,6 +234,79 @@ export const registerPlaybookRoutes = async (app: FastifyInstance): Promise<void
   );
 
   // Ecriture: reservee aux managers/admins.
+  app.get<{ Querystring: OrgQuery; Reply: ApiResponse<PlaybookBootstrapReadiness> }>(
+    "/api/playbook/bootstrap/readiness",
+    async (request, reply) => {
+      const orgId = request.query.orgId;
+
+      if (!isValidOrgId(orgId)) {
+        return reply.code(400).send({ success: false, error: "Le parametre orgId doit etre un UUID Jarvis valide." });
+      }
+
+      try {
+        assertOrgAccess(request, orgId);
+        const readiness = await getPlaybookBootstrapReadiness(orgId);
+
+        return reply.send({ success: true, data: readiness });
+      } catch (error) {
+        request.log.error({ error, orgId }, "Impossible de charger la disponibilite du bootstrap playbook.");
+
+        return sendError(reply, error, 500, "Erreur inconnue pendant le chargement de la disponibilite.");
+      }
+    },
+  );
+
+  app.post<{ Body: BootstrapPlaybookBody; Reply: ApiResponse<PlaybookBootstrapResult> }>(
+    "/api/playbook/bootstrap",
+    async (request, reply) => {
+      const orgId = request.body.orgId;
+
+      if (!isValidOrgId(orgId)) {
+        return reply.code(400).send({ success: false, error: "Le champ orgId doit etre un UUID Jarvis valide." });
+      }
+
+      try {
+        const auth = assertOrgAccess(request, orgId);
+        assertManagerOrAdmin(request);
+        const result = await bootstrapPlaybookFromWonDeals({
+          orgId,
+          createdBy: auth.appUserId,
+          dealCount: request.body.dealCount,
+          lookbackDays: request.body.lookbackDays,
+        });
+
+        return reply.code(201).send({ success: true, data: result });
+      } catch (error) {
+        request.log.error({ error, orgId }, "Impossible de generer le playbook depuis les deals gagnes.");
+
+        return sendError(reply, error, 400, "Erreur inconnue pendant la generation du playbook.");
+      }
+    },
+  );
+
+  app.post<{ Params: PlaybookParams; Body: OrgQuery; Reply: ApiResponse<PlaybookOverviewResult> }>(
+    "/api/playbook/:playbookId/synthesize",
+    async (request, reply) => {
+      const orgId = request.body.orgId;
+
+      if (!isValidOrgId(orgId)) {
+        return reply.code(400).send({ success: false, error: "Le champ orgId doit etre un UUID Jarvis valide." });
+      }
+
+      try {
+        assertOrgAccess(request, orgId);
+        assertManagerOrAdmin(request);
+        const result = await synthesizePlaybookOverview(orgId, request.params.playbookId);
+
+        return reply.send({ success: true, data: result });
+      } catch (error) {
+        request.log.error({ error, orgId, playbookId: request.params.playbookId }, "Impossible de synthetiser le playbook global.");
+
+        return sendError(reply, error, 400, "Erreur inconnue pendant la synthese du playbook global.");
+      }
+    },
+  );
+
   app.post<{ Body: CreatePlaybookBody; Reply: ApiResponse<Playbook> }>("/api/playbook", async (request, reply) => {
     const orgId = request.body.orgId;
 

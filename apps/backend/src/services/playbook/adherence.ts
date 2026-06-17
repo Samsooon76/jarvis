@@ -1,3 +1,4 @@
+import { compactText } from "../../lib/text.js";
 import { createHash } from "node:crypto";
 import type { PlaybookAdherencePlayResult, PlaybookAdherenceResult } from "@jarvis/shared";
 import type { Json } from "../../db/database.types.js";
@@ -71,12 +72,6 @@ const normalize = (value: string): string =>
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
 
-const compact = (value: string, maxLength: number): string => {
-  const normalized = value.replace(/\s+/g, " ").trim();
-
-  return normalized.length <= maxLength ? normalized : `${normalized.slice(0, maxLength - 1).trim()}...`;
-};
-
 const tokenize = (value: string): string[] => {
   const tokens = normalize(value).match(/[a-z0-9]{4,}/g) ?? [];
   const unique = new Set(tokens.filter((token) => !STOPWORDS.has(token)));
@@ -106,7 +101,7 @@ const extractSnippet = (transcript: string, keyword: string): string | null => {
   const start = Math.max(0, index - 70);
   const end = Math.min(transcript.length, index + keyword.length + 90);
 
-  return compact(transcript.slice(start, end), MAX_SNIPPET_LENGTH);
+  return compactText(transcript.slice(start, end), MAX_SNIPPET_LENGTH);
 };
 
 const buildPlayResult = (play: PlaybookPlayRow, transcript: string): PlaybookAdherencePlayResult => {

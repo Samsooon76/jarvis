@@ -57,9 +57,13 @@ export type ForecastDeal = {
   confidence: DealIntelligenceAnalysis["confidence"] | null;
   dealHealth: DealIntelligenceAnalysis["dealHealth"] | null;
   summary: string | null;
+  detailedAnalysis: string[];
+  whyNow: string | null;
   suggestedMove: string | null;
   risks: string[];
   positiveSignals: string[];
+  evidence: string[];
+  missingData: string[];
 };
 
 export type ForecastScenario = {

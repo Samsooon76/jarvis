@@ -1,3 +1,4 @@
+import { compactText } from "../../lib/text.js";
 import type {
   AnalyzeManagerDigestInput,
   ManagerDigestAnalysis,
@@ -41,16 +42,6 @@ const MAX_ASSIST_DEALS = 2;
 const MAX_HIGHLIGHTS = 6;
 
 const HIGHLIGHT_TYPES = ["win", "risk", "movement"] as const satisfies readonly ManagerDigestHighlightType[];
-
-const compactText = (value: string, maxLength: number): string => {
-  const compacted = value.replace(/\s+/g, " ").trim();
-
-  if (compacted.length <= maxLength) {
-    return compacted;
-  }
-
-  return `${compacted.slice(0, maxLength - 1).trim()}...`;
-};
 
 const normalizeJsonResponse = (value: string): string => {
   const trimmedValue = value.trim();

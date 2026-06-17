@@ -1,3 +1,4 @@
+import { compactText } from "../lib/text.js";
 import { createHash } from "node:crypto";
 import { env } from "../config/env.js";
 import { getSupabaseAdmin } from "../db/client.js";
@@ -91,16 +92,6 @@ const UUID_V4_LIKE_PATTERN =
 const isValidUuid = (value: string): boolean => UUID_V4_LIKE_PATTERN.test(value.trim());
 
 const hashInput = (value: unknown): string => createHash("sha256").update(JSON.stringify(value)).digest("hex");
-
-const compactText = (value: string, maxLength: number): string => {
-  const compacted = value.replace(/\s+/g, " ").trim();
-
-  if (compacted.length <= maxLength) {
-    return compacted;
-  }
-
-  return `${compacted.slice(0, maxLength - 1).trim()}…`;
-};
 
 const isOpenTask = (task: HubSpotTaskListItem): boolean => task.status !== "completed";
 

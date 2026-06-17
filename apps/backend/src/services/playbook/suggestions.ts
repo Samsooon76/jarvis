@@ -1,3 +1,4 @@
+import { compactText } from "../../lib/text.js";
 import type { JsonObject, JsonValue, PlaybookPlayInput, PlaybookSuggestion } from "@jarvis/shared";
 import {
   createPlay,
@@ -28,12 +29,6 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const readText = (value: unknown): string | null =>
   typeof value === "string" && value.trim() ? value.trim() : null;
-
-const compact = (value: string, maxLength: number): string => {
-  const normalized = value.replace(/\s+/g, " ").trim();
-
-  return normalized.length <= maxLength ? normalized : `${normalized.slice(0, maxLength - 1).trim()}...`;
-};
 
 const suggestionKey = (input: PlaybookPlayInput): string =>
   `${input.category}:${input.title}:${input.triggerDescription}`.toLowerCase();
@@ -69,9 +64,9 @@ const buildCloseWonSuggestions = async (orgId: string, lookbackDays: number): Pr
       suggestions.push({
         payload: validatePlayInput({
           category: "discovery",
-          title: compact(play, 120),
-          triggerDescription: compact(when, 600),
-          recommendedResponse: compact(play, 4000),
+          title: compactText(play, 120),
+          triggerDescription: compactText(when, 600),
+          recommendedResponse: compactText(play, 4000),
           status: "draft",
           evidence: [{ kind: "deal", refId: row.hubspot_deal_id, note: "Analyse close-won" }],
         }),
@@ -118,9 +113,9 @@ const buildCloseLostSuggestions = async (orgId: string, lookbackDays: number): P
       suggestions.push({
         payload: validatePlayInput({
           category: "objection_handling",
-          title: compact(title, 120),
-          triggerDescription: compact(primaryLossReason ? `${timing}. Signal: ${primaryLossReason}` : timing, 600),
-          recommendedResponse: compact(rationale, 4000),
+          title: compactText(title, 120),
+          triggerDescription: compactText(primaryLossReason ? `${timing}. Signal: ${primaryLossReason}` : timing, 600),
+          recommendedResponse: compactText(rationale, 4000),
           status: "draft",
           evidence: [
             { kind: "deal", refId: row.hubspot_deal_id, note: "Analyse close-lost" },

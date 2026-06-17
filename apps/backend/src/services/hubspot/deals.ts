@@ -22,7 +22,12 @@ import {
 import { communicationRecordToHistoryType, toHistoryItem } from "./activities.js";
 import { buildCompanyContextSummary } from "./companies.js";
 import { buildContactDisplayName, fetchContactsByIds } from "./contacts.js";
-import { buildContextSummary, getCompanyName, readProperty } from "./shared.js";
+import {
+  fetchPipelineStageLookup,
+  resolveDealStageLabel,
+  type HubSpotDealStageDefinition,
+} from "./pipelines.js";
+import { buildContextSummary, getCompanyName, parsePercentage, readProperty } from "./shared.js";
 import type {
   HubSpotCall,
   HubSpotCommunication,
@@ -40,16 +45,28 @@ import type {
   HubSpotTask,
 } from "./types.js";
 
-export const buildDealContextSummary = (deal: HubSpotDeal | null): string | null => {
+export const buildDealContextSummary = (
+  deal: HubSpotDeal | null,
+  dealStageLookup?: Map<string, HubSpotDealStageDefinition>,
+): string | null => {
   if (!deal) {
     return null;
   }
 
+  const stageLabel = dealStageLookup
+    ? resolveDealStageLabel(deal, dealStageLookup)
+    : readProperty(deal.properties, "dealstage");
+  const rawProbability = readProperty(deal.properties, "hs_deal_stage_probability");
+  const probability =
+    rawProbability === null
+      ? null
+      : `${parsePercentage(rawProbability)}%`;
+
   return buildContextSummary([
     ["Nom du deal", readProperty(deal.properties, "dealname")],
-    ["Stage", readProperty(deal.properties, "dealstage")],
+    ["Stage", stageLabel],
     ["Montant", readProperty(deal.properties, "amount")],
-    ["Probabilite", readProperty(deal.properties, "hs_deal_stage_probability")],
+    ["Probabilite", probability],
     ["Date de closing", readProperty(deal.properties, "closedate")],
     ["Derniere modification", readProperty(deal.properties, "hs_lastmodifieddate")],
   ]);
@@ -205,9 +222,12 @@ export const fetchAssociatedIdsByDealIds = async (
 };
 
 export const fetchDealHistory = async (accessToken: string, dealId: string): Promise<HubSpotDealHistory> => {
-    const deal = await fetchObjectById<HubSpotDeal>(accessToken, "deals", dealId, HUBSPOT_DEAL_PROPERTIES, [
-      "contacts",
-      "companies",
+    const [deal, dealStageLookup] = await Promise.all([
+      fetchObjectById<HubSpotDeal>(accessToken, "deals", dealId, HUBSPOT_DEAL_PROPERTIES, [
+        "contacts",
+        "companies",
+      ]),
+      fetchPipelineStageLookup(accessToken, "deals"),
     ]);
     const contactIds = await fetchAssociatedIds(accessToken, "deals", dealId, "contacts");
     let companyIds: string[] = [];
@@ -326,7 +346,7 @@ export const fetchDealHistory = async (accessToken: string, dealId: string): Pro
       }
     }
     const timeline: HubSpotDealHistoryItem[] = [
-      toHistoryItem("deal", deal),
+      toHistoryItem("deal", deal, dealStageLookup),
       ...notes.map((item) => toHistoryItem("note", item)),
       ...calls.map((item) => toHistoryItem("call", item)),
       ...meetings.map((item) => toHistoryItem("meeting", item)),
@@ -346,7 +366,7 @@ export const fetchDealHistory = async (accessToken: string, dealId: string): Pro
       dealId,
       dealName: readProperty(deal.properties, "dealname"),
       companyName: getCompanyName(primaryCompany, null),
-      dealContext: buildDealContextSummary(deal),
+      dealContext: buildDealContextSummary(deal, dealStageLookup),
       companyContext: buildCompanyContextSummary(primaryCompany),
       contactNames: contacts.map((contact) => buildContactDisplayName(contact)),
       timeline,
@@ -487,14 +507,15 @@ export const fetchDealActivityDebug = async (accessToken: string, dealId: string
 export const fetchDealSalesActivityIds = async (
     accessToken: string,
     dealId: string,
-  ): Promise<{ call: string[]; meeting: string[]; communication: string[] }> => {
-    const [call, meeting, communication] = await Promise.all([
+  ): Promise<{ call: string[]; meeting: string[]; communication: string[]; email: string[] }> => {
+    const [call, meeting, communication, email] = await Promise.all([
       fetchAssociatedIds(accessToken, "deals", dealId, "calls"),
       fetchAssociatedIds(accessToken, "deals", dealId, "meetings"),
       fetchAssociatedIds(accessToken, "deals", dealId, "communications"),
+      fetchAssociatedIds(accessToken, "deals", dealId, "emails"),
     ]);
 
-    return { call, meeting, communication };
+    return { call, meeting, communication, email };
 };
 
 export const fetchDealCount = async (accessToken: string): Promise<number> => {

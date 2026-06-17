@@ -11,6 +11,7 @@ import {
   asRecord,
   clampInteger,
   compactText,
+  normalizeText,
   firstDefined,
   firstNonEmptyString,
   getDaysSince,
@@ -266,19 +267,42 @@ export const buildChannelEngagement = (timeline: HubSpotDealHistoryItem[]): Deal
   });
 };
 
+const activityBodyLimitForPrompt = (channel: DealRecentActivity["channel"]): number | undefined => {
+  if (channel === "note" || channel === "email") {
+    return undefined;
+  }
+
+  switch (channel) {
+    case "task":
+      return 500;
+    case "call":
+      return 400;
+    case "sms":
+      return 240;
+    default:
+      return 320;
+  }
+};
+
 export const summarizeRecentActivities = (items: DealRecentActivity[]): string =>
   items
-    .map((item) =>
-      [
+    .map((item) => {
+      const bodyLimit = item.body ? activityBodyLimitForPrompt(item.channel) : undefined;
+
+      return [
         item.occurredAt ?? "date inconnue",
         `[${item.channel}]`,
         item.title,
         item.actorName ? `owner: ${item.actorName}` : null,
-        item.body ? compactText(item.body, 220) : null,
+        item.body
+          ? item.channel === "note" || item.channel === "email"
+            ? normalizeText(item.body)
+            : compactText(item.body, bodyLimit)
+          : null,
       ]
         .filter(Boolean)
-        .join(" | "),
-    )
+        .join(" | ");
+    })
     .join("\n");
 
 export const summarizePendingActions = (actions: ActionSnapshotRow[]): string =>
@@ -286,8 +310,8 @@ export const summarizePendingActions = (actions: ActionSnapshotRow[]): string =>
     ? actions
         .map((action) =>
           [
-            action.title,
-            action.description,
+            compactText(action.title, 90),
+            action.description ? compactText(action.description, 220) : null,
             action.due_at ? `due: ${normalizeTimestamp(action.due_at) ?? action.due_at}` : null,
             `status: ${action.status}`,
             action.ai_generated ? "source: ia" : "source: crm/local",

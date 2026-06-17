@@ -26,6 +26,7 @@ export type QueueViewProps = {
   ownerName?: string;
   selectedOwnerId?: string;
   canViewTeamForecast?: boolean;
+  dataRefreshKey?: number;
   prospects: QueueProspect[];
 };
 

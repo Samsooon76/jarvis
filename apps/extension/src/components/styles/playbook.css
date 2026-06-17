@@ -1,6 +1,7 @@
 /* Playbook — design spec §4, scoped under .jv-playbook-page */
 
 .jv-playbook-page {
+  position: relative;
   --jv-surface: #ffffff;
   --jv-surface-muted: #f8f7f4;
   --jv-text: #1c1917;
@@ -115,9 +116,14 @@
 }
 
 .jv-playbook-page .jv-btn-primary:disabled,
+.jv-playbook-page .jv-btn-primary.is-disabled,
 .jv-playbook-page .jv-btn-ghost:disabled {
-  cursor: wait;
-  opacity: 0.55;
+  background: rgba(28, 25, 23, 0.08);
+  border-color: transparent;
+  color: var(--jv-muted);
+  cursor: not-allowed;
+  opacity: 1;
+  transform: none;
 }
 
 .jv-playbook-page .jv-spin {
@@ -727,10 +733,123 @@
 
 .jv-playbook-page .jv-playbook-create {
   border-top: 1px solid rgba(28, 25, 23, 0.06);
+  display: grid;
+  gap: 12px;
+  padding-top: 14px;
+}
+
+.jv-playbook-page .jv-playbook-create-manual {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  padding-top: 14px;
+}
+
+.jv-playbook-page .jv-playbook-readiness {
+  color: var(--jv-muted);
+  font-size: 13px;
+  margin: 0;
+}
+
+.jv-playbook-page .jv-banner-warning {
+  background: rgb(196 125 26 / 0.1);
+  border: 1px solid rgb(196 125 26 / 0.22);
+  border-radius: 12px;
+  color: var(--jv-warning, #c47d1a);
+  font-size: 13px;
+  margin: 0;
+  padding: 10px 12px;
+}
+
+.jv-playbook-page .jv-banner-info {
+  background: rgb(91 122 184 / 0.1);
+  border: 1px solid rgb(91 122 184 / 0.2);
+  border-radius: 12px;
+  color: var(--jv-outbound, #5b7ab8);
+  font-size: 13px;
+  margin: 0;
+  padding: 10px 12px;
+}
+
+.jv-playbook-page .jv-playbook-bootstrap-overlay {
+  align-items: center;
+  backdrop-filter: blur(2px);
+  background: rgb(244 243 240 / 0.82);
+  display: grid;
+  inset: 0;
+  justify-items: center;
+  padding: 24px;
+  position: absolute;
+  z-index: 20;
+}
+
+.jv-playbook-page .jv-playbook-bootstrap-overlay-card {
+  background: var(--jv-surface, #fff);
+  border: 1px solid var(--jv-border);
+  border-radius: 14px;
+  box-shadow: 0 18px 40px rgb(28 25 23 / 0.08);
+  display: grid;
+  gap: 16px;
+  max-width: 520px;
+  padding: 20px;
+  width: 100%;
+}
+
+.jv-playbook-page .jv-playbook-bootstrap-overlay-note {
+  color: var(--jv-muted);
+  font-size: 13px;
+  line-height: 1.45;
+  margin: 0;
+  text-align: center;
+}
+
+.jv-playbook-page .jv-run-progress {
+  background: var(--jv-surface-muted, #f8f7f4);
+  border: 1px solid var(--jv-border);
+  border-radius: 10px;
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+}
+
+.jv-playbook-page .jv-run-progress-head {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.jv-playbook-page .jv-run-progress-head span {
+  color: var(--jv-muted);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.jv-playbook-page .jv-run-progress-head strong {
+  color: var(--jv-text);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+.jv-playbook-page .jv-run-progress-bar {
+  background: rgba(28, 25, 23, 0.06);
+  border-radius: 999px;
+  display: block;
+  height: 6px;
+  overflow: hidden;
+}
+
+.jv-playbook-page .jv-run-progress-bar span {
+  background: var(--jv-terra);
+  border-radius: 999px;
+  display: block;
+  height: 100%;
+  transition: width 0.3s ease;
+}
+
+.jv-playbook-page .jv-run-progress small {
+  color: var(--jv-faint);
+  font-size: 12px;
+  font-weight: 400;
 }
 
 .jv-playbook-page .jv-playbook-create input {
@@ -758,6 +877,153 @@
   }
 }
 
+/* ── Vue globale ── */
+
+.jv-playbook-page .jv-playbook-overview-shell {
+  width: 100%;
+}
+
+.jv-playbook-page .jv-playbook-overview {
+  display: grid;
+  gap: 16px;
+}
+
+.jv-playbook-page .jv-playbook-overview-empty {
+  align-items: flex-start;
+  background: var(--jv-surface);
+  border: 1px solid var(--jv-border);
+  border-radius: 16px;
+  display: grid;
+  gap: 16px;
+  padding: 24px;
+}
+
+.jv-playbook-page .jv-playbook-overview-head {
+  align-items: flex-start;
+  background: var(--jv-surface);
+  border: 1px solid var(--jv-border);
+  border-radius: 16px;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  padding: 20px 22px;
+}
+
+.jv-playbook-page .jv-playbook-overview-head h2 {
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  margin: 0 0 6px;
+}
+
+.jv-playbook-page .jv-playbook-overview-head p {
+  color: var(--jv-muted);
+  font-size: 13px;
+  margin: 0;
+}
+
+.jv-playbook-page .jv-playbook-overview-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.jv-playbook-page .jv-playbook-overview-card {
+  background: var(--jv-surface);
+  border: 1px solid var(--jv-border);
+  border-radius: 16px;
+  display: grid;
+  gap: 12px;
+  padding: 18px 20px;
+}
+
+.jv-playbook-page .jv-playbook-overview-card-wide {
+  grid-column: 1 / -1;
+}
+
+.jv-playbook-page .jv-playbook-overview-sequence,
+.jv-playbook-page .jv-playbook-overview-list {
+  color: var(--jv-text-soft);
+  display: grid;
+  font-size: 14px;
+  gap: 8px;
+  line-height: 1.5;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.jv-playbook-page .jv-playbook-overview-sequence {
+  list-style: decimal;
+}
+
+.jv-playbook-page .jv-playbook-overview-stages {
+  display: grid;
+  gap: 12px;
+}
+
+.jv-playbook-page .jv-playbook-overview-stage {
+  background: var(--jv-surface-muted);
+  border: 1px solid var(--jv-border);
+  border-radius: 12px;
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+}
+
+.jv-playbook-page .jv-playbook-overview-stage header {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.jv-playbook-page .jv-playbook-overview-stage header strong {
+  font-size: 14px;
+}
+
+.jv-playbook-page .jv-playbook-overview-stage header span {
+  color: var(--jv-faint);
+  font-size: 12px;
+}
+
+.jv-playbook-page .jv-playbook-overview-stage .jv-prose {
+  font-size: 14px;
+  margin: 0;
+}
+
+.jv-playbook-page .jv-playbook-overview-stage .jv-prose em {
+  color: var(--jv-muted);
+  font-style: normal;
+  font-weight: 600;
+}
+
+.jv-playbook-page .jv-playbook-overview-play-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.jv-playbook-page .jv-playbook-overview-play-links button {
+  background: #fff;
+  border: 1px solid var(--jv-border-strong);
+  border-radius: 999px;
+  color: var(--jv-text);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 6px 10px;
+}
+
+.jv-playbook-page .jv-playbook-overview-play-links button:hover {
+  border-color: var(--jv-terra);
+  color: var(--jv-terra);
+}
+
+.jv-playbook-page .jv-playbook-overview-gaps li {
+  color: var(--jv-warning);
+}
+
 /* ── Responsive ── */
 
 @media (max-width: 1024px) {
@@ -782,6 +1048,10 @@
   }
 
   .jv-playbook-page .jv-themes-row {
+    grid-template-columns: 1fr;
+  }
+
+  .jv-playbook-page .jv-playbook-overview-grid {
     grid-template-columns: 1fr;
   }
 

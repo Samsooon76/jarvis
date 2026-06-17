@@ -66,4 +66,5 @@ export type BenchmarkRow = {
 export type ActivityCountRow = {
   hubspot_deal_id: string | null;
   channel: "call" | "email" | "sms" | "deal";
+  external_event_id?: string | null;
 };

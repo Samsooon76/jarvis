@@ -54,7 +54,7 @@ const toQueueProspect = (prospect: HubSpotOwnerProspect): QueueProspect => ({
   title: prospect.title ?? "Titre non renseigne",
   company: prospect.company ?? prospect.dealName ?? prospect.contactName,
   dealAmount: prospect.dealAmount ?? 0,
-  dealStage: prospect.dealStageLabel ?? prospect.dealStage ?? "Stage HubSpot non renseigne",
+  dealStage: prospect.dealStage ?? prospect.dealStageLabel ?? "Stage HubSpot non renseigne",
   closeProbability: prospect.closeProbability,
   closeDate: prospect.closedAt,
   lastContactAt: prospect.lastContactAt ?? prospect.syncedAt,

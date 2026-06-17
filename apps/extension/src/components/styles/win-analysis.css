@@ -379,6 +379,40 @@
   font-weight: 400;
 }
 
+.jv-win-page .jv-list-search {
+  align-items: center;
+  background: var(--jv-surface);
+  border: 1px solid var(--jv-border);
+  border-radius: 999px;
+  color: var(--jv-muted);
+  display: flex;
+  gap: 8px;
+  height: 34px;
+  margin: 0 12px 10px;
+  padding: 0 12px;
+}
+
+.jv-win-page .jv-list-search svg {
+  color: var(--jv-faint);
+  flex-shrink: 0;
+}
+
+.jv-win-page .jv-list-search input {
+  background: transparent;
+  border: 0;
+  color: var(--jv-text);
+  flex: 1;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 400;
+  min-width: 0;
+  outline: none;
+}
+
+.jv-win-page .jv-list-search input::placeholder {
+  color: var(--jv-faint);
+}
+
 .jv-win-page .jv-list-body {
   display: flex;
   flex-direction: column;

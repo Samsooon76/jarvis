@@ -106,6 +106,7 @@ describe("playbook shared", () => {
       org_id: "org-1",
       name: "Playbook AE",
       description: null,
+      overview: null,
       status: "active",
       created_by: null,
       created_at: "2026-06-12T10:00:00Z",
@@ -115,5 +116,7 @@ describe("playbook shared", () => {
 
     assert.equal(playbook.playCount, 5);
     assert.equal(playbook.activePlayCount, 3);
+    assert.equal(playbook.overview, null);
+    assert.equal(playbook.overviewIsStale, true);
   });
 });

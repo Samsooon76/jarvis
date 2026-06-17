@@ -1,0 +1,55 @@
+Contexte deal:
+- Lifecycle: open
+- Entreprise: Doers EmLab | Domaine: getdoers.app | Pays: France
+- Contact principal: Alexandre Francois (Ops Cobweb / gérant centre d'appels)
+- Deal: Doers EmLab - Nouvel élément : Deal
+- Owner CRM (ne pas mettre en stakeholder): Hugo Samson
+- Stage: Negociation | Pipeline: AE Pipeline
+- Montant: 1043.7 EUR | Probabilite HubSpot: 80
+- Close date: 2026-06-30T13:43:26.256Z
+- Aujourd'hui: 2026-06-16T09:55:22.957Z
+- Dernier contact: 2026-06-11T12:56:50.931Z
+- Next action HubSpot: Conserver le contact hebdomadaire; pousser signature après confirmation virement; clarifier volumes/licences et coût total; proposer plan de formation si nécessaire.
+
+Metriques pre-calculees (recopier telles quelles dans activitySignals + benchmarkGaps):
+- lastTouchAt: 2026-06-11T12:56:50.931Z
+- daysSinceLastTouch: 5
+- touchpointCount30d: 45
+- stageAgeDays: 132
+- callsCountByStage: Negociation=29
+- emailsCountByStage: Negociation=11
+- meetingsCountByStage: Negociation=5
+- benchmarkGaps:
+  - Negociation | days_in_stage | actual=132 | benchmark=22.8 | severity=high
+  - Negociation | calls | actual=29 | benchmark=5.1 | severity=high
+  - Negociation | emails | actual=11 | benchmark=1 | severity=high
+  - Negociation | touchpoints | actual=45 | benchmark=12.4 | severity=high
+
+Benchmark win (deals gagnes, 12 mois):
+- Cycle moyen: 22.8 jours | Panier median: 277.83 EUR
+- Activite moyenne deal gagne: 5.1 appels, 1 email, 12.4 touchpoints
+
+Faits structurants (timeline business):
+- 2026-02-03 | demo | Insatisfaction Ringover ("pourri", trop cher) | activityId=442476766407
+- 2026-02-04 | call | Intention forfait annuel 15 lignes, cherche meilleur tarif | activityId=442794565840
+- 2026-03-06 | call | Gros projet évoqué (note Modjo: "2030 lignes" — a valider, possible 20-30) | activityId=473612174561
+- 2026-03-23 | email | Devis 23 licences envoyé | activityId=email-thread-march23
+- 2026-04-15 | call | Blocage administratif Pôle Emploi / centre de formation | activityId=485225637073
+- 2026-05-21 | call | Signé; attend virement centre formation ~4 juin; déplacement Paris prévu pour activer licences | activityId=493291018478
+- 2026-06-04 | echeance | Virement attendu non confirmé au 16 juin
+
+Activites source (dedupliquees, ancien -> recent, pour evidence.activityId):
+2026-02-03T15:01:42Z | note | 442476766407 | Démo OnOff | "Alexandre exprime une forte insatisfaction avec Ringover, qualifiant le service de 'pourri' et trouvant le prix trop élevé"
+2026-02-04T09:20:29Z | note | 442794565840 | Forfait annuel | "intention de passer à un forfait annuel, en commençant par 15 lignes, tout en cherchant un meilleur tarif"
+2026-03-06T15:41:10Z | note | 473612174561 | Gros projet | "Alexandre attend un gros projet impliquant la centralisation de 2030 lignes pour la t..."
+2026-03-23T14:16:43Z | email | — | Proposition 23 licences | "Tu trouveras en PJ ma proposition sur 23 licences"
+2026-04-15T08:56:59Z | note | 485225637073 | Formation PE | "dispositif de formation en partenariat avec Pôle Emploi"
+2026-05-07T08:09:27Z | note | 490424187072 | Suivi PE | "dossier en attente de paiement par Pôle Emploi; lenteur administrative; relation amicale WhatsApp"
+2026-05-21T14:09:44Z | note | 493291018478 | Signature + virement | "Le prospect a annoncé qu'il avait signé et qu'il attendait un virement du centre de formation, prévu autour du 4 juin. Il prévoit de monter à Paris dès qu'il recevra les fonds pour prendre les licences nécessaires."
+
+Contexte relationnel (secondaire):
+- Canal informel WhatsApp; échanges personnels fréquents; pas de pression commerciale agressive recommandée
+- Outil actuel: Ringover | Concurrent sortant
+- Payeur effectif: centre de formation / Pôle Emploi (pas Alexandre directement)
+
+Actions locales ouvertes: aucune

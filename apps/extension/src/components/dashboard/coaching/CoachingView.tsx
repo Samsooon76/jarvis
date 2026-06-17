@@ -150,7 +150,7 @@ const ThemeBlock = ({
     <SectionLabel icon={icon}>{title}</SectionLabel>
     {items.length > 0 ? (
       <ul className="jv-theme-list">
-        {items.slice(0, 5).map((item) => (
+        {items.map((item) => (
           <li key={item.label}>
             <span>{item.label}</span>
             <em>{item.count}</em>
@@ -668,12 +668,10 @@ export const CoachingView = () => {
   const teamInsights = useMemo(() => {
     const weaknesses = priorityCards
       .filter((card) => card.headline)
-      .slice(0, 5)
       .map((card) => ({ label: `${card.repName} · ${card.headline ?? ""}`, count: 1 }));
 
     const strengths = cards
       .filter((card) => card.trend === "improving" && card.headline)
-      .slice(0, 5)
       .map((card) => ({ label: `${card.repName} · ${card.headline ?? ""}`, count: 1 }));
 
     const scoreLabel =

@@ -1,3 +1,4 @@
+import { compactText } from "../lib/text.js";
 import { createHash } from "node:crypto";
 import type { ProspectPriority } from "@jarvis/shared";
 import { getSupabaseAdmin } from "../db/client.js";
@@ -79,16 +80,6 @@ type ScoreUpsertRow = {
 
 const MS_PER_DAY = 86_400_000;
 const AI_CACHE_TTL_HOURS = 24;
-
-const compactText = (value: string, maxLength: number): string => {
-  const compacted = value.replace(/\s+/g, " ").trim();
-
-  if (compacted.length <= maxLength) {
-    return compacted;
-  }
-
-  return `${compacted.slice(0, maxLength - 1).trim()}...`;
-};
 
 const daysSince = (value: string | null, fallbackDays: number): number => {
   if (!value) {

@@ -25,7 +25,7 @@ export const isSignedPaymentPendingStage = (row: ForecastDealStatusInput): boole
   );
 };
 
-const isPaymentReceivedStage = (row: ForecastDealStatusInput): boolean => isStage(row, "payment received");
+export const isPaymentReceivedStage = (row: ForecastDealStatusInput): boolean => isStage(row, "payment received");
 
 const isExplicitOpenForecastStage = (row: ForecastDealStatusInput): boolean => {
   const stage = getDealStageCompactText(row);

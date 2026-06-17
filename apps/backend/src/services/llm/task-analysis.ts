@@ -1,3 +1,4 @@
+import { compactText } from "../../lib/text.js";
 import type { AnalyzeTaskInput, TaskAnalysis, TaskAnalysisRecommendation, TaskAnalysisType } from "./llm.provider.js";
 
 type ParsedTaskAnalysis = {
@@ -33,16 +34,6 @@ const RECOMMENDATIONS = new Set<TaskAnalysisRecommendation>([
   "merge",
   "clarify",
 ]);
-
-const compactText = (value: string, maxLength: number): string => {
-  const compacted = value.replace(/\s+/g, " ").trim();
-
-  if (compacted.length <= maxLength) {
-    return compacted;
-  }
-
-  return `${compacted.slice(0, maxLength - 1).trim()}…`;
-};
 
 const clampInteger = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
 

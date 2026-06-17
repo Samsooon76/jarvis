@@ -56,7 +56,11 @@ export type DealAiAnalysisRow = {
   expires_at: string;
 };
 
-export type DealAiAnalysisType = "deal_intelligence" | "deal_qualification" | "deal_activity_plan";
+export type DealAiAnalysisType =
+  | "deal_intelligence"
+  | "deal_qualification"
+  | "deal_activity_plan"
+  | "deal_analysis_v1";
 
 export type DealAiAnalysisCacheRow<TAnalysis> = Omit<DealAiAnalysisRow, "analysis"> & {
   analysis: TAnalysis;
@@ -223,6 +227,9 @@ export type HubSpotDealSnapshotRow = {
   amount: number | string | null;
   deal_stage: string | null;
   deal_stage_label?: string | null;
+  pipeline_label?: string | null;
+  deal_lifecycle_status?: "pending" | "won" | "lost" | null;
+  is_closed_deal?: boolean | null;
   close_probability: number | string | null;
   closed_at: string | null;
   hubspot_created_at: string | null;

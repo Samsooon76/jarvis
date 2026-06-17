@@ -152,15 +152,28 @@ export const resolveDealLifecycleStatus = (
     }
   }
 
-  if (isClosed === true) {
-    return "won";
-  }
-
   if (isClosed === false) {
     return "pending";
   }
 
+  if (isClosed === true) {
+    return inferredStatusFromText ?? "pending";
+  }
+
   return inferredStatusFromText;
+};
+
+export const resolveStageLabelById = (
+  stageId: string | null | undefined,
+  dealStageLookup: Map<string, HubSpotDealStageDefinition>,
+): string | null => {
+  const normalizedStageId = stageId?.trim();
+
+  if (!normalizedStageId) {
+    return null;
+  }
+
+  return dealStageLookup.get(normalizedStageId)?.label ?? normalizedStageId;
 };
 
 export const resolveDealStageLabel = (
@@ -173,7 +186,7 @@ export const resolveDealStageLabel = (
 
   const dealStageId = readProperty(deal.properties, "dealstage");
 
-  return (dealStageId ? dealStageLookup.get(dealStageId)?.label ?? null : null) ?? null;
+  return dealStageId ? resolveStageLabelById(dealStageId, dealStageLookup) : null;
 };
 
 export const resolveDealClosedState = (dealLifecycleStatus: DealLifecycleStatus | null): boolean | null => {

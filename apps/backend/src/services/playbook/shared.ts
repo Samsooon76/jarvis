@@ -1,6 +1,7 @@
 import type {
   JsonObject,
   Playbook,
+  PlaybookOverview,
   PlaybookSuggestion,
   PlaybookEvidenceKind,
   PlaybookPlay,
@@ -9,6 +10,7 @@ import type {
   PlaybookPlayInput,
   PlaybookPlayStatus,
 } from "@jarvis/shared";
+import { isPlaybookOverviewStale } from "@jarvis/shared";
 import { PLAYBOOK_PLAY_CATEGORIES } from "@jarvis/shared";
 import type { PlaybookPlayEvidenceRow, PlaybookPlayRow, PlaybookRow, PlaybookSuggestionRow } from "./types.js";
 
@@ -128,18 +130,30 @@ export const mapPlayRow = (row: PlaybookPlayRow, evidence: PlaybookPlayEvidenceR
   updatedAt: row.updated_at,
 });
 
-export const mapPlaybookRow = (row: PlaybookRow, playCount: number, activePlayCount: number): Playbook => ({
-  id: row.id,
-  orgId: row.org_id,
-  name: row.name,
-  description: row.description,
-  status: row.status,
-  createdBy: row.created_by,
-  playCount,
-  activePlayCount,
-  createdAt: row.created_at,
-  updatedAt: row.updated_at,
-});
+export const mapPlaybookRow = (
+  row: PlaybookRow,
+  playCount: number,
+  activePlayCount: number,
+  plays: PlaybookPlay[] = [],
+  overview: PlaybookOverview | null = null,
+): Playbook => {
+  const resolvedOverview = overview;
+
+  return {
+    id: row.id,
+    orgId: row.org_id,
+    name: row.name,
+    description: row.description,
+    overview: resolvedOverview,
+    overviewIsStale: isPlaybookOverviewStale(resolvedOverview, plays),
+    status: row.status,
+    createdBy: row.created_by,
+    playCount,
+    activePlayCount,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+};
 
 const suggestionText = (payload: Record<string, unknown>, key: string): string =>
   typeof payload[key] === "string" ? (payload[key] as string) : "";

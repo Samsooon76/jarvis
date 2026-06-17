@@ -19,21 +19,6 @@ import type {
 import { clamp, getMonthEnd, getMonthKey, getMonthLabel, getMonthsBetween, normalizeText, parseNumber } from "./shared.js";
 import { getForecastDealStatus, isSignedDealStatus } from "./deal-status.js";
 
-const buildForecastDealSummary = (analysis: DealIntelligenceAnalysis | null): string | null => {
-  if (!analysis) {
-    return null;
-  }
-
-  const parts = [
-    analysis.executiveSummary,
-    ...analysis.detailedAnalysis,
-  ]
-    .map((part) => part.trim())
-    .filter(Boolean);
-
-  return parts.length > 0 ? parts.join("\n\n") : null;
-};
-
 const buildForecastSuggestedMove = (analysis: DealIntelligenceAnalysis | null): string | null => {
   if (!analysis) {
     return null;
@@ -116,10 +101,14 @@ export const buildForecastDeal = (context: ForecastDealContext, analysisRow: Dea
     analyzedAt: analysisRow?.generated_at ?? null,
     confidence: analysis?.confidence ?? null,
     dealHealth: analysis?.dealHealth ?? null,
-    summary: buildForecastDealSummary(analysis),
+    summary: analysis?.executiveSummary ?? null,
+    detailedAnalysis: analysis?.detailedAnalysis ?? [],
+    whyNow: analysis?.whyNow ?? null,
     suggestedMove: buildForecastSuggestedMove(analysis),
     risks: analysis?.risks ?? [],
     positiveSignals: analysis?.positiveSignals ?? [],
+    evidence: analysis?.evidence ?? [],
+    missingData: analysis?.missingData ?? [],
   };
 };
 

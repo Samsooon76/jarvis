@@ -1,5 +1,8 @@
 import { createHash } from "node:crypto";
 import { formatHubSpotTimelineForPrompt } from "../hubspot-history-formatting.service.js";
+import { compactText, normalizeText } from "../../lib/text.js";
+
+export { compactText, normalizeText };
 import type { HubSpotDealHistoryItem } from "../hubspot.service.js";
 import type { DealActivityPlanAnalysis } from "../llm/llm.provider.js";
 import type {
@@ -147,16 +150,6 @@ export const firstNonEmptyString = (...values: Array<string | null | undefined>)
   }
 
   return null;
-};
-
-export const compactText = (value: string, maxLength: number): string => {
-  const compacted = value.replace(/\s+/g, " ").trim();
-
-  if (compacted.length <= maxLength) {
-    return compacted;
-  }
-
-  return `${compacted.slice(0, maxLength - 3).trim()}...`;
 };
 
 export const stripMarkup = (value: string | null | undefined): string | null => {

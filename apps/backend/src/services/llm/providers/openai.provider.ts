@@ -1,3 +1,5 @@
+import { logLlmDebug, logLlmDebugText } from "../../../lib/llm-debug.js";
+import { compactText, normalizeText } from "../../../lib/text.js";
 import { env } from "../../../config/env.js";
 import type {
   AnalyzeDealHistoryInput,
@@ -6,6 +8,9 @@ import type {
   AnalyzeCloseLostPortfolioInput,
   AnalyzeCloseWonDealInput,
   AnalyzeCloseWonPortfolioInput,
+  AnalyzePlaybookBootstrapInput,
+  AnalyzePlaybookOverviewInput,
+  AnalyzeDealAnalysisV1Input,
   AnalyzeDealIntelligenceInput,
   AnalyzeDealQualificationInput,
   AnalyzeForecastSynthesisInput,
@@ -16,6 +21,8 @@ import type {
   CloseLostPortfolioAnalysis,
   CloseWonDealAnalysis,
   CloseWonPortfolioAnalysis,
+  PlaybookBootstrapAnalysis,
+  PlaybookOverviewAnalysis,
   DealActivityPlanAnalysis,
   DealFullAnalysis,
   DealHistoryAnalysis,
@@ -35,6 +42,11 @@ import type {
 import { buildLeadContactRankingPrompt, parseLeadContactRanking } from "../lead-contact-ranking.js";
 import { buildDealActivityPlanPrompt, parseDealActivityPlan } from "../activity-plan.js";
 import {
+  buildDealAnalysisV1Enrichment,
+  buildDealAnalysisV1UserPrompt,
+  parseDealAnalysisV1,
+} from "../deal-analysis-v1.js";
+import {
   buildCloseLostDealPrompt,
   buildCloseLostPortfolioPrompt,
   parseCloseLostDealAnalysis,
@@ -47,11 +59,17 @@ import {
   parseCloseWonDealAnalysis,
   parseCloseWonPortfolioAnalysis,
 } from "../close-won.js";
+import { buildPlaybookBootstrapPrompt, parsePlaybookBootstrapAnalysis } from "../playbook-bootstrap.js";
+import { buildPlaybookOverviewPrompt, parsePlaybookOverviewAnalysis } from "../playbook-overview.js";
 import { buildManagerDigestPrompt, parseManagerDigestAnalysis } from "../manager-digest.js";
 import { buildRepCoachingPrompt, parseRepCoachingAnalysis } from "../rep-coaching.js";
 import { buildDealQualificationPrompt, parseDealQualification } from "../qualification.js";
 import { buildTaskAnalysisPrompt, parseTaskAnalysis } from "../task-analysis.js";
-import { runWithLlmConcurrencyLimit } from "../llm-rate-limiter.js";
+import {
+  extractOpenAiRateLimitRetryMs,
+  runWithLlmConcurrencyLimit,
+  waitMs,
+} from "../llm-rate-limiter.js";
 
 type OpenAiChatResponse = {
   choices?: Array<{
@@ -75,6 +93,7 @@ type OpenAiChatResponse = {
 };
 
 const OPENAI_REQUEST_TIMEOUT_MS = 45_000;
+const OPENAI_MAX_TRANSIENT_RETRIES = 3;
 
 type ParsedDealHistoryAnalysis = {
   summary?: unknown;
@@ -127,7 +146,20 @@ const isStringArray = (value: unknown): value is string[] =>
 
 const isInteger = (value: unknown): value is number => typeof value === "number" && Number.isInteger(value);
 
-const parseStringList = (value: unknown, maxItems: number, maxLength: number): string[] => {
+const clampInteger = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
+
+const parseNarrativeList = (value: unknown, maxItems: number): string[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter((item): item is string => typeof item === "string" && Boolean(item.trim()))
+    .map((item) => normalizeText(item))
+    .slice(0, maxItems);
+};
+
+const parseFullStringList = (value: unknown, maxItems: number): string[] => {
   if (!Array.isArray(value)) {
     return [];
   }
@@ -148,31 +180,6 @@ const parseStringList = (value: unknown, maxItems: number, maxLength: number): s
       return null;
     })
     .filter((item): item is string => Boolean(item?.trim()))
-    .map((item) => compactText(item, maxLength))
-    .slice(0, maxItems);
-};
-
-const clampInteger = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
-
-const normalizeText = (value: string): string => value.replace(/\s+/g, " ").trim();
-
-const compactText = (value: string, maxLength: number): string => {
-  const compacted = normalizeText(value);
-
-  if (compacted.length <= maxLength) {
-    return compacted;
-  }
-
-  return `${compacted.slice(0, maxLength - 1).trim()}…`;
-};
-
-const parseNarrativeList = (value: unknown, maxItems: number): string[] => {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value
-    .filter((item): item is string => typeof item === "string" && Boolean(item.trim()))
     .map((item) => normalizeText(item))
     .slice(0, maxItems);
 };
@@ -591,10 +598,10 @@ const parseDealIntelligence = (value: string): DealIntelligenceAnalysis => {
             createHubSpotTask: true,
           },
         ],
-    risks: parseStringList(parsed.risks, 3, 120),
-    positiveSignals: parseStringList(parsed.positiveSignals, 3, 120),
-    missingData: parseStringList(parsed.missingData, 3, 120),
-    evidence: parseStringList(parsed.evidence, 4, 120),
+    risks: parseFullStringList(parsed.risks, 3),
+    positiveSignals: parseFullStringList(parsed.positiveSignals, 3),
+    missingData: parseFullStringList(parsed.missingData, 3),
+    evidence: parseFullStringList(parsed.evidence, 4),
     confidence: parsed.confidence,
   };
 };
@@ -702,6 +709,17 @@ export class OpenAiProvider implements LlmProvider {
     return parseDealActivityPlan(await this.completeJson(buildDealActivityPlanPrompt(input), 6_000), "OpenAI");
   }
 
+  async analyzeDealAnalysisV1(input: AnalyzeDealAnalysisV1Input) {
+    const generatedAt = new Date().toISOString();
+
+    return parseDealAnalysisV1(
+      await this.completeJson(buildDealAnalysisV1UserPrompt(input), 12_000, "deal_analysis_v1"),
+      "OpenAI",
+      input,
+      buildDealAnalysisV1Enrichment(input, this.providerName, this.modelName, generatedAt),
+    );
+  }
+
   async analyzeCloseLostDeal(input: AnalyzeCloseLostDealInput): Promise<CloseLostDealAnalysis> {
     return parseCloseLostDealAnalysis(
       await this.completeJson(buildCloseLostDealPrompt(input), 5_000),
@@ -723,6 +741,22 @@ export class OpenAiProvider implements LlmProvider {
 
   async analyzeCloseWonPortfolio(input: AnalyzeCloseWonPortfolioInput): Promise<CloseWonPortfolioAnalysis> {
     return parseCloseWonPortfolioAnalysis(await this.completeJson(buildCloseWonPortfolioPrompt(input), 4_000), "OpenAI");
+  }
+
+  async generatePlaybookBootstrap(input: AnalyzePlaybookBootstrapInput): Promise<PlaybookBootstrapAnalysis> {
+    return parsePlaybookBootstrapAnalysis(
+      await this.completeJson(buildPlaybookBootstrapPrompt(input), 12_000),
+      "OpenAI",
+      input.knownDealIds,
+    );
+  }
+
+  async synthesizePlaybookOverview(input: AnalyzePlaybookOverviewInput): Promise<PlaybookOverviewAnalysis> {
+    return parsePlaybookOverviewAnalysis(
+      await this.completeJson(buildPlaybookOverviewPrompt(input), 6_000),
+      "OpenAI",
+      input.knownPlayIds,
+    );
   }
 
   async analyzeForecastSynthesis(input: AnalyzeForecastSynthesisInput): Promise<ForecastSynthesisAnalysis> {
@@ -757,84 +791,148 @@ export class OpenAiProvider implements LlmProvider {
     return parseLeadContactRanking(await this.completeJson(buildLeadContactRankingPrompt(input), 2_000), "OpenAI");
   }
 
-  private async completeJson(prompt: string, maxTokens: number): Promise<string> {
+  private async completeJson(prompt: string, maxTokens: number, debugLabel = "openai.complete_json"): Promise<string> {
     return runWithLlmConcurrencyLimit(async () => {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), OPENAI_REQUEST_TIMEOUT_MS);
-
-      let response: Response;
-
-      try {
-        response = await fetch(`${this.baseUrl}/chat/completions`, {
-          method: "POST",
-          signal: controller.signal,
-          headers: {
-            Authorization: `Bearer ${this.apiKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: this.modelName,
-            messages: [
-              {
-                role: "system",
-                content:
-                  "Tu reponds uniquement en json valide, sans markdown. Tu n'inventes pas de faits absents des donnees fournies.",
-              },
-              {
-                role: "user",
-                content: prompt,
-              },
-            ],
-            response_format: {
-              type: "json_object",
-            },
-            reasoning_effort: "minimal",
-            max_completion_tokens: maxTokens,
-            stream: false,
-          }),
+      for (let attempt = 0; attempt <= OPENAI_MAX_TRANSIENT_RETRIES; attempt += 1) {
+        logLlmDebug("request.start", {
+          provider: this.providerName,
+          label: debugLabel,
+          model: this.modelName,
+          attempt,
+          maxCompletionTokens: maxTokens,
+          promptChars: prompt.length,
         });
-      } catch (error) {
-        if (error instanceof Error && error.name === "AbortError") {
-          throw new Error("OpenAI timeout apres 45s.");
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), OPENAI_REQUEST_TIMEOUT_MS);
+
+        let response: Response;
+
+        try {
+          response = await fetch(`${this.baseUrl}/chat/completions`, {
+            method: "POST",
+            signal: controller.signal,
+            headers: {
+              Authorization: `Bearer ${this.apiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: this.modelName,
+              messages: [
+                {
+                  role: "system",
+                  content:
+                    "Tu reponds uniquement en json valide, sans markdown. Tu n'inventes pas de faits absents des donnees fournies.",
+                },
+                {
+                  role: "user",
+                  content: prompt,
+                },
+              ],
+              response_format: {
+                type: "json_object",
+              },
+              reasoning_effort: "minimal",
+              max_completion_tokens: maxTokens,
+              stream: false,
+            }),
+          });
+        } catch (error) {
+          if (error instanceof Error && error.name === "AbortError") {
+            throw new Error("OpenAI timeout apres 45s.");
+          }
+
+          throw error;
+        } finally {
+          clearTimeout(timeoutId);
         }
 
-        throw error;
-      } finally {
-        clearTimeout(timeoutId);
-      }
+        if (!response.ok) {
+          const errorText = await response.text();
+          const isRetryable = response.status === 429 || response.status >= 500;
 
-      if (!response.ok) {
-        const errorText = await response.text();
+          if (isRetryable && attempt < OPENAI_MAX_TRANSIENT_RETRIES) {
+            const retryDelayMs =
+              response.status === 429
+                ? (extractOpenAiRateLimitRetryMs(errorText) ?? 5_000)
+                : 2_000 * (attempt + 1);
 
-        throw new Error(`OpenAI error (${response.status}): ${errorText}`);
-      }
+            logLlmDebug("request.retry", {
+              provider: this.providerName,
+              label: debugLabel,
+              model: this.modelName,
+              attempt,
+              status: response.status,
+              retryDelayMs,
+              errorPreview: logLlmDebugText(errorText),
+            });
 
-      const payload = (await response.json()) as OpenAiChatResponse;
-      const choice = payload.choices?.[0];
-      const message = choice?.message;
-      const rawContent = message?.content;
-      const content =
-        typeof rawContent === "string"
-          ? rawContent.trim()
-          : Array.isArray(rawContent)
-            ? rawContent
-                .map((item) => item.text ?? "")
-                .join("")
-                .trim()
+            await waitMs(retryDelayMs);
+            continue;
+          }
+
+          logLlmDebug("request.error", {
+            provider: this.providerName,
+            label: debugLabel,
+            model: this.modelName,
+            attempt,
+            status: response.status,
+            errorPreview: logLlmDebugText(errorText),
+          });
+
+          throw new Error(`OpenAI error (${response.status}): ${errorText}`);
+        }
+
+        const payload = (await response.json()) as OpenAiChatResponse;
+        const choice = payload.choices?.[0];
+        const message = choice?.message;
+        const rawContent = message?.content;
+        const content =
+          typeof rawContent === "string"
+            ? rawContent.trim()
+            : Array.isArray(rawContent)
+              ? rawContent
+                  .map((item) => item.text ?? "")
+                  .join("")
+                  .trim()
+              : "";
+
+        if (!content) {
+          const refusal = message?.refusal ? ` Refus: ${message.refusal}` : "";
+          const tokenSummary = payload.usage
+            ? ` Tokens: completion=${payload.usage.completion_tokens ?? "?"}, total=${payload.usage.total_tokens ?? "?"}.`
             : "";
 
-      if (!content) {
-        const refusal = message?.refusal ? ` Refus: ${message.refusal}` : "";
-        const tokenSummary = payload.usage
-          ? ` Tokens: completion=${payload.usage.completion_tokens ?? "?"}, total=${payload.usage.total_tokens ?? "?"}.`
-          : "";
+          logLlmDebug("response.empty", {
+            provider: this.providerName,
+            label: debugLabel,
+            model: this.modelName,
+            attempt,
+            finishReason: choice?.finish_reason ?? "unknown",
+            refusal: message?.refusal ?? null,
+            usage: payload.usage ?? null,
+          });
 
-        throw new Error(
-          `OpenAI n'a renvoye aucun contenu exploitable. finish_reason=${choice?.finish_reason ?? "unknown"}.${tokenSummary}${refusal}`,
-        );
+          throw new Error(
+            `OpenAI n'a renvoye aucun contenu exploitable. finish_reason=${choice?.finish_reason ?? "unknown"}.${tokenSummary}${refusal}`,
+          );
+        }
+
+        logLlmDebug("response.ok", {
+          provider: this.providerName,
+          label: debugLabel,
+          model: this.modelName,
+          attempt,
+          finishReason: choice?.finish_reason ?? null,
+          usage: payload.usage ?? null,
+          contentChars: content.length,
+          contentPreview: logLlmDebugText(content),
+        });
+
+        return content;
       }
 
-      return content;
+      throw new Error("OpenAI error: nombre maximal de tentatives atteint.");
     });
   }
 }

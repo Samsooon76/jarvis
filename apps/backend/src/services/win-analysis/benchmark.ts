@@ -5,6 +5,7 @@ import type {
   WinBenchmarkMetrics,
 } from "@jarvis/shared";
 import { getSupabaseAdmin } from "../../db/client.js";
+import { backfillClosedDealActivities } from "../hubspot-activity.service.js";
 import { loadActivityCounts } from "./data-access.js";
 import {
   average,
@@ -23,7 +24,6 @@ const buildBenchmarkMetrics = (
   deals: HubSpotDealRow[],
   activityCounts: Map<string, { calls: number; emails: number; touchpoints: number }>,
 ): WinBenchmarkMetrics => {
-  const dealsWithActivity = deals.filter((deal) => activityCounts.has(deal.hubspot_deal_id));
   const cycleDays = deals
     .filter((deal) => deal.hubspot_created_at && deal.closed_at)
     .map((deal) =>
@@ -36,12 +36,48 @@ const buildBenchmarkMetrics = (
     );
 
   return {
-    avgCalls: average(dealsWithActivity.map((deal) => activityCounts.get(deal.hubspot_deal_id)?.calls ?? 0)),
-    avgEmails: average(dealsWithActivity.map((deal) => activityCounts.get(deal.hubspot_deal_id)?.emails ?? 0)),
-    avgTouchpoints: average(dealsWithActivity.map((deal) => activityCounts.get(deal.hubspot_deal_id)?.touchpoints ?? 0)),
+    avgCalls: average(deals.map((deal) => activityCounts.get(deal.hubspot_deal_id)?.calls ?? 0)),
+    avgEmails: average(deals.map((deal) => activityCounts.get(deal.hubspot_deal_id)?.emails ?? 0)),
+    avgTouchpoints: average(deals.map((deal) => activityCounts.get(deal.hubspot_deal_id)?.touchpoints ?? 0)),
     avgCycleDays: average(cycleDays),
     medianAmount: median(deals.map((deal) => parseNumber(deal.amount) ?? 0).filter((amount) => amount > 0)),
   };
+};
+
+const hasActivityBenchmarkMetrics = (metrics: WinBenchmarkMetrics): boolean =>
+  metrics.avgCalls !== null || metrics.avgEmails !== null || metrics.avgTouchpoints !== null;
+
+const countDealsWithActivityData = (
+  deals: HubSpotDealRow[],
+  activityCounts: Map<string, { calls: number; emails: number; touchpoints: number }>,
+): number =>
+  deals.filter((deal) => {
+    const counts = activityCounts.get(deal.hubspot_deal_id);
+
+    return counts !== undefined && counts.touchpoints > 0;
+  }).length;
+
+const ensureClosedDealActivityCoverage = async (
+  orgId: string,
+  deals: HubSpotDealRow[],
+  activityCounts: Map<string, { calls: number; emails: number; touchpoints: number }>,
+  dateFrom: string,
+  dateTo: string,
+): Promise<Map<string, { calls: number; emails: number; touchpoints: number }>> => {
+  if (deals.length === 0 || countDealsWithActivityData(deals, activityCounts) > 0) {
+    return activityCounts;
+  }
+
+  try {
+    await backfillClosedDealActivities(orgId, { closedFrom: dateFrom, closedTo: dateTo });
+  } catch {
+    return activityCounts;
+  }
+
+  return loadActivityCounts(
+    orgId,
+    deals.map((deal) => deal.hubspot_deal_id),
+  );
 };
 
 // Agregation SQL/TS des wins sur 12 mois, par segment ('all' + par pipeline).
@@ -63,9 +99,16 @@ export const computeWinBenchmarks = async (orgId: string): Promise<WinBenchmark[
   }
 
   const wonDeals = ((data ?? []) as HubSpotDealRow[]).filter(isWonDeal);
-  const activityCounts = await loadActivityCounts(
+  const initialActivityCounts = await loadActivityCounts(
     orgId,
     wonDeals.map((deal) => deal.hubspot_deal_id),
+  );
+  const activityCounts = await ensureClosedDealActivityCoverage(
+    orgId,
+    wonDeals,
+    initialActivityCounts,
+    dateFrom,
+    dateTo,
   );
 
   const segments = new Map<string, HubSpotDealRow[]>([["all", wonDeals]]);
@@ -138,7 +181,13 @@ export const getWinBenchmarks = async (orgId: string): Promise<WinBenchmark[]> =
   const staleCutoff = Date.now() - BENCHMARK_TTL_DAYS * 86_400_000;
   const allSegment = rows.find((row) => row.segment === "all");
 
-  if (!allSegment || new Date(allSegment.computed_at).getTime() < staleCutoff) {
+  const isStale = !allSegment || new Date(allSegment.computed_at).getTime() < staleCutoff;
+  const isMissingActivityMetrics =
+    allSegment !== undefined &&
+    allSegment.sample_size > 0 &&
+    !hasActivityBenchmarkMetrics(allSegment.benchmark);
+
+  if (isStale || isMissingActivityMetrics) {
     return computeWinBenchmarks(orgId);
   }
 

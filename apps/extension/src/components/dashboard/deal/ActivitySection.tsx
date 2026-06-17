@@ -11,7 +11,6 @@ import {
   activityPriorityLabels,
   activityStatusLabels,
   buildRecommendationDateLabel,
-  compactText,
   formatActivityTime,
   formatOptionalDate,
   getHubSpotDealUrl,
@@ -86,7 +85,7 @@ const buildTimelineNextSteps = (result: DealActivityPlanResult): ActivityTimelin
     priority: recommendation.priority,
   };
 
-  return [recommendedAction, ...actions, ...deadlines].slice(0, 6);
+  return [recommendedAction, ...actions, ...deadlines];
 };
 
 const ActivityTimelinePanel = ({
@@ -157,7 +156,7 @@ const ActivityTimelinePanel = ({
             <div>
               <strong>{step.title}</strong>
               {step.ownerName ? <small> · {step.ownerName}</small> : null}
-              <p className="jv-prose">{compactText(step.detail, 180)}</p>
+              <p className="jv-prose">{step.detail}</p>
               <div className="jv-item-meta">
                 {step.priority ? <span className="jv-meta-pending">{activityPriorityLabels[step.priority]}</span> : null}
                 {step.status ? <span className="jv-meta-ok">{activityStatusLabels[step.status]}</span> : null}
@@ -184,7 +183,7 @@ const ActivityTimelinePanel = ({
             <div>
               <strong>{item.title}</strong>
               {item.actorName ? <small> · {item.actorName}</small> : null}
-              {item.body ? <p className="jv-prose">{compactText(item.body, 130)}</p> : null}
+              {item.body ? <p className="jv-prose">{item.body}</p> : null}
             </div>
           </div>
         ))}
@@ -276,12 +275,14 @@ const ActivityRecommendationPanel = ({
 };
 
 export const ActivitySection = ({
+  embedded = false,
   error,
   hubspotPortalId,
   isLoading,
   onRefresh,
   result,
 }: {
+  embedded?: boolean;
   error: string | null;
   hubspotPortalId?: string | null;
   isLoading: boolean;
@@ -289,6 +290,10 @@ export const ActivitySection = ({
   result: DealActivityPlanResult | null;
 }) => {
   if (!result) {
+    if (embedded) {
+      return null;
+    }
+
     return (
       <AnalysisLoadingPanel
         error={error}
@@ -303,8 +308,11 @@ export const ActivitySection = ({
   const crmDealUrl = getHubSpotDealUrl(hubspotPortalId, result.hubspotDealId);
 
   return (
-    <section aria-label="Activité et plan d'action" className="jv-activity-layout">
-      {isLoading ? (
+    <section
+      aria-label="Activité et plan d'action"
+      className={`jv-activity-layout${embedded ? " is-embedded" : ""}`}
+    >
+      {!embedded && isLoading ? (
         <AnalysisLoadingPanel
           compact
           error={null}
@@ -314,14 +322,18 @@ export const ActivitySection = ({
           title="Mise à jour de l'activité"
         />
       ) : null}
-      {error ? <p className="jv-banner jv-banner-error">{error}</p> : null}
+      {!embedded && error ? <p className="jv-banner jv-banner-error">{error}</p> : null}
       <div className="jv-activity-main">
         <ActivityTimelinePanel crmDealUrl={crmDealUrl} result={result} />
       </div>
-      <div className="jv-activity-side">
+      <div className={`jv-activity-side${embedded ? " is-compact" : ""}`}>
         <ChannelEngagementPanel channels={result.channelEngagement} />
-        <NotesInsightsPanel insights={result.activityPlan.notesAndInsights} />
-        <ActivityRecommendationPanel isLoading={isLoading} onRefresh={onRefresh} result={result} />
+        {!embedded ? (
+          <>
+            <NotesInsightsPanel insights={result.activityPlan.notesAndInsights} />
+            <ActivityRecommendationPanel isLoading={isLoading} onRefresh={onRefresh} result={result} />
+          </>
+        ) : null}
       </div>
     </section>
   );

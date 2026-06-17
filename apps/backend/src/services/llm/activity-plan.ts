@@ -1,3 +1,4 @@
+import { compactText } from "../../lib/text.js";
 import type {
   ActivityPlanAction,
   ActivityPlanDeadline,
@@ -47,16 +48,6 @@ type ParsedNextBestAction = {
   title?: unknown;
   rationale?: unknown;
   dueInDays?: unknown;
-};
-
-const compactText = (value: string, maxLength: number): string => {
-  const compacted = value.replace(/\s+/g, " ").trim();
-
-  if (compacted.length <= maxLength) {
-    return compacted;
-  }
-
-  return `${compacted.slice(0, maxLength - 1).trim()}…`;
 };
 
 const clampInteger = (value: number, min: number, max: number): number =>

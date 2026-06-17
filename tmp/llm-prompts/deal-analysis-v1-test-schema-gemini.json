@@ -1,0 +1,1326 @@
+{
+  "type": "object",
+  "properties": {
+    "confidence": {
+      "type": "string",
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ]
+    },
+    "company": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "nullable": true
+        },
+        "industry": {
+          "type": "string",
+          "nullable": true
+        },
+        "size": {
+          "type": "string",
+          "nullable": true
+        },
+        "country": {
+          "type": "string",
+          "nullable": true
+        },
+        "currentTools": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "crmUrl": {
+          "type": "string",
+          "nullable": true
+        }
+      },
+      "required": [
+        "name",
+        "industry",
+        "size",
+        "country",
+        "currentTools",
+        "crmUrl"
+      ],
+      "propertyOrdering": [
+        "name",
+        "industry",
+        "size",
+        "country",
+        "currentTools",
+        "crmUrl"
+      ]
+    },
+    "dealOverview": {
+      "type": "object",
+      "properties": {
+        "summary": {
+          "type": "string"
+        },
+        "stage": {
+          "type": "string",
+          "nullable": true
+        },
+        "pipeline": {
+          "type": "string",
+          "nullable": true
+        },
+        "amount": {
+          "type": "number",
+          "nullable": true
+        },
+        "currency": {
+          "type": "string"
+        },
+        "expectedCloseDate": {
+          "type": "string",
+          "nullable": true
+        },
+        "closingProbability": {
+          "type": "number",
+          "nullable": true
+        },
+        "confidenceLevel": {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ]
+        },
+        "dealHealth": {
+          "type": "string",
+          "enum": [
+            "strong",
+            "medium",
+            "at_risk",
+            "blocked",
+            "unknown"
+          ]
+        },
+        "executiveSummary": {
+          "type": "string"
+        },
+        "whyNow": {
+          "type": "string",
+          "nullable": true
+        },
+        "mainObjective": {
+          "type": "string",
+          "nullable": true
+        },
+        "businessImpact": {
+          "type": "string",
+          "nullable": true
+        },
+        "urgencyLevel": {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ]
+        },
+        "strategicImportance": {
+          "type": "string",
+          "nullable": true
+        }
+      },
+      "required": [
+        "summary",
+        "stage",
+        "pipeline",
+        "amount",
+        "currency",
+        "expectedCloseDate",
+        "closingProbability",
+        "confidenceLevel",
+        "dealHealth",
+        "executiveSummary",
+        "whyNow",
+        "mainObjective",
+        "businessImpact",
+        "urgencyLevel",
+        "strategicImportance"
+      ],
+      "propertyOrdering": [
+        "summary",
+        "stage",
+        "pipeline",
+        "amount",
+        "currency",
+        "expectedCloseDate",
+        "closingProbability",
+        "confidenceLevel",
+        "dealHealth",
+        "executiveSummary",
+        "whyNow",
+        "mainObjective",
+        "businessImpact",
+        "urgencyLevel",
+        "strategicImportance"
+      ]
+    },
+    "stakeholders": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "nullable": true
+          },
+          "influenceLevel": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ]
+          },
+          "sentiment": {
+            "type": "string",
+            "enum": [
+              "positive",
+              "neutral",
+              "negative",
+              "unknown"
+            ]
+          },
+          "buyerRole": {
+            "type": "string",
+            "enum": [
+              "decision_maker",
+              "champion",
+              "blocker",
+              "influencer",
+              "user",
+              "economic_buyer",
+              "unknown"
+            ]
+          },
+          "mainConcerns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "activityId": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "activityType": {
+                  "type": "string",
+                  "enum": [
+                    "call",
+                    "email",
+                    "note",
+                    "meeting",
+                    "sms",
+                    "communication",
+                    "task",
+                    "deal",
+                    "crm_field",
+                    "transcript"
+                  ]
+                },
+                "occurredAt": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "title": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "quote": {
+                  "type": "string"
+                },
+                "confidence": {
+                  "type": "string",
+                  "enum": [
+                    "low",
+                    "medium",
+                    "high"
+                  ]
+                }
+              },
+              "required": [
+                "activityType",
+                "occurredAt",
+                "title",
+                "quote",
+                "confidence"
+              ],
+              "propertyOrdering": [
+                "activityId",
+                "activityType",
+                "occurredAt",
+                "title",
+                "quote",
+                "confidence"
+              ]
+            }
+          }
+        },
+        "required": [
+          "name",
+          "role",
+          "influenceLevel",
+          "sentiment",
+          "buyerRole",
+          "mainConcerns",
+          "evidence"
+        ],
+        "propertyOrdering": [
+          "name",
+          "role",
+          "influenceLevel",
+          "sentiment",
+          "buyerRole",
+          "mainConcerns",
+          "evidence"
+        ]
+      }
+    },
+    "signals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "pain",
+              "risk",
+              "objection",
+              "opportunity"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "resolved",
+              "handled",
+              "monitoring",
+              "unclear"
+            ]
+          },
+          "objectionType": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "price",
+              "product",
+              "timing",
+              "trust",
+              "competitor",
+              "technical",
+              "security",
+              "other"
+            ]
+          },
+          "businessImpact": {
+            "type": "string",
+            "nullable": true
+          },
+          "responseGiven": {
+            "type": "string",
+            "nullable": true
+          },
+          "remainingConcern": {
+            "type": "string",
+            "nullable": true
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "activityId": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "activityType": {
+                  "type": "string",
+                  "enum": [
+                    "call",
+                    "email",
+                    "note",
+                    "meeting",
+                    "sms",
+                    "communication",
+                    "task",
+                    "deal",
+                    "crm_field",
+                    "transcript"
+                  ]
+                },
+                "occurredAt": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "title": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "quote": {
+                  "type": "string"
+                },
+                "confidence": {
+                  "type": "string",
+                  "enum": [
+                    "low",
+                    "medium",
+                    "high"
+                  ]
+                }
+              },
+              "required": [
+                "activityType",
+                "occurredAt",
+                "title",
+                "quote",
+                "confidence"
+              ],
+              "propertyOrdering": [
+                "activityId",
+                "activityType",
+                "occurredAt",
+                "title",
+                "quote",
+                "confidence"
+              ]
+            }
+          },
+          "lastUpdated": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "title",
+          "severity",
+          "status",
+          "objectionType",
+          "businessImpact",
+          "responseGiven",
+          "remainingConcern",
+          "evidence",
+          "lastUpdated"
+        ],
+        "propertyOrdering": [
+          "id",
+          "kind",
+          "title",
+          "severity",
+          "status",
+          "objectionType",
+          "businessImpact",
+          "responseGiven",
+          "remainingConcern",
+          "evidence",
+          "lastUpdated"
+        ]
+      }
+    },
+    "qualification": {
+      "type": "object",
+      "properties": {
+        "meddicc": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "enum": [
+                  "metrics",
+                  "economicBuyer",
+                  "decisionCriteria",
+                  "decisionProcess",
+                  "paperProcess",
+                  "identifyPain",
+                  "champion",
+                  "competition"
+                ]
+              },
+              "label": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "confirmed",
+                  "partial",
+                  "assumed",
+                  "unclear",
+                  "missing"
+                ]
+              },
+              "score": {
+                "type": "number"
+              },
+              "gap": {
+                "type": "string",
+                "nullable": true
+              }
+            },
+            "required": [
+              "id",
+              "label",
+              "status",
+              "score",
+              "gap"
+            ],
+            "propertyOrdering": [
+              "id",
+              "label",
+              "status",
+              "score",
+              "gap"
+            ]
+          }
+        },
+        "decisionProcess": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": [
+                "clear",
+                "partial",
+                "unclear"
+              ]
+            },
+            "decisionMakers": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "champions": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "blockers": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "approvalSteps": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "timeline": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          "required": [
+            "status",
+            "decisionMakers",
+            "champions",
+            "blockers",
+            "approvalSteps",
+            "timeline"
+          ],
+          "propertyOrdering": [
+            "status",
+            "decisionMakers",
+            "champions",
+            "blockers",
+            "approvalSteps",
+            "timeline"
+          ]
+        },
+        "budget": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": [
+                "confirmed",
+                "partial",
+                "assumed",
+                "unclear",
+                "missing"
+              ]
+            },
+            "amount": {
+              "type": "number",
+              "nullable": true
+            },
+            "currency": {
+              "type": "string"
+            },
+            "budgetOwner": {
+              "type": "string",
+              "nullable": true
+            },
+            "pricingSensitivity": {
+              "type": "string",
+              "enum": [
+                "low",
+                "medium",
+                "high",
+                "unknown"
+              ]
+            }
+          },
+          "required": [
+            "status",
+            "amount",
+            "currency",
+            "budgetOwner",
+            "pricingSensitivity"
+          ],
+          "propertyOrdering": [
+            "status",
+            "amount",
+            "currency",
+            "budgetOwner",
+            "pricingSensitivity"
+          ]
+        },
+        "competition": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": [
+                "none",
+                "suspected",
+                "confirmed",
+                "unknown"
+              ]
+            },
+            "competitors": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "currentSolution": {
+              "type": "string",
+              "nullable": true
+            },
+            "positioningAngle": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          "required": [
+            "status",
+            "competitors",
+            "currentSolution",
+            "positioningAngle"
+          ],
+          "propertyOrdering": [
+            "status",
+            "competitors",
+            "currentSolution",
+            "positioningAngle"
+          ]
+        },
+        "multiThreading": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": [
+                "single_threaded",
+                "partial",
+                "multi_threaded",
+                "unknown"
+              ]
+            },
+            "contactedRoles": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "missingRoles": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "status",
+            "contactedRoles",
+            "missingRoles"
+          ],
+          "propertyOrdering": [
+            "status",
+            "contactedRoles",
+            "missingRoles"
+          ]
+        },
+        "confidence": {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ]
+        }
+      },
+      "required": [
+        "meddicc",
+        "decisionProcess",
+        "budget",
+        "competition",
+        "multiThreading",
+        "confidence"
+      ],
+      "propertyOrdering": [
+        "meddicc",
+        "decisionProcess",
+        "budget",
+        "competition",
+        "multiThreading",
+        "confidence"
+      ]
+    },
+    "activitySignals": {
+      "type": "object",
+      "properties": {
+        "lastTouchAt": {
+          "type": "string",
+          "nullable": true
+        },
+        "daysSinceLastTouch": {
+          "type": "number",
+          "nullable": true
+        },
+        "touchpointCount30d": {
+          "type": "number",
+          "nullable": true
+        },
+        "callsCountByStage": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "stage": {
+                "type": "string"
+              },
+              "count": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "stage",
+              "count"
+            ],
+            "propertyOrdering": [
+              "stage",
+              "count"
+            ]
+          }
+        },
+        "emailsCountByStage": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "stage": {
+                "type": "string"
+              },
+              "count": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "stage",
+              "count"
+            ],
+            "propertyOrdering": [
+              "stage",
+              "count"
+            ]
+          }
+        },
+        "meetingsCountByStage": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "stage": {
+                "type": "string"
+              },
+              "count": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "stage",
+              "count"
+            ],
+            "propertyOrdering": [
+              "stage",
+              "count"
+            ]
+          }
+        },
+        "benchmarkGaps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "stage": {
+                "type": "string"
+              },
+              "metric": {
+                "type": "string",
+                "enum": [
+                  "calls",
+                  "emails",
+                  "meetings",
+                  "touchpoints",
+                  "days_in_stage"
+                ]
+              },
+              "actual": {
+                "type": "number"
+              },
+              "benchmark": {
+                "type": "number"
+              },
+              "severity": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              }
+            },
+            "required": [
+              "stage",
+              "metric",
+              "actual",
+              "benchmark",
+              "severity"
+            ],
+            "propertyOrdering": [
+              "stage",
+              "metric",
+              "actual",
+              "benchmark",
+              "severity"
+            ]
+          }
+        },
+        "engagementTrend": {
+          "type": "string",
+          "enum": [
+            "increasing",
+            "stable",
+            "decreasing",
+            "unknown"
+          ]
+        },
+        "stageAgeDays": {
+          "type": "number",
+          "nullable": true
+        }
+      },
+      "required": [
+        "lastTouchAt",
+        "daysSinceLastTouch",
+        "touchpointCount30d",
+        "callsCountByStage",
+        "emailsCountByStage",
+        "meetingsCountByStage",
+        "benchmarkGaps",
+        "engagementTrend",
+        "stageAgeDays"
+      ],
+      "propertyOrdering": [
+        "lastTouchAt",
+        "daysSinceLastTouch",
+        "touchpointCount30d",
+        "callsCountByStage",
+        "emailsCountByStage",
+        "meetingsCountByStage",
+        "benchmarkGaps",
+        "engagementTrend",
+        "stageAgeDays"
+      ]
+    },
+    "forecast": {
+      "type": "object",
+      "properties": {
+        "forecastCategory": {
+          "type": "string",
+          "enum": [
+            "commit",
+            "best_case",
+            "pipeline",
+            "at_risk",
+            "slipping",
+            "lost_risk"
+          ]
+        },
+        "probability": {
+          "type": "number",
+          "nullable": true
+        },
+        "mainPositiveSignals": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "mainNegativeSignals": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "dealMomentum": {
+          "type": "string",
+          "enum": [
+            "increasing",
+            "stable",
+            "decreasing",
+            "unknown"
+          ]
+        },
+        "riskOfSlippage": {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ]
+        },
+        "reasoningSummary": {
+          "type": "string"
+        },
+        "confidence": {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ]
+        }
+      },
+      "required": [
+        "forecastCategory",
+        "probability",
+        "mainPositiveSignals",
+        "mainNegativeSignals",
+        "dealMomentum",
+        "riskOfSlippage",
+        "reasoningSummary",
+        "confidence"
+      ],
+      "propertyOrdering": [
+        "forecastCategory",
+        "probability",
+        "mainPositiveSignals",
+        "mainNegativeSignals",
+        "dealMomentum",
+        "riskOfSlippage",
+        "reasoningSummary",
+        "confidence"
+      ]
+    },
+    "actionPlan": {
+      "type": "object",
+      "properties": {
+        "nextSteps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string"
+              },
+              "owner": {
+                "type": "string",
+                "enum": [
+                  "sales_rep",
+                  "prospect",
+                  "customer_success",
+                  "product",
+                  "legal",
+                  "other"
+                ]
+              },
+              "dueDate": {
+                "type": "string",
+                "nullable": true
+              },
+              "priority": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "pending",
+                  "in_progress",
+                  "completed",
+                  "overdue"
+                ]
+              },
+              "createCrmTask": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "action",
+              "owner",
+              "dueDate",
+              "priority",
+              "status",
+              "createCrmTask"
+            ],
+            "propertyOrdering": [
+              "action",
+              "owner",
+              "dueDate",
+              "priority",
+              "status",
+              "createCrmTask"
+            ]
+          }
+        },
+        "mutualActionPlan": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string"
+              },
+              "ownerName": {
+                "type": "string",
+                "nullable": true
+              },
+              "dueDate": {
+                "type": "string",
+                "nullable": true
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "pending",
+                  "in_progress",
+                  "completed",
+                  "overdue"
+                ]
+              },
+              "priority": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "rationale": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "title",
+              "ownerName",
+              "dueDate",
+              "status",
+              "priority",
+              "rationale"
+            ],
+            "propertyOrdering": [
+              "title",
+              "ownerName",
+              "dueDate",
+              "status",
+              "priority",
+              "rationale"
+            ]
+          }
+        },
+        "upcomingDeadlines": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string"
+              },
+              "date": {
+                "type": "string",
+                "nullable": true
+              },
+              "timeWindow": {
+                "type": "string",
+                "nullable": true
+              },
+              "ownerName": {
+                "type": "string",
+                "nullable": true
+              },
+              "description": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "title",
+              "date",
+              "timeWindow",
+              "ownerName",
+              "description"
+            ],
+            "propertyOrdering": [
+              "title",
+              "date",
+              "timeWindow",
+              "ownerName",
+              "description"
+            ]
+          }
+        },
+        "salesStrategy": {
+          "type": "object",
+          "properties": {
+            "recommendedAction": {
+              "type": "string"
+            },
+            "managerAdvice": {
+              "type": "string",
+              "nullable": true
+            },
+            "bestAngle": {
+              "type": "string",
+              "nullable": true
+            },
+            "whatToAvoid": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "suggestedMessage": {
+              "type": "string",
+              "nullable": true
+            },
+            "talkingPoints": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "recommendedAction",
+            "managerAdvice",
+            "bestAngle",
+            "whatToAvoid",
+            "suggestedMessage",
+            "talkingPoints"
+          ],
+          "propertyOrdering": [
+            "recommendedAction",
+            "managerAdvice",
+            "bestAngle",
+            "whatToAvoid",
+            "suggestedMessage",
+            "talkingPoints"
+          ]
+        }
+      },
+      "required": [
+        "nextSteps",
+        "mutualActionPlan",
+        "upcomingDeadlines",
+        "salesStrategy"
+      ],
+      "propertyOrdering": [
+        "nextSteps",
+        "mutualActionPlan",
+        "upcomingDeadlines",
+        "salesStrategy"
+      ]
+    },
+    "lifecycle": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "open"
+          ]
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "propertyOrdering": [
+        "kind"
+      ]
+    },
+    "timeline": {
+      "type": "object",
+      "properties": {
+        "firstContactDate": {
+          "type": "string",
+          "nullable": true
+        },
+        "lastInteractionDate": {
+          "type": "string",
+          "nullable": true
+        },
+        "keyEvents": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "date": {
+                "type": "string",
+                "nullable": true
+              },
+              "event": {
+                "type": "string"
+              },
+              "impact": {
+                "type": "string",
+                "enum": [
+                  "positive",
+                  "neutral",
+                  "negative"
+                ]
+              }
+            },
+            "required": [
+              "date",
+              "event",
+              "impact"
+            ],
+            "propertyOrdering": [
+              "date",
+              "event",
+              "impact"
+            ]
+          }
+        }
+      },
+      "required": [
+        "firstContactDate",
+        "lastInteractionDate",
+        "keyEvents"
+      ],
+      "propertyOrdering": [
+        "firstContactDate",
+        "lastInteractionDate",
+        "keyEvents"
+      ]
+    },
+    "dataQuality": {
+      "type": "object",
+      "properties": {
+        "missingInformation": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "uncertainAssumptions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "fieldsRequiringHumanReview": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "missingInformation",
+        "uncertainAssumptions",
+        "fieldsRequiringHumanReview"
+      ],
+      "propertyOrdering": [
+        "missingInformation",
+        "uncertainAssumptions",
+        "fieldsRequiringHumanReview"
+      ]
+    }
+  },
+  "required": [
+    "confidence",
+    "company",
+    "dealOverview",
+    "stakeholders",
+    "signals",
+    "qualification",
+    "activitySignals",
+    "forecast",
+    "actionPlan",
+    "lifecycle",
+    "timeline",
+    "dataQuality"
+  ],
+  "propertyOrdering": [
+    "confidence",
+    "company",
+    "dealOverview",
+    "stakeholders",
+    "signals",
+    "qualification",
+    "activitySignals",
+    "forecast",
+    "actionPlan",
+    "lifecycle",
+    "timeline",
+    "dataQuality"
+  ]
+}

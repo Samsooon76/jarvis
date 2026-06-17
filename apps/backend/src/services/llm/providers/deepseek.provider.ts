@@ -1,3 +1,4 @@
+import { compactText, normalizeText } from "../../../lib/text.js";
 import { env } from "../../../config/env.js";
 import type {
   AnalyzeDealHistoryInput,
@@ -6,6 +7,9 @@ import type {
   AnalyzeCloseLostPortfolioInput,
   AnalyzeCloseWonDealInput,
   AnalyzeCloseWonPortfolioInput,
+  AnalyzePlaybookBootstrapInput,
+  AnalyzePlaybookOverviewInput,
+  AnalyzeDealAnalysisV1Input,
   AnalyzeDealIntelligenceInput,
   AnalyzeDealQualificationInput,
   AnalyzeForecastSynthesisInput,
@@ -16,6 +20,8 @@ import type {
   CloseLostPortfolioAnalysis,
   CloseWonDealAnalysis,
   CloseWonPortfolioAnalysis,
+  PlaybookBootstrapAnalysis,
+  PlaybookOverviewAnalysis,
   DealActivityPlanAnalysis,
   DealFullAnalysis,
   DealHistoryAnalysis,
@@ -35,6 +41,11 @@ import type {
 import { buildLeadContactRankingPrompt, parseLeadContactRanking } from "../lead-contact-ranking.js";
 import { buildDealActivityPlanPrompt, parseDealActivityPlan } from "../activity-plan.js";
 import {
+  buildDealAnalysisV1Enrichment,
+  buildDealAnalysisV1UserPrompt,
+  parseDealAnalysisV1,
+} from "../deal-analysis-v1.js";
+import {
   buildCloseLostDealPrompt,
   buildCloseLostPortfolioPrompt,
   parseCloseLostDealAnalysis,
@@ -47,6 +58,8 @@ import {
   parseCloseWonDealAnalysis,
   parseCloseWonPortfolioAnalysis,
 } from "../close-won.js";
+import { buildPlaybookBootstrapPrompt, parsePlaybookBootstrapAnalysis } from "../playbook-bootstrap.js";
+import { buildPlaybookOverviewPrompt, parsePlaybookOverviewAnalysis } from "../playbook-overview.js";
 import { buildManagerDigestPrompt, parseManagerDigestAnalysis } from "../manager-digest.js";
 import { buildRepCoachingPrompt, parseRepCoachingAnalysis } from "../rep-coaching.js";
 import { buildDealQualificationPrompt, parseDealQualification } from "../qualification.js";
@@ -138,18 +151,6 @@ const parseJsonObject = <T>(value: string, label: string): T => {
 };
 
 const clampInteger = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
-
-const normalizeText = (value: string): string => value.replace(/\s+/g, " ").trim();
-
-const compactText = (value: string, maxLength: number): string => {
-  const compacted = normalizeText(value);
-
-  if (compacted.length <= maxLength) {
-    return compacted;
-  }
-
-  return `${compacted.slice(0, maxLength - 1).trim()}…`;
-};
 
 const buildDealHistoryPrompt = ({
   history,
@@ -410,10 +411,10 @@ const parseDealIntelligence = (value: string): DealIntelligenceAnalysis => {
     whyNow,
     suggestedMove: normalizeText(parsed.suggestedMove),
     nextSteps: parseNextSteps(parsed.nextSteps),
-    risks: parsed.risks.map((item) => compactText(item, 120)).slice(0, 3),
-    positiveSignals: parsed.positiveSignals.map((item) => compactText(item, 120)).slice(0, 3),
-    missingData: parsed.missingData.map((item) => compactText(item, 120)).slice(0, 3),
-    evidence: parsed.evidence.map((item) => compactText(item, 120)).slice(0, 4),
+    risks: parsed.risks.map((item) => normalizeText(item)).slice(0, 3),
+    positiveSignals: parsed.positiveSignals.map((item) => normalizeText(item)).slice(0, 3),
+    missingData: parsed.missingData.map((item) => normalizeText(item)).slice(0, 3),
+    evidence: parsed.evidence.map((item) => normalizeText(item)).slice(0, 4),
     confidence: parsed.confidence,
   };
 };
@@ -513,6 +514,17 @@ export class DeepSeekProvider implements LlmProvider {
     return parseDealActivityPlan(await this.completeJson(buildDealActivityPlanPrompt(input), 3_800), "DeepSeek");
   }
 
+  async analyzeDealAnalysisV1(input: AnalyzeDealAnalysisV1Input) {
+    const generatedAt = new Date().toISOString();
+
+    return parseDealAnalysisV1(
+      await this.completeJson(buildDealAnalysisV1UserPrompt(input), 8_000),
+      "DeepSeek",
+      input,
+      buildDealAnalysisV1Enrichment(input, this.providerName, this.modelName, generatedAt),
+    );
+  }
+
   async analyzeCloseLostDeal(input: AnalyzeCloseLostDealInput): Promise<CloseLostDealAnalysis> {
     return parseCloseLostDealAnalysis(
       await this.completeJson(buildCloseLostDealPrompt(input), 3_800),
@@ -534,6 +546,22 @@ export class DeepSeekProvider implements LlmProvider {
 
   async analyzeCloseWonPortfolio(input: AnalyzeCloseWonPortfolioInput): Promise<CloseWonPortfolioAnalysis> {
     return parseCloseWonPortfolioAnalysis(await this.completeJson(buildCloseWonPortfolioPrompt(input), 2_800), "DeepSeek");
+  }
+
+  async generatePlaybookBootstrap(input: AnalyzePlaybookBootstrapInput): Promise<PlaybookBootstrapAnalysis> {
+    return parsePlaybookBootstrapAnalysis(
+      await this.completeJson(buildPlaybookBootstrapPrompt(input), 6_000),
+      "DeepSeek",
+      input.knownDealIds,
+    );
+  }
+
+  async synthesizePlaybookOverview(input: AnalyzePlaybookOverviewInput): Promise<PlaybookOverviewAnalysis> {
+    return parsePlaybookOverviewAnalysis(
+      await this.completeJson(buildPlaybookOverviewPrompt(input), 4_000),
+      "DeepSeek",
+      input.knownPlayIds,
+    );
   }
 
   async analyzeForecastSynthesis(input: AnalyzeForecastSynthesisInput): Promise<ForecastSynthesisAnalysis> {

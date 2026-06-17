@@ -419,5 +419,6 @@ export const resolveDealLifecycleStatusFromStage = (
     }
   }
 
-  return stage?.is_closed === true ? "won" : "pending";
+  // Stage ferme sans signal explicite: ne pas supposer "won" (closed lost mal classe).
+  return "pending";
 };

@@ -2,6 +2,7 @@ import type {
   PlaybookEvidenceKind,
   JsonObject,
   JsonValue,
+  PlaybookOverview,
   PlaybookSuggestionKind,
   PlaybookSuggestionStatus,
   PlaybookPlayCategory,
@@ -10,11 +11,14 @@ import type {
   PlaybookStatus,
 } from "@jarvis/shared";
 
+export type PlaybookOverviewRow = PlaybookOverview;
+
 export type PlaybookRow = {
   id: string;
   org_id: string;
   name: string;
   description: string | null;
+  overview: PlaybookOverviewRow | null;
   status: PlaybookStatus;
   created_by: string | null;
   created_at: string;

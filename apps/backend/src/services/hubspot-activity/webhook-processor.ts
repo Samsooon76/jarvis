@@ -10,6 +10,7 @@ import {
 } from "../pulse.service.js";
 import { filterEligibleRealtimeDealIds, hydrateActivity } from "./activity-ingestion.js";
 import { applyDealPropertyChangeFromWebhook, runClosedDealAutomation } from "./deal-property-sync.js";
+import { ensureHubSpotDealHydrated, hydrateHubSpotDealFromWebhook } from "./deal-sync.js";
 import { processLeadWebhookEvent } from "./lead-sync.js";
 import { acceptNormalizedDealWebhookEvent } from "./normalized-events.js";
 import { purgePrivacyDeletedContact } from "./privacy-purge.js";
@@ -111,10 +112,17 @@ const processHubSpotWebhookEvent = async (eventId: string): Promise<void> => {
       legacyDealId;
 
     if (dealId && (event.subscription_type === "object.creation" || event.subscription_type === "deal.creation")) {
+      const hydration = await hydrateHubSpotDealFromWebhook(event.org_id, dealId);
+
+      if (!hydration.inRealtimeScope) {
+        await updateWebhookEventStatus(event.id, "ignored", "Deal hors scope realtime: owner hors Sales AE.");
+        return;
+      }
+
       await acceptNormalizedDealWebhookEvent({
         event,
         hubspotDealId: dealId,
-        lifecycleStatus: null,
+        lifecycleStatus: hydration.lifecycleStatus,
       });
 
       try {
@@ -122,21 +130,27 @@ const processHubSpotWebhookEvent = async (eventId: string): Promise<void> => {
           orgId: event.org_id,
           sourceEventId: buildPulseDealCreatedSourceEventId(event.org_id, dealId),
           hubspotDealId: dealId,
-          dealName: null,
-          amount: null,
-          stageLabel: null,
+          dealName: hydration.dealName,
+          amount: hydration.amount,
+          stageLabel: hydration.stageLabel,
           occurredAt: event.occurred_at,
         });
       } catch (pulseError) {
         void captureServerError(pulseError, { scope: "jarvis-pulse", eventId: event.id });
       }
 
+      if (hydration.lifecycleStatus !== "won" && hydration.lifecycleStatus !== "lost") {
+        await scheduleDealReanalysis(event.org_id, dealId, event.id, "Nouveau deal HubSpot");
+      }
+
+      await invalidateQueueCacheForDealOwner(event.org_id, dealId);
       await updateWebhookEventStatus(event.id, "completed");
       return;
     }
 
     if (dealId && isInterestingDealProperty(event.property_name)) {
       const isStageChange = event.property_name === "dealstage";
+      await ensureHubSpotDealHydrated(event.org_id, dealId);
       const [eligibleDealId] = await filterEligibleRealtimeDealIds(event.org_id, [dealId], {
         includeClosed: isStageChange,
       });
@@ -177,8 +191,8 @@ const processHubSpotWebhookEvent = async (eventId: string): Promise<void> => {
         lifecycleStatus: appliedChange.lifecycleStatus,
       });
 
-      if (isStageChange && appliedChange.lifecycleStatus) {
-        await runClosedDealAutomation(event.org_id, eligibleDealId, appliedChange.lifecycleStatus, event.id);
+      if (isStageChange) {
+        await runClosedDealAutomation(event.org_id, eligibleDealId, event.id);
       }
 
       if (appliedChange.lifecycleStatus !== "won" && appliedChange.lifecycleStatus !== "lost") {

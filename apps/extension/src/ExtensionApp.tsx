@@ -17,6 +17,7 @@ import {
   fetchHubSpotLastUpdates,
   fetchHubSpotSyncJob,
   syncHubSpotToSupabase,
+  clearAnalyticsCacheByPrefix,
   clearApiResponseCaches,
   type HubSpotLastUpdateItem,
   type HubSpotDisconnectResult,
@@ -87,7 +88,10 @@ export const ExtensionApp = () => {
     refreshKey,
   );
 
-  const refreshQueue = () => setRefreshKey((currentValue) => currentValue + 1);
+  const refreshQueue = () => {
+    clearAnalyticsCacheByPrefix("forecast-");
+    setRefreshKey((currentValue) => currentValue + 1);
+  };
 
   const loadProfileForSession = useCallback(async (session: JarvisSession | null): Promise<void> => {
     if (!session) {
@@ -459,6 +463,26 @@ export const ExtensionApp = () => {
     };
   }, [activeOrgId, data?.hubspotPortalId]);
 
+  useEffect(() => {
+    if (!data?.hubspotPortalId) {
+      return;
+    }
+
+    let isCancelled = false;
+    const intervalId = window.setInterval(() => {
+      if (isCancelled || !isDocumentVisible()) {
+        return;
+      }
+
+      refreshQueue();
+    }, 45_000);
+
+    return () => {
+      isCancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [data?.hubspotPortalId]);
+
   const handleConnectHubSpot = () => {
     setHubSpotConnectionError(null);
 
@@ -683,6 +707,7 @@ export const ExtensionApp = () => {
         ownerName={data?.owner.name}
         selectedOwnerId={activeOwnerId ?? data?.owner.ownerId}
         canViewTeamForecast={authProfile.role !== "sales"}
+        dataRefreshKey={refreshKey}
         prospects={data?.prospects ?? []}
       />
     </>

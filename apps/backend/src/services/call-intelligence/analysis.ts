@@ -1,3 +1,4 @@
+import { compactText } from "../../lib/text.js";
 import { createHash } from "node:crypto";
 import type { CallAiActionItem, CallAiAnalysis, CallSource } from "./types.js";
 
@@ -82,12 +83,6 @@ export const extractConversationalText = (text: string): string =>
     .filter((line) => !isBoilerplateLine(line))
     .join("\n");
 
-const compact = (value: string, maxLength: number): string => {
-  const compacted = value.replace(/\s+/g, " ").trim();
-
-  return compacted.length <= maxLength ? compacted : `${compacted.slice(0, maxLength - 1).trim()}…`;
-};
-
 const includesAny = (text: string, patterns: string[]): boolean => patterns.some((pattern) => text.includes(pattern));
 
 const scoreMatches = (text: string, patterns: string[]): number =>
@@ -96,7 +91,7 @@ const scoreMatches = (text: string, patterns: string[]): number =>
 const splitSentences = (text: string): string[] =>
   text
     .split(/(?<=[.!?])\s+|\n+/)
-    .map((sentence) => compact(sentence, 220))
+    .map((sentence) => compactText(sentence))
     .filter(Boolean)
     .slice(0, 6);
 

@@ -6,7 +6,8 @@ import {
   HUBSPOT_NOTE_PROPERTIES,
   fetchObjectById,
 } from "./client.js";
-import { readProperty, toNullablePropertiesRecord } from "./shared.js";
+import { resolveStageLabelById, type HubSpotDealStageDefinition } from "./pipelines.js";
+import { parsePercentage, readProperty, toNullablePropertiesRecord } from "./shared.js";
 import type {
   HubSpotActivityAssociations,
   HubSpotActivityRecord,
@@ -48,8 +49,12 @@ export const communicationTypeLabel = (channel: string | null): string => {
 export const toHistoryItem = (
   type: HubSpotDealHistoryItem["type"],
   record: { id: string; properties: Record<string, string | null | undefined> },
+  dealStageLookup?: Map<string, HubSpotDealStageDefinition>,
 ): HubSpotDealHistoryItem => {
   if (type === "deal") {
+    const stageId = readProperty(record.properties, "dealstage");
+    const rawProbability = readProperty(record.properties, "hs_deal_stage_probability");
+
     return {
       id: record.id,
       type,
@@ -61,9 +66,9 @@ export const toHistoryItem = (
       body: "Creation du deal dans HubSpot.",
       metadata: {
         amount: readProperty(record.properties, "amount"),
-        stage: readProperty(record.properties, "dealstage"),
+        stage: dealStageLookup ? resolveStageLabelById(stageId, dealStageLookup) : stageId,
         ownerId: readProperty(record.properties, "hubspot_owner_id"),
-        probability: readProperty(record.properties, "hs_deal_stage_probability"),
+        probability: rawProbability === null ? null : `${parsePercentage(rawProbability)}%`,
         createdAt: readProperty(record.properties, "createdate"),
         closedAt: readProperty(record.properties, "closedate"),
         lastModifiedAt: readProperty(record.properties, "hs_lastmodifieddate"),

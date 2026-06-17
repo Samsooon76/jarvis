@@ -71,6 +71,9 @@ export const env = {
   openaiApiKey: process.env.OPENAI_API_KEY ?? "",
   openaiBaseUrl: process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1",
   openaiModel: process.env.OPENAI_MODEL ?? "gpt-5-nano",
+  llmDebug: process.env.LLM_DEBUG === "true",
+  llmDebugFullResponse: process.env.LLM_DEBUG_FULL_RESPONSE === "true",
+  llmDebugPreviewChars: Number(process.env.LLM_DEBUG_PREVIEW_CHARS ?? 1_200),
   dealAiCacheTtlHours: Number(process.env.DEAL_AI_CACHE_TTL_HOURS ?? 6),
   hubspotScopes:
     process.env.HUBSPOT_SCOPES ??

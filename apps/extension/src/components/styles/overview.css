@@ -132,6 +132,26 @@
   }
 }
 
+/* ── Controls (toolbar + refinement filters) ── */
+
+.jv-overview-page .jv-controls {
+  background: var(--jv-surface);
+  border: 1px solid var(--jv-border);
+  border-radius: 14px;
+  display: grid;
+  gap: 12px;
+  padding: 12px 14px;
+}
+
+.jv-overview-page .jv-controls .jv-toolbar {
+  gap: 10px;
+}
+
+.jv-overview-page .jv-controls .jv-filter-bar {
+  border-top: 1px solid var(--jv-border);
+  padding-top: 12px;
+}
+
 /* ── Toolbar ── */
 
 .jv-overview-page .jv-toolbar {

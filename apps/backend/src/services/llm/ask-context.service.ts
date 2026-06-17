@@ -12,6 +12,26 @@ export type AskJarvisContext = {
   contextBlock: string;
 };
 
+const readProspectDealStageLabel = (rawData: unknown): string | null => {
+  if (!rawData || typeof rawData !== "object") {
+    return null;
+  }
+
+  const dealStageLabel = (rawData as { dealStageLabel?: unknown }).dealStageLabel;
+
+  return typeof dealStageLabel === "string" && dealStageLabel.trim() ? dealStageLabel.trim() : null;
+};
+
+const readStageFromDealContext = (dealContext: string | null | undefined): string | null => {
+  if (!dealContext) {
+    return null;
+  }
+
+  const match = dealContext.match(/^Stage:\s*(.+)$/m);
+
+  return match?.[1]?.trim() ?? null;
+};
+
 const formatCurrency = (value: number | null | undefined): string => {
   if (value === null || value === undefined || !Number.isFinite(value)) {
     return "inconnu";
@@ -39,7 +59,12 @@ const buildDealContext = async (
     `Prospect: ${contactLabel}`,
     `Entreprise: ${prospect?.company ?? dealHistory.companyName ?? "inconnue"}`,
     `Deal: ${dealHistory.dealName ?? "inconnu"}`,
-    `Stage: ${prospect?.deal_stage ?? "inconnu"}`,
+    `Stage: ${
+      readProspectDealStageLabel(prospect?.raw_data) ??
+      readStageFromDealContext(dealHistory.dealContext) ??
+      prospect?.deal_stage ??
+      "inconnu"
+    }`,
     `Montant: ${formatCurrency(prospect?.deal_amount ?? null)}`,
     `Probabilite: ${prospect?.close_probability ?? "inconnue"}%`,
     `Dernier contact: ${prospect?.last_contact_at ?? "inconnu"}`,

@@ -1,0 +1,13 @@
+{
+  "prospectId": "f28ee7b4-6e7c-4d3e-8a93-b5f24a2682d1",
+  "orgId": "11111111-1111-4111-8111-111111111111",
+  "hubspotDealId": "264252865747",
+  "dealName": "Medicis-immobilier-neuf.fr - Nouvel Élément : Deal",
+  "companyName": "Medicis-immobilier-neuf.fr",
+  "lifecycleStatus": "won",
+  "inputHash": "9e101d5d705e8bb33b6e226458a181d0f2e15ae61dcc2b529cb6dba67b73c51e",
+  "systemMessage": "Tu reponds uniquement en json valide, sans markdown. Tu n'inventes pas de faits absents des donnees fournies.",
+  "userPromptChars": 64369,
+  "userPromptPath": "/Users/hugo/Downloads/jarvis/tmp/llm-prompts/medicis-immobilier-neuf-fr-nouvel-l-ment-deal-264252865747.user-prompt.txt",
+  "openAiBodyPath": "/Users/hugo/Downloads/jarvis/tmp/llm-prompts/medicis-immobilier-neuf-fr-nouvel-l-ment-deal-264252865747.openai-request.json"
+}

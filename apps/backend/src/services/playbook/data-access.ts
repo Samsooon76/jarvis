@@ -55,7 +55,7 @@ export const insertPlaybook = async (
 export const updatePlaybookRow = async (
   orgId: string,
   playbookId: string,
-  patch: Partial<Pick<PlaybookRow, "name" | "description" | "status">>,
+  patch: Partial<Pick<PlaybookRow, "name" | "description" | "status" | "overview">>,
 ): Promise<PlaybookRow> => {
   const { data, error } = await getSupabaseAdmin()
     .from("playbooks")
@@ -70,6 +70,49 @@ export const updatePlaybookRow = async (
   }
 
   return data as PlaybookRow;
+};
+
+export const deleteNonArchivedPlays = async (orgId: string, playbookId: string): Promise<number> => {
+  const supabase = getSupabaseAdmin();
+  const { data: playRows, error: loadError } = await supabase
+    .from("playbook_plays")
+    .select("id")
+    .eq("org_id", orgId)
+    .eq("playbook_id", playbookId)
+    .neq("status", "archived");
+
+  if (loadError) {
+    throw new Error(`Impossible de charger les plays a remplacer: ${loadError.message}`);
+  }
+
+  const playIds = (playRows ?? []).map((row) => row.id as string);
+
+  if (playIds.length === 0) {
+    return 0;
+  }
+
+  const { error: evidenceError } = await supabase
+    .from("playbook_play_evidence")
+    .delete()
+    .eq("org_id", orgId)
+    .in("play_id", playIds);
+
+  if (evidenceError) {
+    throw new Error(`Impossible de supprimer les preuves des plays: ${evidenceError.message}`);
+  }
+
+  const { error: deleteError } = await supabase
+    .from("playbook_plays")
+    .delete()
+    .eq("org_id", orgId)
+    .eq("playbook_id", playbookId)
+    .neq("status", "archived");
+
+  if (deleteError) {
+    throw new Error(`Impossible de remplacer les plays du playbook: ${deleteError.message}`);
+  }
+
+  return playIds.length;
 };
 
 export const loadPlays = async (orgId: string, playbookIds: string[]): Promise<PlaybookPlayRow[]> => {

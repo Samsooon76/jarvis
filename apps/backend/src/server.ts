@@ -59,10 +59,27 @@ const registerCorsHook = (app: FastifyInstance): void => {
   });
 };
 
-const isPublicRoute = (url: string): boolean =>
-  url === "/health" ||
-  url.startsWith("/api/auth/hubspot/") ||
-  url.startsWith("/api/webhooks/");
+const routePath = (url: string): string => url.split("?")[0] ?? url;
+
+const isPublicDebugRoute = (path: string): boolean =>
+  path === "/api/debug/deal-prompt-parser" ||
+  path === "/api/debug/parse-deal-prompt" ||
+  path.startsWith("/api/debug/deal-light-prompt/");
+
+const isPublicRoute = (url: string): boolean => {
+  const path = routePath(url);
+
+  if (path === "/health" || path.startsWith("/api/auth/hubspot/") || path.startsWith("/api/webhooks/")) {
+    return true;
+  }
+
+  // Outils temporaires de test prompt: accessibles sans bearer token.
+  if (isPublicDebugRoute(path)) {
+    return true;
+  }
+
+  return false;
+};
 
 const registerAuthHook = (app: FastifyInstance): void => {
   app.addHook("preHandler", async (request, reply) => {

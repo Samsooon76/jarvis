@@ -1,3 +1,4 @@
+import { compactText } from "../../lib/text.js";
 import type {
   LeadContactRankingAnalysis,
   LeadContactRankingContactInput,
@@ -40,16 +41,6 @@ const parseJsonObject = <T>(value: string, providerName: string): T => {
   } catch {
     throw new Error(`${providerName} n'a pas renvoye un JSON valide pour le ranking des contacts. Extrait: ${value.slice(0, 240)}`);
   }
-};
-
-const compactText = (value: string, maxLength: number): string => {
-  const compacted = value.replace(/\s+/g, " ").trim();
-
-  if (compacted.length <= maxLength) {
-    return compacted;
-  }
-
-  return `${compacted.slice(0, maxLength - 1).trim()}...`;
 };
 
 const clampScore = (value: number): number => Math.max(0, Math.min(100, Math.round(value)));

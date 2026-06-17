@@ -50,6 +50,27 @@ export const runWithLlmConcurrencyLimit = async <T>(operation: () => Promise<T>)
   }
 };
 
+export const extractOpenAiRateLimitRetryMs = (errorText: string): number | null => {
+  const match = errorText.match(/try again in ([\d.]+)s/i);
+
+  if (!match) {
+    return null;
+  }
+
+  const seconds = Number(match[1]);
+
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    return null;
+  }
+
+  return Math.ceil(seconds * 1_000) + 500;
+};
+
+export const waitMs = async (durationMs: number): Promise<void> =>
+  new Promise((resolve) => {
+    setTimeout(resolve, durationMs);
+  });
+
 export const isTransientLlmError = (error: unknown): boolean => {
   if (!(error instanceof Error)) {
     return false;

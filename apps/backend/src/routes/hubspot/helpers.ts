@@ -8,6 +8,7 @@ import { getHubSpotAccessToken } from "../../services/hubspot-auth.service.js";
 import { upsertHubSpotSyncStatus, type HubSpotSyncStatusSnapshot } from "../../services/hubspot-sync-status.service.js";
 import { runAutomaticFollowUpTasksForOrg } from "../../services/prospects/follow-up-task.service.js";
 import { captureServerError } from "../../lib/sentry.js";
+import { runClosedDealAutomationForTransitions } from "../../services/hubspot-activity/deal-property-sync.js";
 import {
   buildPulseDealCreatedSourceEventId,
   generatePulseNotificationsForNewDeal,
@@ -258,7 +259,7 @@ const resolveHubSpotDealLifecycleStatus = (
   }
 
   if (isClosed === true) {
-    return "won";
+    return null;
   }
 
   return null;
@@ -390,6 +391,12 @@ const upsertHubSpotCrmSnapshot = async (
     }
   }
 
+  const dealIds = dealRows.map((deal) => deal.hubspot_deal_id);
+  const previousDealStates =
+    dealIds.length > 0
+      ? await loadHubSpotDealAutomationStates(orgId, dealIds)
+      : [];
+
   for (const batch of createBatches(dealRows, PROSPECT_UPSERT_BATCH_SIZE)) {
     const { error } = await supabase.from("hubspot_deals").upsert(batch, {
       onConflict: "org_id,hubspot_deal_id",
@@ -397,6 +404,25 @@ const upsertHubSpotCrmSnapshot = async (
 
     if (error) {
       throw new Error(formatOperationError("Impossible de synchroniser les deals HubSpot", error.message));
+    }
+  }
+
+  if (dealRows.length > 0) {
+    try {
+      await runClosedDealAutomationForTransitions(
+        orgId,
+        previousDealStates,
+        dealRows.map((deal) => ({
+          hubspot_deal_id: deal.hubspot_deal_id,
+          deal_stage: deal.deal_stage,
+          deal_stage_label: deal.deal_stage_label,
+          deal_lifecycle_status: deal.deal_lifecycle_status,
+          is_closed_deal: deal.is_closed_deal,
+        })),
+        null,
+      );
+    } catch (automationError) {
+      void captureServerError(automationError, { scope: "closed-deal-auto-analysis-sync", orgId });
     }
   }
 
@@ -423,6 +449,41 @@ const upsertHubSpotCrmSnapshot = async (
 
 const getProspectSyncKey = (prospect: { hubspotContactId: string; hubspotDealId: string | null }): string =>
   `${prospect.hubspotContactId}:${prospect.hubspotDealId ?? "contact"}`;
+
+const loadHubSpotDealAutomationStates = async (
+  orgId: string,
+  dealIds: string[],
+): Promise<
+  Array<{
+    hubspot_deal_id: string;
+    deal_stage: string | null;
+    deal_stage_label: string | null;
+    deal_lifecycle_status: DealLifecycleStatus | null;
+    is_closed_deal: boolean | null;
+  }>
+> => {
+  if (dealIds.length === 0) {
+    return [];
+  }
+
+  const { data, error } = await getSupabaseAdmin()
+    .from("hubspot_deals")
+    .select("hubspot_deal_id, deal_stage, deal_stage_label, deal_lifecycle_status, is_closed_deal")
+    .eq("org_id", orgId)
+    .in("hubspot_deal_id", dealIds);
+
+  if (error) {
+    throw new Error(`Impossible de charger l'etat des deals HubSpot: ${error.message}`);
+  }
+
+  return (data ?? []) as Array<{
+    hubspot_deal_id: string;
+    deal_stage: string | null;
+    deal_stage_label: string | null;
+    deal_lifecycle_status: DealLifecycleStatus | null;
+    is_closed_deal: boolean | null;
+  }>;
+};
 
 const loadExistingHubSpotDealIds = async (orgId: string, dealIds: string[]): Promise<Set<string> | null> => {
   if (dealIds.length === 0) {

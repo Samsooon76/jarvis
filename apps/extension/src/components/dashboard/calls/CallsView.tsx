@@ -226,7 +226,7 @@ const ThemeBlock = ({
     <SectionLabel icon={icon}>{title}</SectionLabel>
     {items.length > 0 ? (
       <ul className="jv-theme-list">
-        {items.slice(0, 5).map((item) => (
+        {items.map((item) => (
           <li key={item.label}>
             <span>{item.label}</span>
             <em>{item.count}</em>
@@ -349,7 +349,7 @@ const DetailPanel = ({
 }) => {
   if (!call) {
     return (
-      <aside className="jv-detail">
+      <aside className="jv-detail jv-detail-expanded">
         <div className="jv-detail-empty">
           <PhoneCall aria-hidden="true" size={20} strokeWidth={1.25} />
           <strong>Sélectionnez un appel</strong>
@@ -364,7 +364,7 @@ const DetailPanel = ({
   const isAnalyzed = Boolean(analysis);
 
   return (
-    <aside className="jv-detail" aria-busy={isLoading}>
+    <aside className="jv-detail jv-detail-expanded" aria-busy={isLoading}>
       <header className="jv-detail-head">
         <div>
           <h2>{getCallTitle(selected)}</h2>

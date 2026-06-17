@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { QueueProspect } from "@jarvis/shared";
 import {
   AlertTriangle,
-  AlignLeft,
   ArrowLeft,
   ChartNoAxesCombined,
   CircleHelp,
@@ -16,9 +15,7 @@ import {
 } from "lucide-react";
 import {
   createFollowUpTask,
-  fetchDealActivityPlan,
-  fetchDealAnalysisPage,
-  fetchDealQualification,
+  fetchDealAnalysisBundle,
   startAndPollDealAnalysisRun,
   type AiProviderOption,
   type DealActivityPlanResult,
@@ -31,7 +28,6 @@ import { captureAppError } from "../../sentry";
 import { formatAmount } from "../../utils/dashboard/formatters";
 import {
   buildScoreExplanation,
-  compactText,
   forecastLabels,
   formatCloseDelta,
   formatMetricCaption,
@@ -45,9 +41,11 @@ import "../styles/deal-analysis.css";
 import { DealProbabilityHistoryPanel } from "./DealProbabilityHistoryPanel";
 import { WinGapsCard } from "./WinGapsCard";
 import { AnalysisLoadingPanel, type LoadingStep } from "./deal/AnalysisLoadingPanel";
+import { CollapsibleSection } from "./deal/CollapsibleSection";
 import { ActionRows, HealthDimension, InsightRows, TrendChart } from "./deal/OverviewPanels";
 import { QualificationSection } from "./deal/QualificationSection";
 import { ActivitySection } from "./deal/ActivitySection";
+import { StakeholdersSummary } from "./deal/StakeholdersSummary";
 
 type DealAnalysisViewProps = {
   activeProspect: QueueProspect | null;
@@ -58,17 +56,9 @@ type DealAnalysisViewProps = {
   selectedAiProvider: AiProviderOption;
 };
 
-type DealSection = "overview" | "qualification" | "activity";
-
 const pageCache = new Map<string, DealAnalysisPageResult>();
 const qualificationCache = new Map<string, DealQualificationResult>();
 const activityPlanCache = new Map<string, DealActivityPlanResult>();
-
-const sectionOptions: Array<{ id: DealSection; label: string }> = [
-  { id: "overview", label: "Vue d'ensemble" },
-  { id: "qualification", label: "Comité & qualification" },
-  { id: "activity", label: "Activité & plan" },
-];
 
 const dealAnalysisLoadingSteps: LoadingStep[] = [
   {
@@ -98,28 +88,26 @@ const SectionLabel = ({ children, icon: Icon }: { children: string; icon: Lucide
   </span>
 );
 
-const FilterPills = <T extends string>({
-  active,
-  onChange,
-  options,
-}: {
-  active: T;
-  onChange: (value: T) => void;
-  options: Array<{ id: T; label: string }>;
-}) => (
-  <div aria-label="Sections analyse deal" className="jv-filter-pills" role="group">
-    {options.map((option) => (
-      <button
-        className={active === option.id ? "active" : undefined}
-        key={option.id}
-        onClick={() => onChange(option.id)}
-        type="button"
-      >
-        {option.label}
-      </button>
-    ))}
-  </div>
-);
+const MissingGapsPanel = ({ items }: { items: Array<{ title: string; rationale: string }> }) => {
+  const visible = items.slice(0, 3);
+
+  if (visible.length === 0) {
+    return null;
+  }
+
+  return (
+    <article className="jv-theme-block">
+      <SectionLabel icon={CircleHelp}>Ce qui manque pour gagner</SectionLabel>
+      <ul className="jv-bullet-list">
+        {visible.map((item) => (
+          <li key={item.title}>
+            <strong>{item.title}</strong> — {item.rationale}
+          </li>
+        ))}
+      </ul>
+    </article>
+  );
+};
 
 export const DealAnalysisView = ({
   activeProspect,
@@ -132,7 +120,6 @@ export const DealAnalysisView = ({
   const [page, setPage] = useState<DealAnalysisPageResult | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
-  const [activeSection, setActiveSection] = useState<DealSection>("overview");
   const [qualification, setQualification] = useState<DealQualificationResult | null>(null);
   const [qualificationLoading, setQualificationLoading] = useState(false);
   const [qualificationError, setQualificationError] = useState<string | null>(null);
@@ -149,94 +136,6 @@ export const DealAnalysisView = ({
   useEffect(() => {
     activeProspectIdRef.current = activeProspect?.id ?? null;
   }, [activeProspect?.id]);
-
-  const loadQualification = async (refresh = false) => {
-    if (!activeProspect) {
-      return;
-    }
-
-    const cacheKey = getDealAnalysisCacheKey(orgId, selectedAiProvider, activeProspect.id);
-
-    if (!refresh) {
-      const cached = qualificationCache.get(cacheKey);
-
-      if (cached) {
-        setQualification(cached);
-        setQualificationError(null);
-        return;
-      }
-    }
-
-    try {
-      setQualificationLoading(true);
-      setQualificationError(null);
-
-      const result = await fetchDealQualification(activeProspect, orgId, selectedAiProvider, refresh);
-      qualificationCache.set(cacheKey, result);
-      if (activeProspectIdRef.current !== activeProspect.id) {
-        return;
-      }
-      setQualification(result);
-    } catch (error) {
-      captureAppError(error, {
-        feature: "deal_analysis",
-        operation: "load_qualification",
-        orgId,
-        prospectId: activeProspect.id,
-        hubspotDealId: activeProspect.hubspotDealId ?? null,
-        provider: selectedAiProvider.id,
-        model: selectedAiProvider.model,
-        refresh,
-      });
-      setQualificationError(getErrorMessage(error, "Qualification deal indisponible."));
-    } finally {
-      setQualificationLoading(false);
-    }
-  };
-
-  const loadActivityPlan = async (refresh = false) => {
-    if (!activeProspect) {
-      return;
-    }
-
-    const cacheKey = getDealAnalysisCacheKey(orgId, selectedAiProvider, activeProspect.id);
-
-    if (!refresh) {
-      const cached = activityPlanCache.get(cacheKey);
-
-      if (cached) {
-        setActivityPlan(cached);
-        setActivityPlanError(null);
-        return;
-      }
-    }
-
-    try {
-      setActivityPlanLoading(true);
-      setActivityPlanError(null);
-
-      const result = await fetchDealActivityPlan(activeProspect, orgId, selectedAiProvider, refresh);
-      activityPlanCache.set(cacheKey, result);
-      if (activeProspectIdRef.current !== activeProspect.id) {
-        return;
-      }
-      setActivityPlan(result);
-    } catch (error) {
-      captureAppError(error, {
-        feature: "deal_analysis",
-        operation: "load_activity_plan",
-        orgId,
-        prospectId: activeProspect.id,
-        hubspotDealId: activeProspect.hubspotDealId ?? null,
-        provider: selectedAiProvider.id,
-        model: selectedAiProvider.model,
-        refresh,
-      });
-      setActivityPlanError(getErrorMessage(error, "Activité deal indisponible."));
-    } finally {
-      setActivityPlanLoading(false);
-    }
-  };
 
   const applyBundle = (bundle: DealAnalysisBundleResult, cacheKey: string) => {
     pageCache.set(cacheKey, bundle.page);
@@ -261,51 +160,57 @@ export const DealAnalysisView = ({
     });
   };
 
-  const loadPage = async (refresh = false) => {
+  const loadBundle = async (refresh = false): Promise<DealAnalysisBundleResult | null> => {
     if (!activeProspect) {
-      return;
+      return null;
     }
 
     const cacheKey = getDealAnalysisCacheKey(orgId, selectedAiProvider, activeProspect.id);
 
     if (!refresh) {
-      const cached = pageCache.get(cacheKey);
+      const cachedPage = pageCache.get(cacheKey);
+      const cachedQualification = qualificationCache.get(cacheKey);
+      const cachedActivityPlan = activityPlanCache.get(cacheKey);
 
-      if (cached) {
-        setPage(cached);
+      if (cachedPage && cachedQualification && cachedActivityPlan) {
+        setPage(cachedPage);
+        setQualification(cachedQualification);
+        setActivityPlan(cachedActivityPlan);
         setAnalysisError(null);
-        return;
+        setQualificationError(null);
+        setActivityPlanError(null);
+        return {
+          page: cachedPage,
+          qualification: cachedQualification,
+          activityPlan: cachedActivityPlan,
+        };
       }
     }
 
     try {
       setIsAnalyzing(true);
+      setQualificationLoading(true);
+      setActivityPlanLoading(true);
       setRefreshAttempt(null);
       setAnalysisJobStep(null);
       setAnalysisError(null);
       setQualificationError(null);
       setActivityPlanError(null);
 
-      if (refresh) {
-        const result = await runDealAnalysisJob(true);
-        if (activeProspectIdRef.current !== activeProspect.id) {
-          return;
-        }
-        applyBundle(result, cacheKey);
-        return;
+      const bundle = refresh
+        ? await runDealAnalysisJob(true)
+        : await fetchDealAnalysisBundle(activeProspect, orgId, selectedAiProvider, false);
+
+      if (activeProspectIdRef.current !== activeProspect.id) {
+        return null;
       }
 
-      const result = await fetchDealAnalysisPage(activeProspect, orgId, selectedAiProvider, false);
-      if (activeProspectIdRef.current !== activeProspect.id) {
-        return;
-      }
-      pageCache.set(cacheKey, result);
-      setPage(result);
-      setAnalysisError(null);
+      applyBundle(bundle, cacheKey);
+      return bundle;
     } catch (error) {
       captureAppError(error, {
         feature: "deal_analysis",
-        operation: "load_page",
+        operation: refresh ? "refresh_deal_analysis" : "load_deal_analysis_bundle",
         orgId,
         prospectId: activeProspect.id,
         hubspotDealId: activeProspect.hubspotDealId ?? null,
@@ -317,8 +222,11 @@ export const DealAnalysisView = ({
       setAnalysisError(message);
       setQualificationError(message);
       setActivityPlanError(message);
+      return null;
     } finally {
       setIsAnalyzing(false);
+      setQualificationLoading(false);
+      setActivityPlanLoading(false);
       setRefreshAttempt(null);
       setAnalysisJobStep(null);
     }
@@ -331,16 +239,13 @@ export const DealAnalysisView = ({
     setRefreshAttempt(null);
     setAnalysisJobStep(null);
     setAnalysisError(null);
-    setActiveSection("overview");
     setQualification(null);
     setQualificationError(null);
     setActivityPlan(null);
     setActivityPlanError(null);
 
     if (activeProspect) {
-      void loadPage(false);
-      void loadQualification(false);
-      void loadActivityPlan(false);
+      void loadBundle(false);
     }
   }, [activeProspect?.id, orgId, ownerName, selectedAiProvider.id, selectedAiProvider.model]);
 
@@ -371,18 +276,6 @@ export const DealAnalysisView = ({
     }
   };
 
-  const handleSectionChange = (section: DealSection) => {
-    setActiveSection(section);
-
-    if (section === "qualification" && !qualification && !qualificationLoading) {
-      void loadQualification(false);
-    }
-
-    if (section === "activity" && !activityPlan && !activityPlanLoading) {
-      void loadActivityPlan(false);
-    }
-  };
-
   const handleRefresh = () => {
     if (!activeProspect) {
       return;
@@ -391,48 +284,19 @@ export const DealAnalysisView = ({
     const cacheKey = getDealAnalysisCacheKey(orgId, selectedAiProvider, activeProspect.id);
 
     void (async () => {
-      try {
-        setIsAnalyzing(true);
-        setQualificationLoading(true);
-        setActivityPlanLoading(true);
-        setRefreshMessage(null);
-        setAnalysisJobStep(null);
-        setAnalysisError(null);
-        setQualificationError(null);
-        setActivityPlanError(null);
-        setTaskResult(null);
+      setRefreshMessage(null);
+      setTaskResult(null);
+      pageCache.delete(cacheKey);
+      qualificationCache.delete(cacheKey);
+      activityPlanCache.delete(cacheKey);
 
-        const result = await runDealAnalysisJob(true);
-        if (activeProspectIdRef.current !== activeProspect.id) {
-          return;
-        }
+      const bundle = await loadBundle(true);
 
-        pageCache.delete(cacheKey);
-        qualificationCache.delete(cacheKey);
-        activityPlanCache.delete(cacheKey);
-
-        applyBundle(result, cacheKey);
-        setRefreshMessage(`Deal rafraîchi avec l'analyse du ${formatOptionalDateTime(result.page.generatedAt)}.`);
-      } catch (error) {
-        captureAppError(error, {
-          feature: "deal_analysis",
-          operation: "refresh_deal_analysis",
-          orgId,
-          prospectId: activeProspect.id,
-          hubspotDealId: activeProspect.hubspotDealId ?? null,
-          provider: selectedAiProvider.id,
-          model: selectedAiProvider.model,
-          refresh: true,
-        });
-        const message = getErrorMessage(error, "Erreur inconnue pendant le rafraîchissement du deal.");
-        setAnalysisError(`Impossible de rafraîchir le deal complet. Réessaie le rafraîchissement. Détail : ${message}`);
-      } finally {
-        setIsAnalyzing(false);
-        setQualificationLoading(false);
-        setActivityPlanLoading(false);
-        setRefreshAttempt(null);
-        setAnalysisJobStep(null);
+      if (activeProspectIdRef.current !== activeProspect.id || !bundle) {
+        return;
       }
+
+      setRefreshMessage(`Deal rafraîchi avec l'analyse du ${formatOptionalDateTime(bundle.page.generatedAt)}.`);
     })();
   };
 
@@ -440,15 +304,10 @@ export const DealAnalysisView = ({
   const analysis = page?.analysis ?? null;
   const primaryAction = page?.primaryActions[0] ?? null;
   const refreshLoading = isAnalyzing || qualificationLoading || activityPlanLoading;
-  const summaryLines = useMemo(() => {
-    if (!analysis) {
-      return [];
-    }
-
-    return [analysis.executiveSummary, ...analysis.detailedAnalysis].filter(Boolean).slice(0, 3);
-  }, [analysis]);
   const scoreExplanation = useMemo(() => (analysis ? buildScoreExplanation(analysis) : []), [analysis]);
   const probabilityDegrees = analysis ? Math.round((analysis.closeWonProbability / 100) * 360) : 0;
+  const qualificationGaps = qualification?.qualification.missingForWin ?? [];
+  const stakeholders = qualification?.qualification.buyingCommittee ?? [];
 
   if (!activeProspect) {
     return (
@@ -489,7 +348,6 @@ export const DealAnalysisView = ({
             <ArrowLeft size={14} strokeWidth={1.5} />
             Retour overview
           </button>
-          <FilterPills active={activeSection} onChange={handleSectionChange} options={sectionOptions} />
         </div>
         <div className="jv-toolbar-actions">
           <span className="jv-sync-note">
@@ -567,7 +425,7 @@ export const DealAnalysisView = ({
             </div>
             <div className="jv-score-copy">
               <strong>Probabilité de gain</strong>
-              <p>{compactText(analysis.executiveSummary, 160)}</p>
+              <p>{analysis.executiveSummary}</p>
               <small>
                 Clôture prévue {formatOptionalDate(snapshot.closeDate)} · {formatCloseDelta(snapshot.closeDate)}
               </small>
@@ -586,50 +444,81 @@ export const DealAnalysisView = ({
             </span>
           </section>
 
-          <section className="jv-themes-row">
-            <div className="jv-theme-block">
-              <SectionLabel icon={AlertTriangle}>Risques clés</SectionLabel>
-              <InsightRows items={analysis.risks.slice(0, 5)} tone="red" />
-            </div>
-            <div className="jv-theme-block">
-              <SectionLabel icon={Lightbulb}>Signaux positifs</SectionLabel>
-              <InsightRows icon={Lightbulb} items={analysis.positiveSignals.slice(0, 5)} tone="green" />
+          <section aria-label="Action prioritaire" className="jv-callout jv-callout-primary">
+            <Sparkles aria-hidden="true" size={15} strokeWidth={1.5} />
+            <div>
+              <p>À faire maintenant</p>
+              <button
+                className="jv-callout-action"
+                disabled={taskLoading}
+                onClick={handleCreateTask}
+                type="button"
+              >
+                <strong>{primaryAction?.title ?? analysis.suggestedMove}</strong>
+                <small>
+                  {primaryAction ? primaryAction.rationale : "Synchronisé depuis l'analyse IA du deal."}
+                </small>
+              </button>
             </div>
           </section>
 
-          {activeProspect.hubspotDealId ? (
-            <WinGapsCard hubspotDealId={activeProspect.hubspotDealId} orgId={orgId} />
-          ) : null}
+          <section className="jv-themes-row">
+            <div className="jv-theme-block">
+              <SectionLabel icon={AlertTriangle}>Risques clés</SectionLabel>
+              <InsightRows items={analysis.risks} tone="red" />
+            </div>
+            <div className="jv-theme-block">
+              <SectionLabel icon={Lightbulb}>Signaux positifs</SectionLabel>
+              <InsightRows icon={Lightbulb} items={analysis.positiveSignals} tone="green" />
+            </div>
+          </section>
 
-          {activeSection === "overview" ? (
-            <div className="jv-deal-content">
+          <div className="jv-deal-focus-grid">
+            <StakeholdersSummary members={stakeholders} />
+            <MissingGapsPanel items={qualificationGaps} />
+          </div>
+
+          <article className="jv-theme-block">
+            <SectionLabel icon={ListChecks}>Prochaines actions</SectionLabel>
+            <ActionRows actions={page.primaryActions.slice(0, 3)} />
+            <button className="jv-link-button" disabled={taskLoading} onClick={handleCreateTask} type="button">
+              {taskLoading ? "Création..." : "Créer une tâche HubSpot"}
+            </button>
+          </article>
+
+          <div className="jv-deal-details">
+            <CollapsibleSection
+              subtitle="MEDDICC, processus de décision et atouts"
+              title="Qualification détaillée"
+            >
+              <QualificationSection
+                embedded
+                error={qualificationError}
+                isLoading={qualificationLoading}
+                onRefresh={handleRefresh}
+                result={qualification}
+              />
+            </CollapsibleSection>
+
+            <CollapsibleSection
+              subtitle="Timeline CRM, next steps et engagement par canal"
+              title="Activité & timeline"
+            >
+              <ActivitySection
+                embedded
+                error={activityPlanError}
+                hubspotPortalId={hubspotPortalId}
+                isLoading={activityPlanLoading}
+                onRefresh={handleRefresh}
+                result={activityPlan}
+              />
+            </CollapsibleSection>
+
+            <CollapsibleSection
+              subtitle="Santé du deal, tendance, historique et écarts vs wins"
+              title="Analyse approfondie"
+            >
               <div className="jv-deal-grid">
-                <article className="jv-theme-block span-2">
-                  <SectionLabel icon={AlignLeft}>Résumé IA</SectionLabel>
-                  {summaryLines.map((line) => (
-                    <p className="jv-prose" key={line}>
-                      {compactText(line, 220)}
-                    </p>
-                  ))}
-                  <div className="jv-callout">
-                    <Sparkles aria-hidden="true" size={15} strokeWidth={1.5} />
-                    <div>
-                      <p>Prochaine meilleure action</p>
-                      <button
-                        className="jv-callout-action"
-                        disabled={taskLoading}
-                        onClick={handleCreateTask}
-                        type="button"
-                      >
-                        <strong>{primaryAction?.title ?? analysis.suggestedMove}</strong>
-                        <small>
-                          {primaryAction ? primaryAction.rationale : "Synchronisé depuis l'analyse IA du deal."}
-                        </small>
-                      </button>
-                    </div>
-                  </div>
-                </article>
-
                 <article className="jv-theme-block">
                   <SectionLabel icon={Radar}>Santé du deal</SectionLabel>
                   <div className="jv-health-grid">
@@ -646,35 +535,12 @@ export const DealAnalysisView = ({
 
                 <DealProbabilityHistoryPanel orgId={orgId} hubspotDealId={activeProspect.hubspotDealId ?? null} />
 
-                <article className="jv-theme-block">
-                  <SectionLabel icon={ListChecks}>Prochaines actions</SectionLabel>
-                  <ActionRows actions={page.primaryActions} />
-                  <button className="jv-link-button" disabled={taskLoading} onClick={handleCreateTask} type="button">
-                    {taskLoading ? "Création..." : "Créer une tâche HubSpot"}
-                  </button>
-                </article>
+                {activeProspect.hubspotDealId ? (
+                  <WinGapsCard hubspotDealId={activeProspect.hubspotDealId} orgId={orgId} />
+                ) : null}
               </div>
-            </div>
-          ) : null}
-
-          {activeSection === "qualification" ? (
-            <QualificationSection
-              error={qualificationError}
-              isLoading={qualificationLoading}
-              onRefresh={() => void loadQualification(true)}
-              result={qualification}
-            />
-          ) : null}
-
-          {activeSection === "activity" ? (
-            <ActivitySection
-              error={activityPlanError}
-              hubspotPortalId={hubspotPortalId}
-              isLoading={activityPlanLoading}
-              onRefresh={() => void loadActivityPlan(true)}
-              result={activityPlan}
-            />
-          ) : null}
+            </CollapsibleSection>
+          </div>
         </>
       ) : (
         <AnalysisLoadingPanel
@@ -682,7 +548,7 @@ export const DealAnalysisView = ({
           idleText="Analyse IA en attente."
           isLoading={isAnalyzing}
           steps={dealAnalysisLoadingSteps}
-          title="Vue d'ensemble du deal"
+          title="Analyse du deal"
         />
       )}
     </div>

@@ -537,7 +537,7 @@ export const TopFactors = ({ overview }: { overview: CloseLostOverviewResult | n
       dealShare: factor.dealShare,
       rationale: factor.rationale,
     })) ??
-    overview?.lossReasons.slice(0, 5).map((row) => ({
+    overview?.lossReasons.map((row) => ({
       title: row.label,
       impact: row.share >= 30 ? "Élevé" : row.share >= 15 ? "Moyen" : "Faible",
       dealShare: row.share,
@@ -595,7 +595,7 @@ export const Recommendations = ({ overview }: { overview: CloseLostOverviewResul
 
       {recommendations.length > 0 ? (
         <div className="jv-recommendation-list">
-          {recommendations.slice(0, 5).map((recommendation) => (
+          {recommendations.map((recommendation) => (
             <div className="jv-recommendation-item" key={recommendation.title}>
               <div className="jv-recommendation-item-head">
                 <strong>{recommendation.title}</strong>
@@ -617,7 +617,7 @@ export const CompactBreakdown = ({ rows, title }: { rows: CloseLostBreakdownRow[
     <SectionLabel icon={History}>{title}</SectionLabel>
     {rows.length > 0 ? (
       <div className="jv-compact-breakdown">
-        {rows.slice(0, 5).map((row) => (
+        {rows.map((row) => (
           <div className="jv-compact-row" key={row.id}>
             <strong>{row.label}</strong>
             <span>{row.dealCount} deals</span>
@@ -714,7 +714,7 @@ export const DealDeepDive = ({
 }) => {
   if (!detail && !isLoading) {
     return (
-      <aside className="jv-detail">
+      <aside className="jv-detail jv-detail-expanded">
         <div className="jv-detail-empty">
           <CircleX aria-hidden="true" size={20} strokeWidth={1.25} />
           <strong>Sélectionnez un deal</strong>
@@ -735,7 +735,7 @@ export const DealDeepDive = ({
     : "";
 
   return (
-    <aside aria-busy={isLoading} className="jv-detail">
+    <aside aria-busy={isLoading} className="jv-detail jv-detail-expanded">
       <header className="jv-detail-head">
         <div>
           <h2>{detail?.deal.companyName ?? "Chargement…"}</h2>

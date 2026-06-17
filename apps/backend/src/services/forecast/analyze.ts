@@ -1,5 +1,5 @@
 import { buildDealAnalysisBundleForProspect } from "../deal-intelligence.service.js";
-import { isTransientLlmError } from "../llm/llm-rate-limiter.js";
+import { extractOpenAiRateLimitRetryMs, isTransientLlmError } from "../llm/llm-rate-limiter.js";
 import type {
   AnalyzeForecastOptions,
   ForecastAnalyzeDealResult,
@@ -89,7 +89,9 @@ export const analyzeForecastOpenDeals = async (options: AnalyzeForecastOptions):
               level: "warning",
               message: `Nouvelle tentative pour ${deal.dealName ?? deal.hubspotDealId}.`,
             });
-            await wait(750 * attempt);
+            const rateLimitDelayMs = lastError ? extractOpenAiRateLimitRetryMs(lastError) : null;
+
+            await wait(rateLimitDelayMs ?? 750 * attempt);
           }
 
           const result = await buildDealAnalysisBundleForProspect(`hubspot:${deal.hubspotDealId}`, {

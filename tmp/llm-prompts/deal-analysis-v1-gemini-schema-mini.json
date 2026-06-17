@@ -1,0 +1,108 @@
+{
+  "type": "object",
+  "required": [
+    "confidence",
+    "dealOverview",
+    "signals",
+    "forecast",
+    "actionPlan",
+    "dataQuality"
+  ],
+  "properties": {
+    "confidence": {
+      "type": "string",
+      "enum": ["low", "medium", "high"]
+    },
+    "dealOverview": {
+      "type": "object",
+      "required": ["summary", "dealHealth", "closingProbability", "executiveSummary"],
+      "properties": {
+        "summary": { "type": "string" },
+        "dealHealth": {
+          "type": "string",
+          "enum": ["strong", "medium", "at_risk", "blocked", "unknown"]
+        },
+        "closingProbability": { "type": "number", "nullable": true },
+        "executiveSummary": { "type": "string" }
+      }
+    },
+    "signals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "title", "severity", "status"],
+        "properties": {
+          "id": { "type": "string" },
+          "kind": {
+            "type": "string",
+            "enum": ["pain", "risk", "objection", "opportunity"]
+          },
+          "title": { "type": "string" },
+          "severity": {
+            "type": "string",
+            "enum": ["low", "medium", "high"]
+          },
+          "status": {
+            "type": "string",
+            "enum": ["active", "resolved", "handled", "monitoring", "unclear"]
+          },
+          "quote": { "type": "string", "nullable": true }
+        }
+      }
+    },
+    "forecast": {
+      "type": "object",
+      "required": ["forecastCategory", "probability", "reasoningSummary"],
+      "properties": {
+        "forecastCategory": {
+          "type": "string",
+          "enum": ["commit", "best_case", "pipeline", "at_risk", "slipping", "lost_risk"]
+        },
+        "probability": { "type": "number", "nullable": true },
+        "reasoningSummary": { "type": "string" }
+      }
+    },
+    "actionPlan": {
+      "type": "object",
+      "required": ["nextSteps", "salesStrategy"],
+      "properties": {
+        "nextSteps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["action", "priority"],
+            "properties": {
+              "action": { "type": "string" },
+              "priority": {
+                "type": "string",
+                "enum": ["low", "medium", "high"]
+              },
+              "dueDate": { "type": "string", "nullable": true }
+            }
+          }
+        },
+        "salesStrategy": {
+          "type": "object",
+          "required": ["recommendedAction", "talkingPoints"],
+          "properties": {
+            "recommendedAction": { "type": "string" },
+            "talkingPoints": {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "dataQuality": {
+      "type": "object",
+      "required": ["missingInformation"],
+      "properties": {
+        "missingInformation": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    }
+  }
+}

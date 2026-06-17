@@ -78,7 +78,7 @@ export const ProspectDetail = ({
 
   if (!activeProspect) {
     return (
-      <aside className="jv-detail" aria-label="Détail prospect">
+      <aside className="jv-detail jv-detail-expanded" aria-label="Détail prospect">
         <div className="jv-detail-empty">
           <Target size={20} strokeWidth={1.25} />
           <strong>Sélectionnez un prospect</strong>
@@ -92,7 +92,7 @@ export const ProspectDetail = ({
   const nextAction = plannedTask?.title ?? activeProspect.nextAction;
 
   return (
-    <aside className="jv-detail" aria-label="Détail prospect">
+    <aside className="jv-detail jv-detail-expanded" aria-label="Détail prospect">
       <header className="jv-detail-head">
         <div>
           <h2>{activeProspect.company}</h2>

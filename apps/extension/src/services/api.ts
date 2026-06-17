@@ -40,7 +40,7 @@ export type {
   PlaybookStatus,
 } from "@jarvis/shared";
 
-export { registerCacheClearer, clearApiResponseCaches } from "./api/cache";
+export { registerCacheClearer, clearAnalyticsCacheByPrefix, clearApiResponseCaches } from "./api/cache";
 export * from "./api/auth";
 export * from "./api/hubspot";
 export * from "./api/queue";
