@@ -27,6 +27,11 @@ type ClosedDealAutomationRow = {
   is_closed_deal: boolean | null;
 };
 
+type DealClosureStateRow = {
+  deal_lifecycle_status: DealLifecycleStatus | null;
+  closed_at: string | null;
+};
+
 const loadDealForClosedAutomation = async (
   orgId: string,
   hubspotDealId: string,
@@ -52,6 +57,29 @@ const asWonDealRow = (deal: ClosedDealAutomationRow): WonDealRow => deal as WonD
 
 export const isClosedDealForAutomation = (deal: ClosedDealAutomationRow): boolean =>
   isLostDeal(asCloseLostDealRow(deal)) || isWonDeal(asWonDealRow(deal));
+
+export const shouldUpdateClosedAtFromStageChange = (
+  previous: DealClosureStateRow | null,
+  nextLifecycleStatus: DealLifecycleStatus,
+): boolean => nextLifecycleStatus !== "pending" && (previous?.deal_lifecycle_status === "pending" || !previous?.closed_at);
+
+const loadDealClosureState = async (
+  orgId: string,
+  hubspotDealId: string,
+): Promise<DealClosureStateRow | null> => {
+  const { data, error } = await getSupabaseAdmin()
+    .from("hubspot_deals")
+    .select("deal_lifecycle_status, closed_at")
+    .eq("org_id", orgId)
+    .eq("hubspot_deal_id", hubspotDealId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Impossible de charger l'etat de closing du deal HubSpot: ${error.message}`);
+  }
+
+  return (data as DealClosureStateRow | null) ?? null;
+};
 
 const loadDealStageLookupRow = async (
   orgId: string,
@@ -229,6 +257,7 @@ export const applyDealPropertyChangeFromWebhook = async (
   }
 
   if (propertyName === "dealstage") {
+    const previousClosureState = await loadDealClosureState(orgId, hubspotDealId);
     const stage = await loadDealStageLookupRow(orgId, propertyValue);
     const lifecycleStatus = resolveDealLifecycleStatusFromStage(propertyValue, stage);
     const closedAt = normalizeWebhookDate(occurredAt) ?? new Date().toISOString();
@@ -254,7 +283,7 @@ export const applyDealPropertyChangeFromWebhook = async (
       synced_at: syncedAt,
     };
 
-    if (lifecycleStatus !== "pending") {
+    if (shouldUpdateClosedAtFromStageChange(previousClosureState, lifecycleStatus)) {
       updates.closed_at = closedAt;
     }
 

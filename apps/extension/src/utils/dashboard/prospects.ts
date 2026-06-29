@@ -22,6 +22,29 @@ const normalizeStageKey = (value: string): string =>
     .trim()
     .replace(/\s+/g, " ");
 
+const compactStageKey = (value: string): string => normalizeStageKey(value).replace(/\s+/g, "");
+
+const stageMatchesKey = (stage: string, key: string): boolean => {
+  if (stage === key) {
+    return true;
+  }
+
+  const compactStage = compactStageKey(stage);
+  const compactKey = compactStageKey(key);
+
+  return compactStage === compactKey || compactStage.includes(compactKey) || compactKey.includes(compactStage);
+};
+
+const matchesStageSet = (stage: string, keys: Set<string>): boolean => {
+  for (const key of keys) {
+    if (stageMatchesKey(stage, key)) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
 export const getDaysSince = (value: string): number => {
   const timestamp = new Date(value).getTime();
 
@@ -49,15 +72,15 @@ export const getBucket = (prospect: QueueProspect): QueueBucket => {
 export const getDealStatus = (prospect: QueueProspect): DealStatus => {
   const stage = normalizeStageKey(prospect.dealStage);
 
-  if (lostStageKeys.has(stage)) {
+  if (matchesStageSet(stage, lostStageKeys)) {
     return "lost";
   }
 
-  if (wonStageKeys.has(stage)) {
+  if (matchesStageSet(stage, wonStageKeys)) {
     return "won";
   }
 
-  if (openStageKeys.has(stage)) {
+  if (matchesStageSet(stage, openStageKeys)) {
     return "open";
   }
 
@@ -178,7 +201,10 @@ export const matchesStageFilter = (prospect: QueueProspect, filter: StageFilter)
     return true;
   }
 
-  return stage === filterStage || (filter === "negociation" && stage === "negotiation");
+  return (
+    stageMatchesKey(stage, filterStage) ||
+    (filter === "negociation" && stageMatchesKey(stage, "negotiation"))
+  );
 };
 
 export const getInitials = (value: string): string =>

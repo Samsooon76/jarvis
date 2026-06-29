@@ -82,6 +82,14 @@ export const addDays = (date: Date, days: number): Date => {
   return copy;
 };
 
+export const toUtcDateString = (date: Date): string => date.toISOString().slice(0, 10);
+
+export const periodIncludesDate = (dateFrom: string, dateTo: string, date: string): boolean =>
+  dateFrom <= date && date <= dateTo;
+
+export const periodIncludesToday = (dateFrom: string, dateTo: string, referenceDate = new Date()): boolean =>
+  periodIncludesDate(dateFrom, dateTo, toUtcDateString(referenceDate));
+
 export const normalizeText = (value: string | null | undefined): string =>
   (value ?? "")
     .normalize("NFD")

@@ -1,0 +1,13 @@
+{
+  "prospectId": "856852d6-ad5b-492f-83b6-691946318ac7",
+  "orgId": "11111111-1111-4111-8111-111111111111",
+  "hubspotDealId": "459948180673",
+  "dealName": "Doers EmLab - Nouvel élément : Deal",
+  "companyName": "Doers EmLab",
+  "lifecycleStatus": "open",
+  "inputHash": "8db5938a3864e57bcbf53b01572ef5f9197e1544e99d29910060258582ab06f6",
+  "systemMessage": "Tu reponds uniquement en json valide, sans markdown. Tu n'inventes pas de faits absents des donnees fournies.",
+  "userPromptChars": 59607,
+  "userPromptPath": "/Users/hugo/Downloads/jarvis/tmp/llm-prompts/doers-emlab-nouvel-l-ment-deal-459948180673.user-prompt.txt",
+  "openAiBodyPath": "/Users/hugo/Downloads/jarvis/tmp/llm-prompts/doers-emlab-nouvel-l-ment-deal-459948180673.openai-request.json"
+}

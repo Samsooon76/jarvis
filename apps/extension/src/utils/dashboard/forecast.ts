@@ -45,8 +45,8 @@ export const getPriorityLabel = (priority: "low" | "medium" | "high"): string =>
 
 const getMonthBounds = (offsetMonths = 0): { dateFrom: string; dateTo: string } => {
   const now = new Date();
-  const firstDay = new Date(Date.UTC(now.getFullYear(), now.getMonth() + offsetMonths, 1));
-  const lastDay = new Date(Date.UTC(now.getFullYear(), now.getMonth() + offsetMonths + 1, 0));
+  const firstDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + offsetMonths, 1));
+  const lastDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + offsetMonths + 1, 0));
 
   return {
     dateFrom: firstDay.toISOString().slice(0, 10),

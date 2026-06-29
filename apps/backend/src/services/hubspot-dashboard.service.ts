@@ -179,7 +179,8 @@ const isProspectOwnedByHubSpotOwner = (
 
 const mapProspect = (prospect: ProspectRow): HubSpotOwnerProspectData => {
   const dealName = getRawString(prospect.raw_data, "dealName");
-  const dealStageLabel = prospect.deal_stage ?? getRawString(prospect.raw_data, "dealStageLabel");
+  const dealStageLabel =
+    getRawString(prospect.raw_data, "dealStageLabel") ?? prospect.deal_stage;
   const closedAt = getRawString(prospect.raw_data, "closedAt");
   const scoring = scoreProspect({
     dealAmount: prospect.deal_amount,
@@ -198,7 +199,7 @@ const mapProspect = (prospect: ProspectRow): HubSpotOwnerProspectData => {
     email: prospect.email,
     company: prospect.company,
     title: prospect.title,
-    dealStage: prospect.deal_stage,
+    dealStage: dealStageLabel,
     dealStageLabel,
     dealAmount: prospect.deal_amount,
     closeProbability: prospect.close_probability,

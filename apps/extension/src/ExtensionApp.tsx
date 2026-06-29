@@ -88,8 +88,11 @@ export const ExtensionApp = () => {
     refreshKey,
   );
 
-  const refreshQueue = () => {
-    clearAnalyticsCacheByPrefix("forecast-");
+  const refreshQueue = (options?: { clearForecastCache?: boolean }) => {
+    if (options?.clearForecastCache) {
+      clearAnalyticsCacheByPrefix("forecast-");
+    }
+
     setRefreshKey((currentValue) => currentValue + 1);
   };
 
@@ -463,26 +466,6 @@ export const ExtensionApp = () => {
     };
   }, [activeOrgId, data?.hubspotPortalId]);
 
-  useEffect(() => {
-    if (!data?.hubspotPortalId) {
-      return;
-    }
-
-    let isCancelled = false;
-    const intervalId = window.setInterval(() => {
-      if (isCancelled || !isDocumentVisible()) {
-        return;
-      }
-
-      refreshQueue();
-    }, 45_000);
-
-    return () => {
-      isCancelled = true;
-      window.clearInterval(intervalId);
-    };
-  }, [data?.hubspotPortalId]);
-
   const handleConnectHubSpot = () => {
     setHubSpotConnectionError(null);
 
@@ -521,7 +504,7 @@ export const ExtensionApp = () => {
         ? [authProfile.hubspotOwnerId]
         : data?.owners.map((owner) => owner.ownerId) ?? [];
     const result = await syncHubSpotToSupabase(activeOrgId, hubspotOwnerIds, onProgress);
-    refreshQueue();
+    refreshQueue({ clearForecastCache: true });
 
     return result;
   };

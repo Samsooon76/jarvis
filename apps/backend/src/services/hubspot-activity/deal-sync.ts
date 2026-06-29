@@ -147,20 +147,29 @@ const resolveDealStageLookup = async (
   return lookupFromApi;
 };
 
-const buildPlaceholderContact = (deal: HubSpotDeal): HubSpotContact => ({
-  id: deal.id,
-  properties: {
-    firstname: "",
-    lastname: "",
-    email: null,
-    phone: null,
-    jobtitle: null,
-    company: null,
-    lastactivitydate: null,
-    hs_lastmodifieddate: readProperty(deal.properties, "hs_lastmodifieddate"),
-    hubspot_owner_id: readProperty(deal.properties, "hubspot_owner_id"),
-  },
-});
+const buildDealOnlyContactId = (hubspotDealId: string): string => `deal-only:${hubspotDealId}`;
+
+const isDealOnlyContact = (contact: HubSpotContact, deal: HubSpotDeal): boolean =>
+  contact.id === buildDealOnlyContactId(deal.id);
+
+const buildPlaceholderContact = (deal: HubSpotDeal): HubSpotContact => {
+  const dealName = readProperty(deal.properties, "dealname")?.trim() ?? "Deal HubSpot";
+
+  return {
+    id: buildDealOnlyContactId(deal.id),
+    properties: {
+      firstname: dealName,
+      lastname: "",
+      email: null,
+      phone: null,
+      jobtitle: null,
+      company: null,
+      lastactivitydate: null,
+      hs_lastmodifieddate: readProperty(deal.properties, "hs_lastmodifieddate"),
+      hubspot_owner_id: readProperty(deal.properties, "hubspot_owner_id"),
+    },
+  };
+};
 
 const upsertDealGraphInJarvis = async ({
   orgId,
@@ -184,7 +193,9 @@ const upsertDealGraphInJarvis = async ({
     fetchAssociatedIdsByDealIds(accessToken, "contacts", [deal.id]).catch(() => new Map<string, string[]>()),
     fetchAssociatedIdsByDealIds(accessToken, "companies", [deal.id]).catch(() => new Map<string, string[]>()),
   ]);
-  const associatedContactIds = contactIdsByDealId.get(deal.id) ?? [contact.id];
+  const associatedContactIds = isDealOnlyContact(contact, deal)
+    ? contactIdsByDealId.get(deal.id) ?? []
+    : contactIdsByDealId.get(deal.id) ?? [contact.id];
   const associatedCompanyIds = companyIdsByDealId.get(deal.id) ?? (company ? [company.id] : []);
   const dealStageId = readProperty(deal.properties, "dealstage");
   const stageDefinition = dealStageId ? dealStageLookup.get(dealStageId) ?? null : null;
@@ -205,25 +216,27 @@ const upsertDealGraphInJarvis = async ({
     };
   }
 
-  const contactProperties = toNullablePropertiesRecord(contact.properties, HUBSPOT_CONTACT_PROPERTIES);
-  const { error: contactError } = await supabase.from("hubspot_contacts").upsert(
-    {
-      org_id: orgId,
-      hubspot_contact_id: contact.id,
-      hubspot_owner_id: readProperty(contact.properties, "hubspot_owner_id"),
-      email: readProperty(contact.properties, "email"),
-      name: buildContactName(contact.properties),
-      phone: readProperty(contact.properties, "phone"),
-      title: readProperty(contact.properties, "jobtitle"),
-      company_name: readProperty(contact.properties, "company"),
-      properties: contactProperties,
-      synced_at: syncedAt,
-    },
-    { onConflict: "org_id,hubspot_contact_id" },
-  );
+  if (!isDealOnlyContact(contact, deal)) {
+    const contactProperties = toNullablePropertiesRecord(contact.properties, HUBSPOT_CONTACT_PROPERTIES);
+    const { error: contactError } = await supabase.from("hubspot_contacts").upsert(
+      {
+        org_id: orgId,
+        hubspot_contact_id: contact.id,
+        hubspot_owner_id: readProperty(contact.properties, "hubspot_owner_id"),
+        email: readProperty(contact.properties, "email"),
+        name: buildContactName(contact.properties),
+        phone: readProperty(contact.properties, "phone"),
+        title: readProperty(contact.properties, "jobtitle"),
+        company_name: readProperty(contact.properties, "company"),
+        properties: contactProperties,
+        synced_at: syncedAt,
+      },
+      { onConflict: "org_id,hubspot_contact_id" },
+    );
 
-  if (contactError) {
-    throw new Error(`Impossible de synchroniser le contact HubSpot: ${contactError.message}`);
+    if (contactError) {
+      throw new Error(`Impossible de synchroniser le contact HubSpot: ${contactError.message}`);
+    }
   }
 
   if (company) {
@@ -253,7 +266,7 @@ const upsertDealGraphInJarvis = async ({
       org_id: orgId,
       hubspot_deal_id: deal.id,
       hubspot_owner_id: ownerHubSpotId,
-      primary_contact_id: associatedContactIds[0] ?? contact.id,
+      primary_contact_id: associatedContactIds[0] ?? (isDealOnlyContact(contact, deal) ? null : contact.id),
       primary_company_id: associatedCompanyIds[0] ?? null,
       associated_contact_ids: associatedContactIds,
       associated_company_ids: associatedCompanyIds,

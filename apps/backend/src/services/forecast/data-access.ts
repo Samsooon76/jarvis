@@ -10,8 +10,8 @@ import type {
   HubSpotDealRow,
   OwnerUserRow,
 } from "./types.js";
-import { addDays } from "./shared.js";
-import { isForecastableDeal, isPaymentReceivedStage, isSignedPaymentPendingStage } from "./deal-status.js";
+import { addDays, periodIncludesToday } from "./shared.js";
+import { isForecastableDeal, isSignedPaymentPendingStage } from "./deal-status.js";
 
 export const MAX_OPEN_DEALS = 250;
 
@@ -50,13 +50,15 @@ export const loadOpenDealContexts = async (options: Required<Pick<ForecastOvervi
 
   // 2) Backlog signe : "Deal Signed/Payment Pending" toujours visible, quelle que soit la date de signature.
   const backlogQuery = scopedQuery()
-    .or(
-      "deal_stage_label.ilike.%payment pending%,deal_stage_label.ilike.%payment received%,deal_stage_label.ilike.%signed%",
-    )
+    .or("deal_stage_label.ilike.%payment pending%,deal_stage_label.ilike.%signed%")
     .order("amount", { ascending: false })
     .limit(MAX_OPEN_DEALS);
 
-  const [windowedResult, backlogResult] = await Promise.all([windowedQuery, backlogQuery]);
+  const includeSignedPendingBacklog = periodIncludesToday(options.dateFrom, options.dateTo);
+  const [windowedResult, backlogResult] = await Promise.all([
+    windowedQuery,
+    includeSignedPendingBacklog ? backlogQuery : Promise.resolve({ data: [], error: null }),
+  ]);
 
   if (windowedResult.error) {
     throw new Error(`Impossible de charger les deals forecast Supabase: ${windowedResult.error.message}`);
@@ -72,11 +74,14 @@ export const loadOpenDealContexts = async (options: Required<Pick<ForecastOvervi
     dealRowsById.set(row.hubspot_deal_id, row);
   }
 
-  // Backlog signe : deals en attente de paiement toujours visibles; paiements recus du mois courant
-  // rattaches via closed_at meme si la date de closing CRM est hors periode.
-  for (const row of (backlogResult.data ?? []) as HubSpotDealRow[]) {
-    if (!dealRowsById.has(row.hubspot_deal_id) && (isSignedPaymentPendingStage(row) || isPaymentReceivedStage(row))) {
-      dealRowsById.set(row.hubspot_deal_id, row);
+  // Backlog signe : uniquement sur une periode qui inclut aujourd'hui.
+  // Les deals "signe / paiement pending" hors fenetre restent visibles tant qu'on forecaste le mois courant.
+  // Les paiements recus restent rattaches au mois civil via closed_at.
+  if (includeSignedPendingBacklog) {
+    for (const row of (backlogResult.data ?? []) as HubSpotDealRow[]) {
+      if (isSignedPaymentPendingStage(row) && !dealRowsById.has(row.hubspot_deal_id)) {
+        dealRowsById.set(row.hubspot_deal_id, row);
+      }
     }
   }
 
